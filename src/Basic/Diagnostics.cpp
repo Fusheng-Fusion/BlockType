@@ -15,19 +15,40 @@ void DiagnosticsEngine::report(SourceLocation Loc, DiagLevel Level, llvm::String
 
 void DiagnosticsEngine::report(SourceLocation Loc, DiagID ID) {
   DiagLevel Level = getDiagnosticLevel(ID);
-  llvm::StringRef Message = getDiagnosticMessage(ID);
+  llvm::StringRef Message = getDiagnosticMessage(ID, Lang);
   report(Loc, Level, Message);
 }
 
 void DiagnosticsEngine::report(SourceLocation Loc, DiagID ID, llvm::StringRef ExtraText) {
   DiagLevel Level = getDiagnosticLevel(ID);
-  std::string Message = std::string(getDiagnosticMessage(ID)) + ": " + ExtraText.str();
+  std::string Message = std::string(getDiagnosticMessage(ID, Lang)) + ": " + ExtraText.str();
   report(Loc, Level, Message);
+}
+
+void DiagnosticsEngine::report(SourceLocation Loc, DiagID ID, 
+                               SourceLocation RangeStart, SourceLocation RangeEnd,
+                               llvm::StringRef ExtraText) {
+  DiagLevel Level = getDiagnosticLevel(ID);
+  std::string Message = std::string(getDiagnosticMessage(ID, Lang));
+  if (!ExtraText.empty()) {
+    Message += ": " + ExtraText.str();
+  }
+  printDiagnostic(Loc, Level, Message);
+  
+  // Print source line with highlighting if SourceManager is available
+  if (SM && Loc.isValid()) {
+    printSourceLine(Loc);
+  }
+  
+  if (Level == DiagLevel::Error || Level == DiagLevel::Fatal)
+    ++NumErrors;
+  else if (Level == DiagLevel::Warning)
+    ++NumWarnings;
 }
 
 DiagLevel DiagnosticsEngine::getDiagnosticLevel(DiagID ID) {
   switch (ID) {
-#define DIAG(ID, Level, Text) \
+#define DIAG(ID, Level, EnText, ZhText) \
     case DiagID::ID: \
       return DiagLevel::Level;
 #include "blocktype/Basic/DiagnosticIDs.def"
@@ -38,51 +59,141 @@ DiagLevel DiagnosticsEngine::getDiagnosticLevel(DiagID ID) {
 }
 
 const char* DiagnosticsEngine::getDiagnosticMessage(DiagID ID) {
-  switch (ID) {
-#define DIAG(ID, Level, Text) \
-    case DiagID::ID: \
-      return Text;
+  return getDiagnosticMessage(ID, DiagnosticLanguage::English);
+}
+
+const char* DiagnosticsEngine::getDiagnosticMessage(DiagID ID, DiagnosticLanguage Lang) {
+  // English messages
+  static const char* EnglishMessages[] = {
+#define DIAG(ID, Level, EnText, ZhText) EnText,
 #include "blocktype/Basic/DiagnosticIDs.def"
 #undef DIAG
+    "unknown diagnostic"
+  };
+  
+  // Chinese messages
+  static const char* ChineseMessages[] = {
+#define DIAG(ID, Level, EnText, ZhText) ZhText,
+#include "blocktype/Basic/DiagnosticIDs.def"
+#undef DIAG
+    "未知诊断"
+  };
+  
+  unsigned Index = static_cast<unsigned>(ID);
+  if (Index >= static_cast<unsigned>(DiagID::NUM_DIAGNOSTICS)) {
+    Index = static_cast<unsigned>(DiagID::NUM_DIAGNOSTICS);
+  }
+  
+  switch (Lang) {
+    case DiagnosticLanguage::Chinese:
+      return ChineseMessages[Index];
+    case DiagnosticLanguage::English:
+    case DiagnosticLanguage::Auto:
     default:
-      return "unknown diagnostic";
+      return EnglishMessages[Index];
   }
 }
 
+const char* DiagnosticsEngine::getSeverityName(DiagLevel Level) const {
+  if (Lang == DiagnosticLanguage::Chinese) {
+    switch (Level) {
+      case DiagLevel::Ignored: return "忽略";
+      case DiagLevel::Note:    return "备注";
+      case DiagLevel::Remark:  return "注记";
+      case DiagLevel::Warning: return "警告";
+      case DiagLevel::Error:   return "错误";
+      case DiagLevel::Fatal:   return "致命错误";
+    }
+  } else {
+    switch (Level) {
+      case DiagLevel::Ignored: return "ignored";
+      case DiagLevel::Note:    return "note";
+      case DiagLevel::Remark:  return "remark";
+      case DiagLevel::Warning: return "warning";
+      case DiagLevel::Error:   return "error";
+      case DiagLevel::Fatal:   return "fatal error";
+    }
+  }
+  return "unknown";
+}
+
 void DiagnosticsEngine::printDiagnostic(SourceLocation Loc, DiagLevel Level, llvm::StringRef Message) {
-  // Print location if valid
-  if (Loc.isValid()) {
-    // For now, just print a placeholder location
-    // TODO: Integrate with SourceManager for actual file:line:column
+  // Print location
+  if (SM && Loc.isValid()) {
+    SM->printLocation(OS, Loc);
+  } else if (Loc.isValid()) {
     OS << "<input>";
   } else {
     OS << "<unknown>";
   }
 
-  // Print severity
-  switch (Level) {
-    case DiagLevel::Ignored:
-      OS << ": ignored: ";
-      break;
-    case DiagLevel::Note:
-      OS << ": note: ";
-      break;
-    case DiagLevel::Remark:
-      OS << ": remark: ";
-      break;
-    case DiagLevel::Warning:
-      OS << ": warning: ";
-      break;
-    case DiagLevel::Error:
-      OS << ": error: ";
-      break;
-    case DiagLevel::Fatal:
-      OS << ": fatal error: ";
-      break;
+  // Print severity with color
+  if (OS.has_colors()) {
+    switch (Level) {
+      case DiagLevel::Error:
+      case DiagLevel::Fatal:
+        OS.changeColor(llvm::raw_ostream::RED, true);
+        break;
+      case DiagLevel::Warning:
+        OS.changeColor(llvm::raw_ostream::MAGENTA, true);
+        break;
+      case DiagLevel::Note:
+      case DiagLevel::Remark:
+        OS.changeColor(llvm::raw_ostream::CYAN);
+        break;
+      case DiagLevel::Ignored:
+        break;
+    }
+  }
+  
+  OS << ": " << getSeverityName(Level) << ": ";
+  
+  if (OS.has_colors()) {
+    OS.resetColor();
   }
 
   // Print message
   OS << Message << "\n";
+}
+
+void DiagnosticsEngine::printSourceLine(SourceLocation Loc) {
+  if (!SM) return;
+  
+  auto [Line, Column] = SM->getLineAndColumn(Loc);
+  if (Line == 0) return;
+  
+  // Get the source line
+  StringRef Data = SM->getCharacterData(Loc);
+  if (Data.empty()) return;
+  
+  // Find line start and end
+  const char *LineStart = Data.data();
+  while (LineStart > SM->getCharacterData(Loc).data() - 1000 && LineStart[-1] != '\n') {
+    --LineStart;
+  }
+  
+  const char *LineEnd = Data.data();
+  while (*LineEnd && *LineEnd != '\n' && *LineEnd != '\r') {
+    ++LineEnd;
+  }
+  
+  // Print line number
+  OS << std::to_string(Line) << " | ";
+  
+  // Print the source line
+  OS << StringRef(LineStart, LineEnd - LineStart) << "\n";
+  
+  // Print caret pointing to the column
+  OS << std::string(std::to_string(Line).size() + 3, ' ');
+  OS << StringRef(std::string(Column - 1, ' ') + "^");
+  
+  if (OS.has_colors()) {
+    OS.changeColor(llvm::raw_ostream::GREEN);
+  }
+  OS << "~\n";
+  if (OS.has_colors()) {
+    OS.resetColor();
+  }
 }
 
 } // namespace blocktype

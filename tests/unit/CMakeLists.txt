@@ -1,5 +1,6 @@
 add_executable(blocktype-tests
   Basic/SourceLocationTest.cpp
+  Basic/DiagnosticsTest.cpp
   AI/ResponseCacheTest.cpp
   AI/CostTrackerTest.cpp
   AI/AIOrchestratorTest.cpp

@@ -7,57 +7,116 @@
 //===----------------------------------------------------------------------===//
 //
 // This file defines diagnostic IDs for the BlockType compiler.
+// Format: DIAG(ID, Level, EnglishText, ChineseText)
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef DIAG
-#define DIAG(ID, Level, Text)
+#define DIAG(ID, Level, EnText, ZhText)
 #endif
 
 //===----------------------------------------------------------------------===//
 // Lexer Diagnostics
 //===----------------------------------------------------------------------===//
 
-DIAG(err_lex_invalid_char, Error, "invalid character in source code")
-DIAG(err_lex_invalid_identifier_start, Error, "invalid Unicode character in identifier start")
-DIAG(err_lex_unterminated_char, Error, "unterminated character constant")
-DIAG(err_lex_unterminated_string, Error, "unterminated string literal")
-DIAG(err_lex_unterminated_raw_string, Error, "unterminated raw string literal")
-DIAG(err_lex_invalid_raw_string, Error, "invalid raw string literal delimiter")
-DIAG(err_lex_unterminated_block_comment, Error, "unterminated block comment")
-DIAG(err_lex_invalid_utf8, Error, "invalid UTF-8 sequence")
+DIAG(err_lex_invalid_char, Error, \
+  "invalid character in source code", \
+  "源代码中存在无效字符")
+DIAG(err_lex_invalid_identifier_start, Error, \
+  "invalid Unicode character in identifier start", \
+  "标识符起始位置存在无效的 Unicode 字符")
+DIAG(err_lex_unterminated_char, Error, \
+  "unterminated character constant", \
+  "未终止的字符常量")
+DIAG(err_lex_unterminated_string, Error, \
+  "unterminated string literal", \
+  "未终止的字符串字面量")
+DIAG(err_lex_unterminated_raw_string, Error, \
+  "unterminated raw string literal", \
+  "未终止的原始字符串字面量")
+DIAG(err_lex_invalid_raw_string, Error, \
+  "invalid raw string literal delimiter", \
+  "无效的原始字符串分隔符")
+DIAG(err_lex_unterminated_block_comment, Error, \
+  "unterminated block comment", \
+  "未终止的块注释")
+DIAG(err_lex_invalid_utf8, Error, \
+  "invalid UTF-8 sequence", \
+  "无效的 UTF-8 序列")
 
 //===----------------------------------------------------------------------===//
 // Preprocessor Diagnostics
 //===----------------------------------------------------------------------===//
 
-DIAG(err_pp_unexpected_eof, Error, "unexpected end of file in preprocessor directive")
-DIAG(err_pp_invalid_directive, Error, "invalid preprocessor directive")
-DIAG(err_pp_expected_filename, Error, "expected filename after #include")
-DIAG(err_pp_expected_macro_name, Error, "expected macro name")
-DIAG(err_pp_macro_not_identifier, Error, "macro name must be an identifier")
-DIAG(err_pp_unterminated_macro_params, Error, "unterminated macro parameter list")
-DIAG(err_pp_unterminated_macro_args, Error, "unterminated macro argument list")
-DIAG(err_pp_file_not_found, Error, "file not found")
-DIAG(err_pp_cannot_read_file, Error, "cannot read file")
-DIAG(err_pp_circular_include, Error, "circular inclusion detected")
-DIAG(err_pp_if_without_endif, Error, "#if without #endif")
-DIAG(err_pp_elif_without_if, Error, "#elif without #if")
-DIAG(err_pp_else_without_if, Error, "#else without #if")
-DIAG(err_pp_endif_without_if, Error, "#endif without #if")
-DIAG(err_pp_duplicate_else, Error, "duplicate #else")
-DIAG(err_pp_elif_after_else, Error, "#elif after #else")
+DIAG(err_pp_unexpected_eof, Error, \
+  "unexpected end of file in preprocessor directive", \
+  "预处理指令中意外的文件结束")
+DIAG(err_pp_invalid_directive, Error, \
+  "invalid preprocessor directive", \
+  "无效的预处理指令")
+DIAG(err_pp_expected_filename, Error, \
+  "expected filename after #include", \
+  "#include 后需要文件名")
+DIAG(err_pp_expected_macro_name, Error, \
+  "expected macro name", \
+  "需要宏名称")
+DIAG(err_pp_macro_not_identifier, Error, \
+  "macro name must be an identifier", \
+  "宏名称必须是标识符")
+DIAG(err_pp_unterminated_macro_params, Error, \
+  "unterminated macro parameter list", \
+  "未终止的宏参数列表")
+DIAG(err_pp_unterminated_macro_args, Error, \
+  "unterminated macro argument list", \
+  "未终止的宏参数列表")
+DIAG(err_pp_file_not_found, Error, \
+  "file not found", \
+  "文件未找到")
+DIAG(err_pp_cannot_read_file, Error, \
+  "cannot read file", \
+  "无法读取文件")
+DIAG(err_pp_circular_include, Error, \
+  "circular inclusion detected", \
+  "检测到循环包含")
+DIAG(err_pp_if_without_endif, Error, \
+  "#if without #endif", \
+  "#if 没有 matching #endif")
+DIAG(err_pp_elif_without_if, Error, \
+  "#elif without #if", \
+  "#elif 没有匹配的 #if")
+DIAG(err_pp_else_without_if, Error, \
+  "#else without #if", \
+  "#else 没有匹配的 #if")
+DIAG(err_pp_endif_without_if, Error, \
+  "#endif without #if", \
+  "#endif 没有匹配的 #if")
+DIAG(err_pp_duplicate_else, Error, \
+  "duplicate #else", \
+  "重复的 #else")
+DIAG(err_pp_elif_after_else, Error, \
+  "#elif after #else", \
+  "#else 之后出现 #elif")
 
-DIAG(warn_pp_include_not_implemented, Warning, "#include not fully implemented")
-DIAG(warn_pp_embed_not_implemented, Warning, "#embed not implemented yet")
+DIAG(warn_pp_include_not_implemented, Warning, \
+  "#include not fully implemented", \
+  "#include 未完全实现")
+DIAG(warn_pp_embed_not_implemented, Warning, \
+  "#embed not implemented yet", \
+  "#embed 尚未实现")
 
-DIAG(note_pp_macro_defined_here, Note, "macro defined here")
+DIAG(note_pp_macro_defined_here, Note, \
+  "macro defined here", \
+  "宏在此定义")
 
 //===----------------------------------------------------------------------===//
 // General Diagnostics
 //===----------------------------------------------------------------------===//
 
-DIAG(err_unknown, Error, "unknown error")
-DIAG(err_not_implemented, Error, "feature not implemented")
+DIAG(err_unknown, Error, \
+  "unknown error", \
+  "未知错误")
+DIAG(err_not_implemented, Error, \
+  "feature not implemented", \
+  "功能未实现")
 
 #undef DIAG

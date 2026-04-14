@@ -4,7 +4,7 @@ namespace blocktype {
 
 /// Diagnostic IDs for lexer and preprocessor
 enum class DiagID {
-#define DIAG(ENUM, LEVEL, TEXT) ENUM,
+#define DIAG(ENUM, LEVEL, EN_TEXT, ZH_TEXT) ENUM,
 #include "blocktype/Basic/DiagnosticIDs.def"
 #undef DIAG
   NUM_DIAGNOSTICS
