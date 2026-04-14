@@ -48,6 +48,7 @@ add_subdirectory(src/AI)
 add_subdirectory(tools)
 add_subdirectory(tests/unit)
 add_subdirectory(tests/integration)
+add_subdirectory(tests/benchmark)
 
 # 安装配置
 install(DIRECTORY include/blocktype

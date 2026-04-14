@@ -1,0 +1,14 @@
+// Test: Lexer keyword recognition
+// RUN: %blocktype -dump-tokens %s 2>&1 | FileCheck %s
+
+// CHECK: kw_int
+int x;
+
+// CHECK: kw_return
+return 0;
+
+// CHECK: kw_if
+if (x) {}
+
+// CHECK: kw_else
+else {}

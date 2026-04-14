@@ -140,6 +140,10 @@ TOKEN(comma)            // ,
 TOKEN(semicolon)        // ;
 TOKEN(at)               // @
 
+// C++26 Contract attributes (B5.1)
+// These are handled as identifiers in attribute context
+// [[pre:]], [[post:]], [[assert:]] are contextual keywords
+
 // Preprocessor
 TOKEN(hash)             // #
 TOKEN(hashhash)         // ##

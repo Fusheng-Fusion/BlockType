@@ -1,0 +1,14 @@
+// Test: Chinese keyword recognition
+// RUN: %blocktype -dump-tokens %s 2>&1 | FileCheck %s
+
+// CHECK: kw_int
+整数 x;
+
+// CHECK: kw_return
+返回 0;
+
+// CHECK: kw_if
+如果 (x) {}
+
+// CHECK: kw_else
+否则 {}

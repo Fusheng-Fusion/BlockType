@@ -1,0 +1,14 @@
+// Test: Predefined macros
+// RUN: %blocktype -E %s 2>&1 | FileCheck %s
+
+// CHECK: __FILE__
+const char* file = __FILE__;
+
+// CHECK: __LINE__
+int line = __LINE__;
+
+// CHECK: __DATE__
+const char* date = __DATE__;
+
+// CHECK: __TIME__
+const char* time = __TIME__;

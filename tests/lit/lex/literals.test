@@ -1,0 +1,17 @@
+// Test: Literal tokens
+// RUN: %blocktype -dump-tokens %s 2>&1 | FileCheck %s
+
+// CHECK: numeric_constant
+42
+
+// CHECK: numeric_constant
+0x1Ab
+
+// CHECK: numeric_constant
+3.14159
+
+// CHECK: string_literal
+"hello world"
+
+// CHECK: char_constant
+'x'

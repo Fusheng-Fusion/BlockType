@@ -1,0 +1,23 @@
+// Test: Operator tokens
+// RUN: %blocktype -dump-tokens %s 2>&1 | FileCheck %s
+
+// CHECK: plus
++
+
+// CHECK: minus
+-
+
+// CHECK: star
+*
+
+// CHECK: slash
+/
+
+// CHECK: lessless
+<<
+
+// CHECK: greatergreater
+>>
+
+// CHECK: spaceship
+<=>
