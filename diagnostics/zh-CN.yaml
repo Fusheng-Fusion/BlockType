@@ -1,0 +1,63 @@
+# 中文诊断消息 (zh-CN)
+# BlockType 编译器诊断消息
+
+## 错误消息
+
+err_undeclared_var:
+  message: "未声明的变量 '%0'"
+  note: "请在使用前声明该变量"
+
+err_type_mismatch:
+  message: "类型不匹配：期望 '%0'，实际 '%1'"
+  note: "请检查表达式类型"
+
+err_invalid_token:
+  message: "无效的 Token '%0'"
+  note: "源代码中存在意外字符"
+
+err_syntax_error:
+  message: "语法错误：%0"
+  note: "请检查此位置附近的语法"
+
+err_semantic_error:
+  message: "语义错误：%0"
+  note: "请检查语义规则"
+
+## 警告消息
+
+warn_unused_var:
+  message: "未使用的变量 '%0'"
+  note: "考虑删除该变量"
+
+warn_deprecated:
+  message: "'%0' 已弃用"
+  note: "建议使用 '%1' 替代"
+
+warn_unreachable_code:
+  message: "不可达代码"
+  note: "该代码永远不会被执行"
+
+warn_implicit_conversion:
+  message: "隐式转换：从 '%0' 到 '%1'"
+  note: "考虑使用显式类型转换"
+
+## 提示消息
+
+note_previous_decl:
+  message: "'%0' 的前一次声明在此处"
+
+note_suggested_fix:
+  message: "建议修复：%0"
+
+note_see_declaration:
+  message: "参见 '%0' 的声明"
+
+## 备注
+
+remark_optimization:
+  message: "优化：%0"
+  note: "性能改进建议"
+
+remark_ai_suggestion:
+  message: "AI 建议：%0"
+  note: "考虑此改进方案"

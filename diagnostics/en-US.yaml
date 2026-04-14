@@ -1,0 +1,63 @@
+# English Diagnostic Messages (en-US)
+# BlockType Compiler Diagnostic Messages
+
+## Error Messages
+
+err_undeclared_var:
+  message: "undeclared variable '%0'"
+  note: "please declare this variable before use"
+
+err_type_mismatch:
+  message: "type mismatch: expected '%0', got '%1'"
+  note: "check expression types"
+
+err_invalid_token:
+  message: "invalid token '%0'"
+  note: "unexpected character in source code"
+
+err_syntax_error:
+  message: "syntax error: %0"
+  note: "check syntax near this location"
+
+err_semantic_error:
+  message: "semantic error: %0"
+  note: "check semantic rules"
+
+## Warning Messages
+
+warn_unused_var:
+  message: "unused variable '%0'"
+  note: "consider removing this variable"
+
+warn_deprecated:
+  message: "'%0' is deprecated"
+  note: "consider using '%1' instead"
+
+warn_unreachable_code:
+  message: "unreachable code"
+  note: "this code will never be executed"
+
+warn_implicit_conversion:
+  message: "implicit conversion from '%0' to '%1'"
+  note: "consider explicit cast"
+
+## Note Messages
+
+note_previous_decl:
+  message: "previous declaration of '%0' was here"
+
+note_suggested_fix:
+  message: "suggested fix: %0"
+
+note_see_declaration:
+  message: "see declaration of '%0'"
+
+## Remark Messages
+
+remark_optimization:
+  message: "optimization: %0"
+  note: "performance improvement suggestion"
+
+remark_ai_suggestion:
+  message: "AI suggestion: %0"
+  note: "consider this improvement"

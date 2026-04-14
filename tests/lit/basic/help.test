@@ -1,0 +1,5 @@
+// Test: blocktype --help
+// RUN: %blocktype --help | FileCheck %s
+
+// CHECK: OVERVIEW: BlockType Compiler
+// CHECK: USAGE: blocktype [options] <input file>

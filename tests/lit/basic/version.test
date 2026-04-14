@@ -1,0 +1,4 @@
+// Test: blocktype --version
+// RUN: %blocktype --version | FileCheck %s
+
+// CHECK: blocktype version {{[0-9]+\.[0-9]+\.[0-9]+}}

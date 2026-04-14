@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  LLVM_VERSION: 18
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh ${{ env.LLVM_VERSION }}
+          sudo apt-get install -y libcurl4-openssl-dev libicu-dev
+
+      - name: Cache CMake
+        uses: actions/cache@v3
+        with:
+          path: |
+            build/_deps
+            ~/.cache/ccache
+          key: ${{ runner.os }}-cmake-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake') }}
+          restore-keys: |
+            ${{ runner.os }}-cmake-
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR=/usr/lib/llvm-${{ env.LLVM_VERSION }}/cmake
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: cd build && ctest --output-on-failure -j$(nproc)
+
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM
+        run: |
+          brew install llvm@${{ env.LLVM_VERSION }} curl icu4c
+
+      - name: Cache CMake
+        uses: actions/cache@v3
+        with:
+          path: |
+            build/_deps
+            ~/Library/Caches/ccache
+          key: ${{ runner.os }}-cmake-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake') }}
+          restore-keys: |
+            ${{ runner.os }}-cmake-
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR=$(brew --prefix llvm@${{ env.LLVM_VERSION }})/lib/cmake/llvm
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: Test
+        run: cd build && ctest --output-on-failure -j$(sysctl -n hw.ncpu)
+
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh ${{ env.LLVM_VERSION }}
+
+      - name: Check formatting
+        run: |
+          find . -name '*.cpp' -o -name '*.h' | \
+            xargs clang-format-${{ env.LLVM_VERSION }} --dry-run --Werror
+
+      - name: Check clang-tidy
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target tidy 2>&1 | head -100
+        continue-on-error: true
