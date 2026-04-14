@@ -152,9 +152,19 @@ private:
   /// Checks if a character can continue an identifier.
   static bool isIdentifierContinueChar(char C);
 
+  /// Checks if a Unicode code point can start an identifier (UAX #31 ID_Start).
+  static bool isUnicodeIDStart(uint32_t CP);
+
+  /// Checks if a Unicode code point can continue an identifier (UAX #31 ID_Continue).
+  static bool isUnicodeIDContinue(uint32_t CP);
+
   /// Decodes a UTF-8 character starting at BufferPtr.
   /// Returns the code point and advances BufferPtr.
   uint32_t decodeUTF8Char();
+
+  /// Tries to recover from a lexical error by skipping to a synchronization point.
+  /// Returns true if recovery was successful.
+  bool recoverFromError();
 };
 
 } // namespace blocktype

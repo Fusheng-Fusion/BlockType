@@ -315,25 +315,43 @@ bool Lexer::formIdentifierToken(Token &Result, const char *TokStart) {
 //===----------------------------------------------------------------------===//
 
 bool Lexer::lexIdentifier(Token &Result, const char *Start) {
-  // Check for UTF-8 multi-byte character (Chinese)
+  // Check for UTF-8 multi-byte character (Unicode identifier)
   if (static_cast<unsigned char>(*BufferPtr) >= 0x80) {
-    // Chinese identifier or keyword
+    // Unicode identifier - use UAX #31 rules
+    bool isFirst = true;
     while (BufferPtr < BufferEnd) {
       unsigned char C = static_cast<unsigned char>(*BufferPtr);
       if (C < 0x80) {
         // ASCII character - check if valid for identifier
-        if (!std::isalnum(C) && C != '_')
-          break;
+        if (isFirst) {
+          if (!isIdentifierStartChar(C)) break;
+        } else {
+          if (!isIdentifierContinueChar(C)) break;
+        }
         ++BufferPtr;
       } else {
-        // UTF-8 multi-byte - consume the whole character
+        // UTF-8 multi-byte - decode and check UAX #31
+        const char *SavedPtr = BufferPtr;
         uint32_t CP = decodeUTF8Char();
-        // Check if valid identifier character (CJK characters are valid)
         if (CP == 0xFFFD) {
-          // Invalid UTF-8 sequence
+          // Invalid UTF-8 sequence - restore and break
+          BufferPtr = SavedPtr;
           break;
         }
+        // Check UAX #31 compliance
+        if (isFirst) {
+          if (!isUnicodeIDStart(CP)) {
+            BufferPtr = SavedPtr;
+            break;
+          }
+        } else {
+          if (!isUnicodeIDContinue(CP)) {
+            BufferPtr = SavedPtr;
+            break;
+          }
+        }
       }
+      isFirst = false;
     }
   } else {
     // ASCII identifier
@@ -885,6 +903,85 @@ bool Lexer::isIdentifierStartChar(char C) {
 
 bool Lexer::isIdentifierContinueChar(char C) {
   return std::isalnum(static_cast<unsigned char>(C)) || C == '_';
+}
+
+//===----------------------------------------------------------------------===//
+// UAX #31 Unicode Identifier Support
+//===----------------------------------------------------------------------===//
+
+bool Lexer::isUnicodeIDStart(uint32_t CP) {
+  // ASCII letters and underscore
+  if (CP < 0x80) {
+    return std::isalpha(static_cast<unsigned char>(CP)) || CP == '_';
+  }
+
+  // Common ID_Start ranges (simplified UAX #31 implementation)
+  // CJK Unified Ideographs: U+4E00..U+9FFF
+  if (CP >= 0x4E00 && CP <= 0x9FFF) return true;
+  // CJK Unified Ideographs Extension A: U+3400..U+4DBF
+  if (CP >= 0x3400 && CP <= 0x4DBF) return true;
+  // CJK Unified Ideographs Extension B-F: U+20000..U+2CEAF
+  if (CP >= 0x20000 && CP <= 0x2CEAF) return true;
+  // CJK Compatibility Ideographs: U+F900..U+FAFF
+  if (CP >= 0xF900 && CP <= 0xFAFF) return true;
+
+  // Latin Extended Additional: U+1E00..U+1EFF
+  if (CP >= 0x1E00 && CP <= 0x1EFF) return true;
+  // Latin Extended-A: U+0100..U+017F
+  if (CP >= 0x0100 && CP <= 0x017F) return true;
+  // Latin Extended-B: U+0180..U+024F
+  if (CP >= 0x0180 && CP <= 0x024F) return true;
+
+  // Greek and Coptic: U+0370..U+03FF
+  if (CP >= 0x0370 && CP <= 0x03FF) return true;
+  // Cyrillic: U+0400..U+04FF
+  if (CP >= 0x0400 && CP <= 0x04FF) return true;
+  // Arabic: U+0600..U+06FF
+  if (CP >= 0x0600 && CP <= 0x06FF) return true;
+  // Hebrew: U+0590..U+05FF
+  if (CP >= 0x0590 && CP <= 0x05FF) return true;
+
+  // Thai: U+0E00..U+0E7F
+  if (CP >= 0x0E00 && CP <= 0x0E7F) return true;
+  // Hiragana: U+3040..U+309F
+  if (CP >= 0x3040 && CP <= 0x309F) return true;
+  // Katakana: U+30A0..U+30FF
+  if (CP >= 0x30A0 && CP <= 0x30FF) return true;
+  // Hangul Syllables: U+AC00..U+D7AF
+  if (CP >= 0xAC00 && CP <= 0xD7AF) return true;
+
+  return false;
+}
+
+bool Lexer::isUnicodeIDContinue(uint32_t CP) {
+  // ID_Continue includes ID_Start plus digits and some punctuation
+  if (isUnicodeIDStart(CP)) return true;
+
+  // ASCII digits
+  if (CP >= '0' && CP <= '9') return true;
+
+  // Combining Diacritical Marks: U+0300..U+036F
+  if (CP >= 0x0300 && CP <= 0x036F) return true;
+  // Combining Diacritical Marks Extended: U+1AB0..U+1AFF
+  if (CP >= 0x1AB0 && CP <= 0x1AFF) return true;
+
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
+// Error Recovery
+//===----------------------------------------------------------------------===//
+
+bool Lexer::recoverFromError() {
+  // Skip to the next synchronization point (whitespace, newline, or semicolon)
+  while (BufferPtr < BufferEnd) {
+    char C = *BufferPtr;
+    if (std::isspace(static_cast<unsigned char>(C)) || C == ';' || C == '}') {
+      return true;
+    }
+    ++BufferPtr;
+  }
+  return false;
 }
 
 uint32_t Lexer::decodeUTF8Char() {

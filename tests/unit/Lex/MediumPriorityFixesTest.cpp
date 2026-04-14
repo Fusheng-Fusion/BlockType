@@ -223,3 +223,81 @@ TEST_F(MediumPriorityFixesTest, VariadicMacroMultipleArgs) {
   EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
   EXPECT_EQ(Tok.getText(), "sum");
 }
+
+// Test 16: UAX #31 - CJK identifier
+TEST_F(MediumPriorityFixesTest, UAX31CJKIdentifier) {
+  PP->enterSourceFile("test.cpp", "变量名 整数值\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "变量名");
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "整数值");  // Not a keyword
+}
+
+// Test 17: UAX #31 - Mixed ASCII and Unicode identifier
+TEST_F(MediumPriorityFixesTest, UAX31MixedIdentifier) {
+  PP->enterSourceFile("test.cpp", "变量_1 变量2\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "变量_1");
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "变量2");
+}
+
+// Test 18: UAX #31 - Greek letters
+TEST_F(MediumPriorityFixesTest, UAX31GreekIdentifier) {
+  PP->enterSourceFile("test.cpp", "α β γ\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "α");
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "β");
+}
+
+// Test 19: UAX #31 - Cyrillic letters
+TEST_F(MediumPriorityFixesTest, UAX31CyrillicIdentifier) {
+  PP->enterSourceFile("test.cpp", "привет мир\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "привет");
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "мир");
+}
+
+// Test 20: Error recovery - skip to synchronization point
+TEST_F(MediumPriorityFixesTest, ErrorRecovery) {
+  Lexer Lex(SM, *Diags, "int x @#$% y;\n", SM.createMainFileID("test.cpp", "int x @#$% y;\n"));
+  
+  Token Tok;
+  ASSERT_TRUE(Lex.lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::kw_int);
+  
+  ASSERT_TRUE(Lex.lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "x");
+  
+  // The lexer should handle the invalid characters
+  // and continue to the next valid token
+  while (Lex.lexToken(Tok)) {
+    if (Tok.is(TokenKind::identifier) && Tok.getText() == "y") {
+      break;
+    }
+  }
+  EXPECT_EQ(Tok.getText(), "y");
+}
