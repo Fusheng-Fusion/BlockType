@@ -27,6 +27,3 @@ A C++26 compiler with bilingual support (Chinese/English) built with AI assistan
 
 This project is under active development. See `plan/` directory for the development plan.
 
-## License
-
-MIT License
