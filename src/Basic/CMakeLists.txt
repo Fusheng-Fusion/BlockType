@@ -2,6 +2,7 @@ add_library(blocktype-basic
   Diagnostics.cpp
   FileManager.cpp
   Language.cpp
+  SourceManager.cpp
   Translation.cpp
   Unicode.cpp
 )

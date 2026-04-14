@@ -3,6 +3,30 @@
 
 ## Error Messages
 
+err_lex_invalid_char:
+  message: "invalid character '%0' in source code"
+  note: "unexpected character"
+
+err_lex_unterminated_string:
+  message: "unterminated string literal"
+  note: "missing closing quote"
+
+err_lex_unterminated_char:
+  message: "unterminated character constant"
+  note: "missing closing quote"
+
+err_lex_unterminated_block_comment:
+  message: "unterminated block comment"
+  note: "missing */"
+
+err_lex_invalid_raw_string:
+  message: "invalid raw string literal"
+  note: "check raw string syntax"
+
+err_lex_unterminated_raw_string:
+  message: "unterminated raw string literal"
+  note: "missing closing delimiter"
+
 err_undeclared_var:
   message: "undeclared variable '%0'"
   note: "please declare this variable before use"

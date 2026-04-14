@@ -1,0 +1,292 @@
+//===--- Preprocessor.h - Preprocessor Interface --------------*- C++ -*-===//
+//
+// Part of the BlockType Project, under the Apache License v2.0 with LLVM
+// Exceptions. See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// This file defines the Preprocessor class which handles preprocessing
+// directives, macro expansion, and file inclusion.
+//
+//===----------------------------------------------------------------------===//
+
+#pragma once
+
+#include "blocktype/Basic/LLVM.h"
+#include "blocktype/Basic/SourceLocation.h"
+#include "blocktype/Basic/Language.h"
+#include "blocktype/Lex/Token.h"
+#include <memory>
+#include <vector>
+#include <map>
+#include <set>
+
+namespace blocktype {
+
+class Lexer;
+class SourceManager;
+class DiagnosticsEngine;
+class HeaderSearch;
+class MacroInfo;
+
+/// MacroInfo - Stores information about a macro definition.
+class MacroInfo {
+  SourceLocation DefinitionLocation;
+  std::vector<Token> ReplacementTokens;
+  std::vector<StringRef> ParameterList;
+  bool IsFunctionLike : 1;
+  bool IsVariadic : 1;
+  bool IsPredefined : 1;
+  bool IsUsed : 1;
+
+public:
+  MacroInfo(SourceLocation Loc)
+      : DefinitionLocation(Loc), IsFunctionLike(false), IsVariadic(false),
+        IsPredefined(false), IsUsed(false) {}
+
+  // Accessors
+  SourceLocation getDefinitionLocation() const { return DefinitionLocation; }
+
+  bool isFunctionLike() const { return IsFunctionLike; }
+  void setFunctionLike(bool FL) { IsFunctionLike = FL; }
+
+  bool isVariadic() const { return IsVariadic; }
+  void setVariadic(bool V) { IsVariadic = V; }
+
+  bool isPredefined() const { return IsPredefined; }
+  void setPredefined(bool PD) { IsPredefined = PD; }
+
+  bool isUsed() const { return IsUsed; }
+  void setUsed(bool U) { IsUsed = U; }
+
+  // Replacement tokens
+  const std::vector<Token> &getReplacementTokens() const { return ReplacementTokens; }
+  void addToken(const Token &T) { ReplacementTokens.push_back(T); }
+  void setReplacementTokens(ArrayRef<Token> Tokens) {
+    ReplacementTokens.assign(Tokens.begin(), Tokens.end());
+  }
+
+  // Parameters (for function-like macros)
+  unsigned getNumParameters() const { return static_cast<unsigned>(ParameterList.size()); }
+  StringRef getParameterName(unsigned i) const { return ParameterList[i]; }
+  void addParameter(StringRef Name) { ParameterList.push_back(Name); }
+  bool isParameter(StringRef Name) const;
+
+  // Utility
+  bool isIdenticalTo(const MacroInfo *Other) const;
+};
+
+/// Preprocessor - Handles C++ preprocessing.
+class Preprocessor {
+  SourceManager &SM;
+  DiagnosticsEngine &Diags;
+  HeaderSearch *Headers;
+  LanguageManager *LangMgr;
+
+  // Include stack
+  struct IncludeStackEntry {
+    std::unique_ptr<Lexer> Lex;
+    SourceLocation IncludeLoc;
+    StringRef Filename;
+  };
+  std::vector<IncludeStackEntry> IncludeStack;
+  Lexer *CurLexer = nullptr;
+
+  // Macro table
+  std::map<StringRef, std::unique_ptr<MacroInfo>> Macros;
+
+  // Predefined macros
+  std::set<StringRef> PredefinedMacros;
+
+  // Conditional compilation stack
+  struct ConditionalInfo {
+    bool WasSkipping;      // Were we skipping before this #if?
+    bool FoundNonSkip;     // Have we found a true branch?
+    bool FoundElse;        // Have we seen #else?
+    SourceLocation IfLoc;  // Location of the #if
+  };
+  std::vector<ConditionalInfo> ConditionalStack;
+
+  // Skipping state
+  bool Skipping = false;
+
+  // Current language mode
+  Language CurrentLang = Language::English;
+
+public:
+  Preprocessor(SourceManager &SM, DiagnosticsEngine &Diags,
+               HeaderSearch *HS = nullptr, LanguageManager *LM = nullptr);
+  ~Preprocessor();
+
+  // Non-copyable
+  Preprocessor(const Preprocessor &) = delete;
+  Preprocessor &operator=(const Preprocessor &) = delete;
+
+  //===--------------------------------------------------------------------===//
+  // Main entry points
+  //===--------------------------------------------------------------------===//
+
+  /// Lexes the next token from the preprocessed stream.
+  bool lexToken(Token &Result);
+
+  /// Enters a source file for preprocessing.
+  void enterSourceFile(StringRef Filename, StringRef Content);
+
+  /// Returns true if we've reached the end of all files.
+  bool isEOF() const;
+
+  //===--------------------------------------------------------------------===//
+  // Macro management
+  //===--------------------------------------------------------------------===//
+
+  /// Defines a macro.
+  void defineMacro(StringRef Name, StringRef Body);
+
+  /// Defines a macro with MacroInfo.
+  void defineMacro(StringRef Name, std::unique_ptr<MacroInfo> MI);
+
+  /// Undefines a macro.
+  void undefMacro(StringRef Name);
+
+  /// Returns true if a macro is defined.
+  bool isMacroDefined(StringRef Name) const;
+
+  /// Returns the macro info for a macro, or nullptr.
+  MacroInfo *getMacroInfo(StringRef Name) const;
+
+  /// Returns all defined macro names.
+  std::vector<StringRef> getMacroNames() const;
+
+  //===--------------------------------------------------------------------===//
+  // Predefined macros
+  //===--------------------------------------------------------------------===//
+
+  /// Initializes predefined macros.
+  void initializePredefinedMacros();
+
+  /// Defines a predefined macro.
+  void definePredefinedMacro(StringRef Name, StringRef Value);
+
+  //===--------------------------------------------------------------------===//
+  // Include handling
+  //===--------------------------------------------------------------------===//
+
+  /// Handles #include directive.
+  void handleIncludeDirective(Token &IncludeTok, bool IsAngled);
+
+  /// Handles #embed directive (C++26).
+  void handleEmbedDirective(Token &EmbedTok);
+
+  //===--------------------------------------------------------------------===//
+  // Conditional compilation
+  //===--------------------------------------------------------------------===//
+
+  /// Returns true if we're skipping tokens.
+  bool isSkipping() const { return Skipping; }
+
+  /// Handles #if directive.
+  void handleIfDirective(Token &IfTok);
+
+  /// Handles #ifdef directive.
+  void handleIfdefDirective(Token &IfdefTok);
+
+  /// Handles #ifndef directive.
+  void handleIfndefDirective(Token &IfndefTok);
+
+  /// Handles #elif directive.
+  void handleElifDirective(Token &ElifTok);
+
+  /// Handles #else directive.
+  void handleElseDirective(Token &ElseTok);
+
+  /// Handles #endif directive.
+  void handleEndifDirective(Token &EndifTok);
+
+  //===--------------------------------------------------------------------===//
+  // Other directives
+  //===--------------------------------------------------------------------===//
+
+  /// Handles #define directive.
+  void handleDefineDirective(Token &DefineTok);
+
+  /// Handles #undef directive.
+  void handleUndefDirective(Token &UndefTok);
+
+  /// Handles #error directive.
+  void handleErrorDirective(Token &ErrorTok);
+
+  /// Handles #warning directive.
+  void handleWarningDirective(Token &WarningTok);
+
+  /// Handles #pragma directive.
+  void handlePragmaDirective(Token &PragmaTok);
+
+  /// Handles #line directive.
+  void handleLineDirective(Token &LineTok);
+
+  //===--------------------------------------------------------------------===//
+  // Bilingual support
+  //===--------------------------------------------------------------------===//
+
+  /// Handles bilingual (Chinese) preprocessor directive.
+  void handleBilingualDirective(Token &DirectiveTok);
+
+  /// Returns the current language mode.
+  Language getCurrentLanguage() const { return CurrentLang; }
+
+  /// Sets the current language mode.
+  void setCurrentLanguage(Language L) { CurrentLang = L; }
+
+  //===--------------------------------------------------------------------===//
+  // Accessors
+  //===--------------------------------------------------------------------===//
+
+  SourceManager &getSourceManager() const { return SM; }
+  DiagnosticsEngine &getDiagnostics() const { return Diags; }
+  HeaderSearch *getHeaderSearch() const { return Headers; }
+
+private:
+  //===--------------------------------------------------------------------===//
+  // Internal helpers
+  //===--------------------------------------------------------------------===//
+
+  /// Lexes a token from the current lexer.
+  bool lexFromLexer(Token &Result);
+
+  /// Handles a preprocessor directive.
+  void handleDirective(Token &HashTok);
+
+  /// Expands a macro.
+  bool expandMacro(Token &Result, StringRef MacroName, MacroInfo *MI);
+
+  /// Parses a macro definition.
+  std::unique_ptr<MacroInfo> parseMacroDefinition(Token &MacroNameTok);
+
+  /// Parses macro arguments.
+  std::vector<std::vector<Token>> parseMacroArguments(MacroInfo *MI);
+
+  /// Substitutes macro parameters.
+  void substituteParameters(std::vector<Token> &Tokens, MacroInfo *MI,
+                            const std::vector<std::vector<Token>> &Args);
+
+  /// Stringifies a token (# operator).
+  Token stringifyToken(const Token &T);
+
+  /// Concatenates two tokens (## operator).
+  Token concatenateTokens(const Token &T1, const Token &T2);
+
+  /// Evaluates a preprocessor expression.
+  bool evaluateCondition(ArrayRef<Token> Tokens);
+
+  /// Skips until #endif, #else, or #elif.
+  void skipConditionalBlock();
+
+  /// Returns the directive name from a token.
+  StringRef getDirectiveName(Token &Tok);
+
+  /// Maps Chinese directive to English.
+  StringRef mapChineseDirective(StringRef ZhDirective);
+};
+
+} // namespace blocktype

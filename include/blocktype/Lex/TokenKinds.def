@@ -1,0 +1,367 @@
+//===--- TokenKinds.def - Token and Keyword Definitions --------*- C++ -*-===//
+//
+// Part of the BlockType Project, under the Apache License v2.0 with LLVM
+// Exceptions. See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// This file defines the Token kinds and keywords for the BlockType lexer.
+// It uses macro definitions to allow different consumers to process the
+// token list differently.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef TOKEN
+#define TOKEN(X)
+#endif
+
+#ifndef KEYWORD
+#define KEYWORD(X, Y)
+#endif
+
+#ifndef KEYWORD_ZH
+#define KEYWORD_ZH(X, Y)
+#endif
+
+//===----------------------------------------------------------------------===//
+// Token Kinds
+//===----------------------------------------------------------------------===//
+
+// Special tokens
+TOKEN(unknown)          // Unknown character
+TOKEN(eof)              // End of file
+TOKEN(eod)              // End of directive
+TOKEN(code_completion)  // Code completion marker
+
+// Identifiers and Literals
+TOKEN(identifier)       // Identifier
+TOKEN(numeric_constant) // Numeric literal
+TOKEN(char_constant)    // Character literal 'c'
+TOKEN(wide_char_constant)    // Wide character L'c'
+TOKEN(utf8_char_constant)    // UTF-8 character u8'c' (C++20)
+TOKEN(utf16_char_constant)   // UTF-16 character u'c' (C++11)
+TOKEN(utf32_char_constant)   // UTF-32 character U'c' (C++11)
+TOKEN(string_literal)        // String literal "..."
+TOKEN(wide_string_literal)   // Wide string L"..."
+TOKEN(utf8_string_literal)   // UTF-8 string u8"..." (C++11)
+TOKEN(utf16_string_literal)  // UTF-16 string u"..." (C++11)
+TOKEN(utf32_string_literal)  // UTF-32 string U"..." (C++11)
+
+// Comments (optional, for documentation tools)
+TOKEN(comment)          // Comment token
+
+//===----------------------------------------------------------------------===//
+// Operators
+//===----------------------------------------------------------------------===//
+
+// Arithmetic operators
+TOKEN(plus)             // +
+TOKEN(minus)            // -
+TOKEN(star)             // *
+TOKEN(slash)            // /
+TOKEN(percent)          // %
+
+// Bitwise operators
+TOKEN(caret)            // ^
+TOKEN(amp)              // &
+TOKEN(pipe)             // |
+TOKEN(tilde)            // ~
+
+// Logical operators
+TOKEN(exclaim)          // !
+TOKEN(ampamp)           // &&
+TOKEN(pipepipe)         // ||
+
+// Comparison operators
+TOKEN(less)             // <
+TOKEN(greater)          // >
+TOKEN(lessequal)        // <=
+TOKEN(greaterequal)     // >=
+TOKEN(equalequal)       // ==
+TOKEN(exclaimequal)     // !=
+TOKEN(spaceship)        // <=> (C++20)
+
+// Assignment operators
+TOKEN(equal)            // =
+TOKEN(plusequal)        // +=
+TOKEN(minusequal)       // -=
+TOKEN(starequal)        // *=
+TOKEN(slashequal)       // /=
+TOKEN(percentequal)     // %=
+TOKEN(caretequal)       // ^=
+TOKEN(ampequal)         // &=
+TOKEN(pipeequal)        // |=
+TOKEN(lesslessequal)    // <<=
+TOKEN(greatergreaterequal) // >>=
+
+// Shift operators
+TOKEN(lessless)         // <<
+TOKEN(greatergreater)   // >>
+
+// Increment/Decrement
+TOKEN(plusplus)         // ++
+TOKEN(minusminus)       // --
+
+// Member access
+TOKEN(period)           // .
+TOKEN(arrow)            // ->
+TOKEN(periodstar)       // .*
+TOKEN(arrowstar)        // ->*
+
+// Conditional operator
+TOKEN(question)         // ?
+
+// Other operators
+TOKEN(colon)            // :
+TOKEN(coloncolon)       // ::
+
+//===----------------------------------------------------------------------===//
+// Punctuation
+//===----------------------------------------------------------------------===//
+
+// Brackets
+TOKEN(l_paren)          // (
+TOKEN(r_paren)          // )
+TOKEN(l_brace)          // {
+TOKEN(r_brace)          // }
+TOKEN(l_square)         // [
+TOKEN(r_square)         // ]
+
+// Other punctuation
+TOKEN(ellipsis)         // ...
+TOKEN(comma)            // ,
+TOKEN(semicolon)        // ;
+TOKEN(at)               // @
+
+// Preprocessor
+TOKEN(hash)             // #
+TOKEN(hashhash)         // ##
+TOKEN(hashat)           // #@ (MSVC extension)
+
+// C++26 new tokens
+TOKEN(dotdot)           // .. (placeholder pattern)
+
+//===----------------------------------------------------------------------===//
+// Keywords - C Keywords
+//===----------------------------------------------------------------------===//
+
+#if defined(KEYWORD)
+#define KEYCXX 0
+#define KEYCXX11 1
+#define KEYCXX20 2
+#define KEYCXX26 3
+#define KEYALL 4
+#define KEYNOCXX 5
+#endif
+
+KEYWORD(auto, KEYALL)
+KEYWORD(break, KEYALL)
+KEYWORD(case, KEYALL)
+KEYWORD(char, KEYALL)
+KEYWORD(const, KEYALL)
+KEYWORD(continue, KEYALL)
+KEYWORD(default, KEYALL)
+KEYWORD(do, KEYALL)
+KEYWORD(double, KEYALL)
+KEYWORD(else, KEYALL)
+KEYWORD(enum, KEYALL)
+KEYWORD(extern, KEYALL)
+KEYWORD(float, KEYALL)
+KEYWORD(for, KEYALL)
+KEYWORD(goto, KEYALL)
+KEYWORD(if, KEYALL)
+KEYWORD(inline, KEYALL)
+KEYWORD(int, KEYALL)
+KEYWORD(long, KEYALL)
+KEYWORD(register, KEYALL)
+KEYWORD(restrict, KEYALL)
+KEYWORD(return, KEYALL)
+KEYWORD(short, KEYALL)
+KEYWORD(signed, KEYALL)
+KEYWORD(sizeof, KEYALL)
+KEYWORD(static, KEYALL)
+KEYWORD(struct, KEYALL)
+KEYWORD(switch, KEYALL)
+KEYWORD(typedef, KEYALL)
+KEYWORD(union, KEYALL)
+KEYWORD(unsigned, KEYALL)
+KEYWORD(void, KEYALL)
+KEYWORD(volatile, KEYALL)
+KEYWORD(while, KEYALL)
+
+//===----------------------------------------------------------------------===//
+// Keywords - C++ Keywords
+//===----------------------------------------------------------------------===//
+
+KEYWORD(alignas, KEYCXX)
+KEYWORD(alignof, KEYCXX)
+KEYWORD(and, KEYCXX)
+KEYWORD(and_eq, KEYCXX)
+KEYWORD(asm, KEYALL)
+KEYWORD(atomic_cancel, KEYCXX)
+KEYWORD(atomic_commit, KEYCXX)
+KEYWORD(atomic_noexcept, KEYCXX)
+KEYWORD(bitand, KEYCXX)
+KEYWORD(bitor, KEYCXX)
+KEYWORD(bool, KEYALL)
+KEYWORD(catch, KEYCXX)
+KEYWORD(char8_t, KEYCXX)
+KEYWORD(char16_t, KEYCXX)
+KEYWORD(char32_t, KEYCXX)
+KEYWORD(class, KEYCXX)
+KEYWORD(compl, KEYCXX)
+KEYWORD(concept, KEYCXX)      // C++20
+KEYWORD(const_cast, KEYCXX)
+KEYWORD(consteval, KEYCXX)    // C++20
+KEYWORD(constexpr, KEYCXX)
+KEYWORD(constinit, KEYCXX)    // C++20
+KEYWORD(co_await, KEYCXX)     // C++20
+KEYWORD(co_return, KEYCXX)    // C++20
+KEYWORD(co_yield, KEYCXX)     // C++20
+KEYWORD(decltype, KEYCXX)
+KEYWORD(delete, KEYCXX)
+KEYWORD(dynamic_cast, KEYCXX)
+KEYWORD(explicit, KEYCXX)
+KEYWORD(export, KEYCXX)
+KEYWORD(false, KEYALL)
+KEYWORD(friend, KEYCXX)
+KEYWORD(mutable, KEYCXX)
+KEYWORD(namespace, KEYCXX)
+KEYWORD(new, KEYCXX)
+KEYWORD(noexcept, KEYCXX)
+KEYWORD(not, KEYCXX)
+KEYWORD(not_eq, KEYCXX)
+KEYWORD(nullptr, KEYCXX)
+KEYWORD(operator, KEYCXX)
+KEYWORD(or, KEYCXX)
+KEYWORD(or_eq, KEYCXX)
+KEYWORD(private, KEYCXX)
+KEYWORD(protected, KEYCXX)
+KEYWORD(public, KEYCXX)
+KEYWORD(reflexpr, KEYCXX)     // C++26 reflection
+KEYWORD(reinterpret_cast, KEYCXX)
+KEYWORD(requires, KEYCXX)     // C++20
+KEYWORD(static_assert, KEYCXX)
+KEYWORD(static_cast, KEYCXX)
+KEYWORD(template, KEYCXX)
+KEYWORD(this, KEYCXX)
+KEYWORD(thread_local, KEYCXX)
+KEYWORD(throw, KEYCXX)
+KEYWORD(true, KEYALL)
+KEYWORD(try, KEYCXX)
+KEYWORD(typename, KEYCXX)
+KEYWORD(using, KEYCXX)
+KEYWORD(virtual, KEYCXX)
+KEYWORD(wchar_t, KEYALL)
+KEYWORD(xor, KEYCXX)
+KEYWORD(xor_eq, KEYCXX)
+
+//===----------------------------------------------------------------------===//
+// Keywords - C++20/26 Specific
+//===----------------------------------------------------------------------===//
+
+// Contextual keywords (not reserved, but have special meaning in context)
+// override, final - handled as identifiers with special checking
+
+//===----------------------------------------------------------------------===//
+// Chinese Keywords (Bilingual Support)
+//===----------------------------------------------------------------------===//
+
+// Control Flow
+KEYWORD_ZH(如果, kw_if)           // if
+KEYWORD_ZH(否则, kw_else)         // else
+KEYWORD_ZH(选择, kw_switch)       // switch
+KEYWORD_ZH(情况, kw_case)         // case
+KEYWORD_ZH(默认, kw_default)      // default
+
+// Loops
+KEYWORD_ZH(当, kw_while)          // while
+KEYWORD_ZH(循环, kw_for)          // for
+KEYWORD_ZH(执行, kw_do)           // do
+
+// Jump
+KEYWORD_ZH(跳出, kw_break)        // break
+KEYWORD_ZH(继续, kw_continue)     // continue
+KEYWORD_ZH(返回, kw_return)       // return
+KEYWORD_ZH(跳转, kw_goto)         // goto
+
+// Types
+KEYWORD_ZH(整数, kw_int)          // int
+KEYWORD_ZH(短整数, kw_short)      // short
+KEYWORD_ZH(长整数, kw_long)       // long
+KEYWORD_ZH(浮点数, kw_float)      // float
+KEYWORD_ZH(双精度, kw_double)     // double
+KEYWORD_ZH(字符, kw_char)         // char
+KEYWORD_ZH(布尔, kw_bool)         // bool
+KEYWORD_ZH(空, kw_void)           // void
+KEYWORD_ZH(自动, kw_auto)         // auto
+
+// Type Modifiers
+KEYWORD_ZH(常量, kw_const)        // const
+KEYWORD_ZH(静态, kw_static)       // static
+KEYWORD_ZH(外部, kw_extern)       // extern
+KEYWORD_ZH(易变, kw_volatile)     // volatile
+KEYWORD_ZH(有符号, kw_signed)     // signed
+KEYWORD_ZH(无符号, kw_unsigned)   // unsigned
+
+// Compound Types
+KEYWORD_ZH(结构体, kw_struct)     // struct
+KEYWORD_ZH(类, kw_class)          // class
+KEYWORD_ZH(联合体, kw_union)      // union
+KEYWORD_ZH(枚举, kw_enum)         // enum
+
+// Scope and Declaration
+KEYWORD_ZH(命名空间, kw_namespace)  // namespace
+KEYWORD_ZH(使用, kw_using)          // using
+KEYWORD_ZH(类型定义, kw_typedef)    // typedef
+
+// Generics
+KEYWORD_ZH(模板, kw_template)      // template
+KEYWORD_ZH(类型名, kw_typename)    // typename
+
+// Access Control
+KEYWORD_ZH(公有, kw_public)        // public
+KEYWORD_ZH(私有, kw_private)       // private
+KEYWORD_ZH(保护, kw_protected)     // protected
+
+// Polymorphism
+KEYWORD_ZH(虚, kw_virtual)         // virtual
+
+// Memory
+KEYWORD_ZH(新建, kw_new)           // new
+KEYWORD_ZH(删除, kw_delete)        // delete
+
+// Exception
+KEYWORD_ZH(尝试, kw_try)           // try
+KEYWORD_ZH(捕获, kw_catch)         // catch
+KEYWORD_ZH(抛出, kw_throw)         // throw
+
+// Literals
+KEYWORD_ZH(真, kw_true)            // true
+KEYWORD_ZH(假, kw_false)           // false
+KEYWORD_ZH(空指针, kw_nullptr)     // nullptr
+
+// Operators
+KEYWORD_ZH(大小, kw_sizeof)        // sizeof
+
+// C++20/26 Features
+KEYWORD_ZH(概念, kw_concept)       // concept
+KEYWORD_ZH(要求, kw_requires)      // requires
+KEYWORD_ZH(协程等待, kw_co_await)  // co_await
+KEYWORD_ZH(协程返回, kw_co_return) // co_return
+KEYWORD_ZH(协程产出, kw_co_yield)  // co_yield
+
+//===----------------------------------------------------------------------===//
+// Cleanup
+//===----------------------------------------------------------------------===//
+
+#undef TOKEN
+#undef KEYWORD
+#undef KEYWORD_ZH
+#undef KEYCXX
+#undef KEYCXX11
+#undef KEYCXX20
+#undef KEYCXX26
+#undef KEYALL
+#undef KEYNOCXX
