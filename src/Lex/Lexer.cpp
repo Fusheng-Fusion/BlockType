@@ -355,7 +355,7 @@ bool Lexer::lexNumericConstant(Token &Result, const char *Start) {
   if (*BufferPtr == '0' && BufferPtr + 1 < BufferEnd) {
     char Next = std::tolower(static_cast<unsigned char>(*(BufferPtr + 1)));
     if (Next == 'x' || Next == 'X') {
-      // Hexadecimal
+      // Hexadecimal (integer or floating-point)
       BufferPtr += 2;
       while (BufferPtr < BufferEnd) {
         char C = std::tolower(static_cast<unsigned char>(*BufferPtr));
@@ -363,6 +363,38 @@ bool Lexer::lexNumericConstant(Token &Result, const char *Start) {
           ++BufferPtr;
         } else {
           break;
+        }
+      }
+      
+      // Check for hexadecimal floating-point fraction
+      if (BufferPtr < BufferEnd && *BufferPtr == '.') {
+        ++BufferPtr;
+        while (BufferPtr < BufferEnd) {
+          char C = std::tolower(static_cast<unsigned char>(*BufferPtr));
+          if (std::isxdigit(static_cast<unsigned char>(C)) || C == '\'') {
+            ++BufferPtr;
+          } else {
+            break;
+          }
+        }
+      }
+      
+      // Check for hexadecimal floating-point exponent (p/P)
+      if (BufferPtr < BufferEnd) {
+        char C = std::tolower(static_cast<unsigned char>(*BufferPtr));
+        if (C == 'p') {
+          ++BufferPtr;
+          if (BufferPtr < BufferEnd && (*BufferPtr == '+' || *BufferPtr == '-')) {
+            ++BufferPtr;
+          }
+          while (BufferPtr < BufferEnd) {
+            char C2 = *BufferPtr;
+            if (std::isdigit(static_cast<unsigned char>(C2)) || C2 == '\'') {
+              ++BufferPtr;
+            } else {
+              break;
+            }
+          }
         }
       }
     } else if (Next == 'b' || Next == 'B') {
@@ -646,9 +678,23 @@ bool Lexer::lexOperatorOrPunctuation(Token &Result, const char *Start) {
     return formToken(Result, TokenKind::slash, Start);
 
   case '%':
-    if (BufferPtr < BufferEnd && *BufferPtr == '=') {
-      ++BufferPtr;
-      return formToken(Result, TokenKind::percentequal, Start);
+    if (BufferPtr < BufferEnd) {
+      if (*BufferPtr == '=') {
+        ++BufferPtr;
+        return formToken(Result, TokenKind::percentequal, Start);
+      }
+      if (*BufferPtr == '>') {
+        ++BufferPtr;
+        return formToken(Result, TokenKind::percentgreater, Start);  // Digraph %>
+      }
+      if (*BufferPtr == ':') {
+        ++BufferPtr;
+        if (BufferPtr + 1 < BufferEnd && *BufferPtr == '%' && *(BufferPtr + 1) == ':') {
+          BufferPtr += 2;
+          return formToken(Result, TokenKind::percentcolonpercentcolon, Start);  // Digraph %:%:
+        }
+        return formToken(Result, TokenKind::percentcolon, Start);  // Digraph %:
+      }
     }
     return formToken(Result, TokenKind::percent, Start);
 
@@ -694,6 +740,10 @@ bool Lexer::lexOperatorOrPunctuation(Token &Result, const char *Start) {
     if (BufferPtr < BufferEnd) {
       if (*BufferPtr == '<') {
         ++BufferPtr;
+        if (BufferPtr < BufferEnd && *BufferPtr == '<') {
+          ++BufferPtr;
+          return formToken(Result, TokenKind::lesslessless, Start);  // C++26 digraph <<<
+        }
         if (BufferPtr < BufferEnd && *BufferPtr == '=') {
           ++BufferPtr;
           return formToken(Result, TokenKind::lesslessequal, Start);
@@ -708,6 +758,14 @@ bool Lexer::lexOperatorOrPunctuation(Token &Result, const char *Start) {
         }
         return formToken(Result, TokenKind::lessequal, Start);
       }
+      if (*BufferPtr == '%') {
+        ++BufferPtr;
+        return formToken(Result, TokenKind::lesspercent, Start);  // Digraph <%
+      }
+      if (*BufferPtr == ':') {
+        ++BufferPtr;
+        return formToken(Result, TokenKind::lesscolon, Start);  // Digraph <:
+      }
     }
     return formToken(Result, TokenKind::less, Start);
 
@@ -715,6 +773,10 @@ bool Lexer::lexOperatorOrPunctuation(Token &Result, const char *Start) {
     if (BufferPtr < BufferEnd) {
       if (*BufferPtr == '>') {
         ++BufferPtr;
+        if (BufferPtr < BufferEnd && *BufferPtr == '>') {
+          ++BufferPtr;
+          return formToken(Result, TokenKind::greatergreatergreater, Start);  // C++26 digraph >>>
+        }
         if (BufferPtr < BufferEnd && *BufferPtr == '=') {
           ++BufferPtr;
           return formToken(Result, TokenKind::greatergreaterequal, Start);
@@ -748,9 +810,15 @@ bool Lexer::lexOperatorOrPunctuation(Token &Result, const char *Start) {
     return formToken(Result, TokenKind::question, Start);
 
   case ':':
-    if (BufferPtr < BufferEnd && *BufferPtr == ':') {
-      ++BufferPtr;
-      return formToken(Result, TokenKind::coloncolon, Start);
+    if (BufferPtr < BufferEnd) {
+      if (*BufferPtr == ':') {
+        ++BufferPtr;
+        return formToken(Result, TokenKind::coloncolon, Start);
+      }
+      if (*BufferPtr == '>') {
+        ++BufferPtr;
+        return formToken(Result, TokenKind::colongreater, Start);  // Digraph :>
+      }
     }
     return formToken(Result, TokenKind::colon, Start);
 

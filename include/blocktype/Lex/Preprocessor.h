@@ -29,6 +29,8 @@ class SourceManager;
 class DiagnosticsEngine;
 class HeaderSearch;
 class MacroInfo;
+class FileManager;  // Forward declaration
+class FileEntry;    // Forward declaration
 
 /// MacroInfo - Stores information about a macro definition.
 class MacroInfo {
@@ -39,11 +41,12 @@ class MacroInfo {
   bool IsVariadic : 1;
   bool IsPredefined : 1;
   bool IsUsed : 1;
+  bool IsBeingExpanded : 1;  // Prevent recursive expansion
 
 public:
   MacroInfo(SourceLocation Loc)
       : DefinitionLocation(Loc), IsFunctionLike(false), IsVariadic(false),
-        IsPredefined(false), IsUsed(false) {}
+        IsPredefined(false), IsUsed(false), IsBeingExpanded(false) {}
 
   // Accessors
   SourceLocation getDefinitionLocation() const { return DefinitionLocation; }
@@ -59,6 +62,9 @@ public:
 
   bool isUsed() const { return IsUsed; }
   void setUsed(bool U) { IsUsed = U; }
+
+  bool isBeingExpanded() const { return IsBeingExpanded; }
+  void setBeingExpanded(bool BE) { IsBeingExpanded = BE; }
 
   // Replacement tokens
   const std::vector<Token> &getReplacementTokens() const { return ReplacementTokens; }
@@ -83,6 +89,7 @@ class Preprocessor {
   DiagnosticsEngine &Diags;
   HeaderSearch *Headers;
   LanguageManager *LangMgr;
+  FileManager *FileMgr;  // For reading included files
 
   // Include stack
   struct IncludeStackEntry {
@@ -114,9 +121,17 @@ class Preprocessor {
   // Current language mode
   Language CurrentLang = Language::English;
 
+  // Current file context for __FILE__ and __LINE__
+  StringRef CurrentFilename;
+
+  // Token buffer for lookahead (simple implementation)
+  std::vector<Token> TokenBuffer;
+  size_t TokenBufferIndex = 0;
+
 public:
   Preprocessor(SourceManager &SM, DiagnosticsEngine &Diags,
-               HeaderSearch *HS = nullptr, LanguageManager *LM = nullptr);
+               HeaderSearch *HS = nullptr, LanguageManager *LM = nullptr,
+               FileManager *FM = nullptr);
   ~Preprocessor();
 
   // Non-copyable
@@ -237,6 +252,19 @@ public:
 
   /// Sets the current language mode.
   void setCurrentLanguage(Language L) { CurrentLang = L; }
+
+  //===--------------------------------------------------------------------===//
+  // Token buffer operations
+  //===--------------------------------------------------------------------===//
+
+  /// Peeks at the Nth token ahead without consuming it.
+  Token peekToken(unsigned N = 0);
+
+  /// Consumes and returns the next token.
+  bool consumeToken(Token &Result);
+
+  /// Returns the number of tokens in the buffer.
+  size_t tokenBufferSize() const { return TokenBuffer.size() - TokenBufferIndex; }
 
   //===--------------------------------------------------------------------===//
   // Accessors

@@ -12,8 +12,11 @@
 
 #include "blocktype/Lex/Preprocessor.h"
 #include "blocktype/Lex/Lexer.h"
+#include "blocktype/Lex/HeaderSearch.h"
 #include "blocktype/Basic/SourceManager.h"
 #include "blocktype/Basic/Diagnostics.h"
+#include "blocktype/Basic/FileManager.h"
+#include "blocktype/Basic/FileEntry.h"
 #include <unordered_map>
 
 namespace blocktype {
@@ -80,8 +83,9 @@ static const std::unordered_map<std::string, std::string> ChineseDirectiveMap = 
 //===----------------------------------------------------------------------===//
 
 Preprocessor::Preprocessor(SourceManager &SM, DiagnosticsEngine &Diags,
-                           HeaderSearch *HS, LanguageManager *LM)
-    : SM(SM), Diags(Diags), Headers(HS), LangMgr(LM) {
+                           HeaderSearch *HS, LanguageManager *LM,
+                           FileManager *FM)
+    : SM(SM), Diags(Diags), Headers(HS), LangMgr(LM), FileMgr(FM) {
   initializePredefinedMacros();
 }
 
@@ -95,6 +99,16 @@ void Preprocessor::initializePredefinedMacros() {
   definePredefinedMacro("__cpp_pack_indexing", "202411L");
   definePredefinedMacro("__STDC_HOSTED__", "1");
   definePredefinedMacro("__BLOCKTYPE__", "1");
+  
+  // Register __FILE__ and __LINE__ as special macros
+  // They are handled specially in expandMacro()
+  auto FileMI = std::make_unique<MacroInfo>(SourceLocation());
+  FileMI->setPredefined(true);
+  Macros["__FILE__"] = std::move(FileMI);
+  
+  auto LineMI = std::make_unique<MacroInfo>(SourceLocation());
+  LineMI->setPredefined(true);
+  Macros["__LINE__"] = std::move(LineMI);
 }
 
 void Preprocessor::definePredefinedMacro(StringRef Name, StringRef Value) {
@@ -158,6 +172,52 @@ bool Preprocessor::lexFromLexer(Token &Result) {
   return CurLexer->lexToken(Result);
 }
 
+//===----------------------------------------------------------------------===//
+// Token buffer operations
+//===----------------------------------------------------------------------===//
+
+Token Preprocessor::peekToken(unsigned N) {
+  // Fill buffer if needed
+  while (TokenBuffer.size() - TokenBufferIndex <= N) {
+    Token Tok;
+    if (!lexFromLexer(Tok)) {
+      Tok.setKind(TokenKind::eof);
+    }
+    TokenBuffer.push_back(Tok);
+    if (Tok.is(TokenKind::eof)) {
+      break;
+    }
+  }
+  
+  size_t Index = TokenBufferIndex + N;
+  if (Index < TokenBuffer.size()) {
+    return TokenBuffer[Index];
+  }
+  
+  // Return EOF if out of range
+  Token EofTok;
+  EofTok.setKind(TokenKind::eof);
+  return EofTok;
+}
+
+bool Preprocessor::consumeToken(Token &Result) {
+  // If buffer is empty, lex directly
+  if (TokenBufferIndex >= TokenBuffer.size()) {
+    return lexToken(Result);
+  }
+  
+  // Return from buffer
+  Result = TokenBuffer[TokenBufferIndex++];
+  
+  // Clean up buffer when fully consumed
+  if (TokenBufferIndex >= TokenBuffer.size()) {
+    TokenBuffer.clear();
+    TokenBufferIndex = 0;
+  }
+  
+  return !Result.is(TokenKind::eof);
+}
+
 void Preprocessor::enterSourceFile(StringRef Filename, StringRef Content) {
   auto Lex = std::make_unique<Lexer>(SM, Diags, Content, SM.createMainFileID(Filename, Content));
 
@@ -166,6 +226,9 @@ void Preprocessor::enterSourceFile(StringRef Filename, StringRef Content) {
   Entry.Filename = Filename;
   IncludeStack.push_back(std::move(Entry));
   CurLexer = IncludeStack.back().Lex.get();
+  
+  // Update current filename for __FILE__
+  CurrentFilename = Filename;
 }
 
 bool Preprocessor::isEOF() const {
@@ -428,7 +491,55 @@ void Preprocessor::handleIncludeDirective(Token &IncludeTok, bool IsAngled) {
     return;
   }
 
-  Diags.report(IncludeTok.getLocation(), DiagLevel::Warning, "#include not fully implemented");
+  // Check for circular inclusion
+  for (const auto &Entry : IncludeStack) {
+    if (Entry.Filename == Filename) {
+      Diags.report(IncludeTok.getLocation(), DiagLevel::Error, 
+                   "circular inclusion detected: " + Filename.str());
+      return;
+    }
+  }
+
+  // Try to find the file
+  if (!Headers || !FileMgr) {
+    Diags.report(IncludeTok.getLocation(), DiagLevel::Warning, 
+                 "#include not fully implemented: missing HeaderSearch or FileManager");
+    return;
+  }
+
+  const FileEntry *FE = Headers->lookupHeader(Filename, IsAngled);
+  if (!FE) {
+    Diags.report(IncludeTok.getLocation(), DiagLevel::Error, 
+                 "file not found: " + Filename.str());
+    return;
+  }
+
+  // Read the file content
+  auto Buffer = FileMgr->getBuffer(FE->getPath());
+  if (!Buffer) {
+    Diags.report(IncludeTok.getLocation(), DiagLevel::Error, 
+                 "cannot read file: " + Filename.str());
+    return;
+  }
+
+  // Create a new lexer for the included file
+  StringRef Content = Buffer->getBuffer();
+  SourceLocation IncludeLoc = SM.createFileID(Filename, Content);
+  auto Lex = std::make_unique<Lexer>(SM, Diags, Content, IncludeLoc);
+
+  // Push onto include stack
+  IncludeStackEntry Entry;
+  Entry.Lex = std::move(Lex);
+  Entry.IncludeLoc = IncludeTok.getLocation();
+  Entry.Filename = Filename;
+  IncludeStack.push_back(std::move(Entry));
+  CurLexer = IncludeStack.back().Lex.get();
+  
+  // Update current filename for __FILE__
+  CurrentFilename = Filename;
+  
+  // Mark as included for #pragma once
+  Headers->markIncluded(Filename);
 }
 
 //===----------------------------------------------------------------------===//
@@ -675,11 +786,46 @@ void Preprocessor::handleLineDirective(Token &LineTok) {
 //===----------------------------------------------------------------------===//
 
 bool Preprocessor::expandMacro(Token &Result, StringRef MacroName, MacroInfo *MI) {
-  MI->setUsed(true);
+  // Handle special predefined macros
+  if (MacroName == "__FILE__") {
+    Result.setKind(TokenKind::string_literal);
+    std::string Filename = CurrentFilename.empty() ? "<unknown>" : CurrentFilename.str();
+    // Create a string literal token
+    std::string QuotedFilename = "\"" + Filename + "\"";
+    static std::string FileBuffer;  // Keep buffer alive
+    FileBuffer = QuotedFilename;
+    Result.setLiteralData(FileBuffer.c_str());
+    Result.setLength(static_cast<unsigned>(FileBuffer.size()));
+    return true;
+  }
+  
+  if (MacroName == "__LINE__") {
+    Result.setKind(TokenKind::numeric_constant);
+    // Get line number from current token location
+    // For now, use a simple line number
+    // TODO: Integrate with SourceManager for accurate line numbers
+    unsigned Line = 1;
+    static std::string LineBuffer;
+    LineBuffer = std::to_string(Line);
+    Result.setLiteralData(LineBuffer.c_str());
+    Result.setLength(static_cast<unsigned>(LineBuffer.size()));
+    return true;
+  }
 
+  // Prevent recursive expansion
+  if (MI->isBeingExpanded()) {
+    return false;  // Don't expand, return the identifier as-is
+  }
+
+  MI->setUsed(true);
+  MI->setBeingExpanded(true);
+
+  bool Success = false;
+  
   if (MI->isFunctionLike()) {
     Token NextTok = CurLexer->peekNextToken();
     if (!NextTok.is(TokenKind::l_paren)) {
+      MI->setBeingExpanded(false);
       return false;
     }
 
@@ -689,15 +835,59 @@ bool Preprocessor::expandMacro(Token &Result, StringRef MacroName, MacroInfo *MI
 
     if (!Replacement.empty()) {
       Result = Replacement[0];
+      // Try to expand the result if it's a macro
+      if (Result.is(TokenKind::identifier)) {
+        if (MacroInfo *InnerMI = getMacroInfo(Result.getText())) {
+          if (InnerMI->isBeingExpanded()) {
+            // Inner macro is being expanded - this would cause recursion
+            // Return false to stop expansion and keep the identifier as-is
+            MI->setBeingExpanded(false);
+            return false;
+          }
+          // Save result before recursive expansion
+          Token SavedResult = Result;
+          // Try to expand inner macro
+          bool innerSuccess = expandMacro(Result, Result.getText(), InnerMI);
+          if (innerSuccess) {
+            MI->setBeingExpanded(false);
+            return true;
+          }
+          // Inner expansion failed, restore saved result
+          Result = SavedResult;
+        }
+      }
+      Success = true;
     }
   } else {
     const auto &Tokens = MI->getReplacementTokens();
     if (!Tokens.empty()) {
       Result = Tokens[0];
+      // Try to expand the result if it's a macro
+      if (Result.is(TokenKind::identifier)) {
+        if (MacroInfo *InnerMI = getMacroInfo(Result.getText())) {
+          if (InnerMI->isBeingExpanded()) {
+            // Inner macro is being expanded - this would cause recursion
+            MI->setBeingExpanded(false);
+            return false;
+          }
+          // Save result before recursive expansion
+          Token SavedResult = Result;
+          // Try to expand inner macro
+          bool innerSuccess = expandMacro(Result, Result.getText(), InnerMI);
+          if (innerSuccess) {
+            MI->setBeingExpanded(false);
+            return true;
+          }
+          // Inner expansion failed, restore saved result
+          Result = SavedResult;
+        }
+      }
+      Success = true;
     }
   }
 
-  return true;
+  MI->setBeingExpanded(false);
+  return Success;
 }
 
 std::vector<std::vector<Token>> Preprocessor::parseMacroArguments(MacroInfo *MI) {
@@ -740,19 +930,102 @@ std::vector<std::vector<Token>> Preprocessor::parseMacroArguments(MacroInfo *MI)
 
 void Preprocessor::substituteParameters(std::vector<Token> &Tokens, MacroInfo *MI,
                                         const std::vector<std::vector<Token>> &Args) {
-  for (auto &Tok : Tokens) {
+  // Find variadic parameter index (if any)
+  int VariadicIndex = -1;
+  bool IsVariadic = MI->isVariadic();
+  if (IsVariadic && MI->getNumParameters() > 0) {
+    // Last parameter might be variadic
+    VariadicIndex = static_cast<int>(MI->getNumParameters()) - 1;
+  }
+  
+  std::vector<Token> Result;
+  Result.reserve(Tokens.size());
+  
+  for (size_t i = 0; i < Tokens.size(); ++i) {
+    Token &Tok = Tokens[i];
+    
     if (Tok.is(TokenKind::identifier)) {
       StringRef Name = Tok.getText();
-      for (unsigned i = 0; i < MI->getNumParameters(); ++i) {
-        if (Name == MI->getParameterName(i) && i < Args.size()) {
-          if (!Args[i].empty()) {
-            Tok = Args[i][0];
+      
+      // Handle __VA_ARGS__
+      if (Name == "__VA_ARGS__" && IsVariadic && VariadicIndex >= 0) {
+        // Replace with all variadic arguments
+        if (static_cast<size_t>(VariadicIndex) < Args.size()) {
+          // Insert all variadic arguments separated by commas
+          for (size_t j = VariadicIndex; j < Args.size(); ++j) {
+            if (j > static_cast<size_t>(VariadicIndex)) {
+              // Add comma token between variadic args
+              Token CommaTok;
+              CommaTok.setKind(TokenKind::comma);
+              Result.push_back(CommaTok);
+            }
+            for (const auto &ArgTok : Args[j]) {
+              Result.push_back(ArgTok);
+            }
           }
+        }
+        continue;
+      }
+      
+      // Handle __VA_OPT__
+      if (Name == "__VA_OPT__" && IsVariadic) {
+        // Check if followed by '('
+        if (i + 1 < Tokens.size() && Tokens[i + 1].is(TokenKind::l_paren)) {
+          // Find matching ')'
+          size_t Start = i + 2;
+          size_t End = Start;
+          unsigned ParenDepth = 1;
+          while (End < Tokens.size() && ParenDepth > 0) {
+            if (Tokens[End].is(TokenKind::l_paren)) {
+              ++ParenDepth;
+            } else if (Tokens[End].is(TokenKind::r_paren)) {
+              --ParenDepth;
+            }
+            if (ParenDepth > 0) {
+              ++End;
+            }
+          }
+          
+          // Only expand if there are variadic arguments
+          bool HasVariadicArgs = (VariadicIndex >= 0 && 
+                                   static_cast<size_t>(VariadicIndex) < Args.size());
+          if (HasVariadicArgs) {
+            // Insert content between parentheses
+            for (size_t j = Start; j < End; ++j) {
+              Result.push_back(Tokens[j]);
+            }
+          }
+          
+          // Skip past __VA_OPT__(...)
+          i = End;
+          continue;
+        }
+      }
+      
+      // Regular parameter substitution
+      bool Found = false;
+      for (unsigned p = 0; p < MI->getNumParameters(); ++p) {
+        if (Name == MI->getParameterName(p)) {
+          if (p < Args.size() && !Args[p].empty()) {
+            // Replace with argument tokens
+            for (const auto &ArgTok : Args[p]) {
+              Result.push_back(ArgTok);
+            }
+          }
+          Found = true;
           break;
         }
       }
+      
+      if (!Found) {
+        Result.push_back(Tok);
+      }
+    } else {
+      Result.push_back(Tok);
     }
   }
+  
+  Tokens = std::move(Result);
 }
 
 Token Preprocessor::stringifyToken(const Token &T) {

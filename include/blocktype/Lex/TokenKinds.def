@@ -142,6 +142,18 @@ TOKEN(hashat)           // #@ (MSVC extension)
 // C++26 new tokens
 TOKEN(dotdot)           // .. (placeholder pattern)
 
+// Digraphs (C++ alternative tokens)
+TOKEN(lesspercent)      // <%  -> {
+TOKEN(percentgreater)   // %>  -> }
+TOKEN(lesscolon)        // <:  -> [
+TOKEN(colongreater)     // :>  -> ]
+TOKEN(percentcolon)     // %:  -> #
+TOKEN(percentcolonpercentcolon) // %:%: -> ##
+
+// C++26 Digraphs
+TOKEN(lesslessless)     // <<< (C++26 digraph)
+TOKEN(greatergreatergreater) // >>> (C++26 digraph)
+
 //===----------------------------------------------------------------------===//
 // Keywords - C Keywords
 //===----------------------------------------------------------------------===//

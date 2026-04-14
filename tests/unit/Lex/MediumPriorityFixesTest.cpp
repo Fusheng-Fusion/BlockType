@@ -1,0 +1,225 @@
+#include <gtest/gtest.h>
+#include "blocktype/Lex/Preprocessor.h"
+#include "blocktype/Lex/Lexer.h"
+#include "blocktype/Basic/SourceManager.h"
+#include "blocktype/Basic/Diagnostics.h"
+#include "blocktype/Basic/FileManager.h"
+#include "blocktype/Lex/HeaderSearch.h"
+#include "llvm/Support/raw_ostream.h"
+#include <string>
+
+using namespace blocktype;
+
+class MediumPriorityFixesTest : public ::testing::Test {
+protected:
+  SourceManager SM;
+  std::unique_ptr<DiagnosticsEngine> Diags;
+  std::unique_ptr<FileManager> FileMgr;
+  std::unique_ptr<HeaderSearch> Headers;
+  std::unique_ptr<Preprocessor> PP;
+  std::string OutputStr;
+  std::unique_ptr<llvm::raw_string_ostream> OutputStream;
+
+  void SetUp() override {
+    OutputStream = std::make_unique<llvm::raw_string_ostream>(OutputStr);
+    Diags = std::make_unique<DiagnosticsEngine>(*OutputStream);
+    FileMgr = std::make_unique<FileManager>();
+    Headers = std::make_unique<HeaderSearch>(*FileMgr);
+    PP = std::make_unique<Preprocessor>(SM, *Diags, Headers.get(), nullptr, FileMgr.get());
+  }
+};
+
+// Test 1: Digraphs support - <% and %>
+TEST_F(MediumPriorityFixesTest, DigraphsBraces) {
+  PP->enterSourceFile("test.cpp", "<% int x; %>\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::lesspercent);  // <%
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::kw_int);
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::semicolon);
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::percentgreater);  // %>
+}
+
+// Test 2: Digraphs support - <: and :>
+TEST_F(MediumPriorityFixesTest, DigraphsBrackets) {
+  PP->enterSourceFile("test.cpp", "int arr<:5:>;\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::kw_int);
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::lesscolon);  // <:
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::numeric_constant);
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::colongreater);  // :>
+}
+
+// Test 3: Digraphs support - %: (hash)
+TEST_F(MediumPriorityFixesTest, DigraphHash) {
+  PP->enterSourceFile("test.cpp", "%:define FOO 1\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::percentcolon);  // %:
+}
+
+// Test 4: Digraphs support - %:%: (hashhash)
+TEST_F(MediumPriorityFixesTest, DigraphHashHash) {
+  Lexer Lex(SM, *Diags, "%:%:\n", SM.createMainFileID("test.cpp", "%:%:\n"));
+  
+  Token Tok;
+  ASSERT_TRUE(Lex.lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::percentcolonpercentcolon);  // %:%:
+}
+
+// Test 5: C++26 Digraphs - <<< and >>>
+TEST_F(MediumPriorityFixesTest, Cpp26Digraphs) {
+  PP->enterSourceFile("test.cpp", "<<< >>>\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::lesslessless);  // <<<
+  
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::greatergreatergreater);  // >>>
+}
+
+// Test 6: Hexadecimal floating-point
+TEST_F(MediumPriorityFixesTest, HexFloat) {
+  PP->enterSourceFile("test.cpp", "0x1.8p10\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::numeric_constant);
+  EXPECT_EQ(Tok.getText(), "0x1.8p10");
+}
+
+// Test 7: Hexadecimal floating-point with exponent
+TEST_F(MediumPriorityFixesTest, HexFloatNegativeExponent) {
+  PP->enterSourceFile("test.cpp", "0x1.fp-4\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::numeric_constant);
+  EXPECT_EQ(Tok.getText(), "0x1.fp-4");
+}
+
+// Test 8: __VA_ARGS__ basic support
+TEST_F(MediumPriorityFixesTest, VaArgs) {
+  // Define a variadic macro
+  PP->enterSourceFile("test.cpp", "#define PRINT(fmt, ...) printf(fmt, __VA_ARGS__)\nPRINT(\"hello %d %d\", 1, 2)\n");
+  
+  Token Tok;
+  // After macro expansion, should get: printf, (, "hello %d %d", ,, 1, ,, 2, )
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "printf");
+}
+
+// Test 9: __VA_OPT__ with arguments
+TEST_F(MediumPriorityFixesTest, VaOptWithArgs) {
+  // Define a variadic macro with __VA_OPT__
+  PP->enterSourceFile("test.cpp", "#define LOG(fmt, ...) printf(fmt __VA_OPT__(, __VA_ARGS__))\nLOG(\"test\")\nLOG(\"test %d\", 42)\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "printf");
+}
+
+// Test 10: __VA_OPT__ without arguments
+TEST_F(MediumPriorityFixesTest, VaOptWithoutArgs) {
+  // Define a variadic macro with __VA_OPT__
+  PP->enterSourceFile("test.cpp", "#define LOG(fmt, ...) printf(fmt __VA_OPT__(, __VA_ARGS__))\nLOG(\"test\")\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "printf");
+}
+
+// Test 11: Token buffer - multiple peek
+TEST_F(MediumPriorityFixesTest, TokenBufferPeek) {
+  PP->enterSourceFile("test.cpp", "int x y z\n");
+  
+  // Peek at first token
+  Token Tok1 = PP->peekToken(0);
+  EXPECT_EQ(Tok1.getKind(), TokenKind::kw_int);
+  
+  // Peek at second token
+  Token Tok2 = PP->peekToken(1);
+  EXPECT_EQ(Tok2.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok2.getText(), "x");
+  
+  // Peek at third token
+  Token Tok3 = PP->peekToken(2);
+  EXPECT_EQ(Tok3.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok3.getText(), "y");
+}
+
+// Test 12: Token buffer - peek and consume
+TEST_F(MediumPriorityFixesTest, TokenBufferPeekAndConsume) {
+  PP->enterSourceFile("test.cpp", "int x y\n");
+  
+  // Peek first
+  Token Tok1 = PP->peekToken(0);
+  EXPECT_EQ(Tok1.getKind(), TokenKind::kw_int);
+  
+  // Consume should return the same token
+  Token Tok2;
+  ASSERT_TRUE(PP->consumeToken(Tok2));
+  EXPECT_EQ(Tok2.getKind(), TokenKind::kw_int);
+  
+  // Next peek should be 'x'
+  Token Tok3 = PP->peekToken(0);
+  EXPECT_EQ(Tok3.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok3.getText(), "x");
+}
+
+// Test 13: Complex hexadecimal floating-point
+TEST_F(MediumPriorityFixesTest, ComplexHexFloat) {
+  PP->enterSourceFile("test.cpp", "0xABC.DEFp+123\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::numeric_constant);
+  EXPECT_EQ(Tok.getText(), "0xABC.DEFp+123");
+}
+
+// Test 14: Hex integer (not floating-point)
+TEST_F(MediumPriorityFixesTest, HexInteger) {
+  PP->enterSourceFile("test.cpp", "0xDEADBEEF\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::numeric_constant);
+  EXPECT_EQ(Tok.getText(), "0xDEADBEEF");
+}
+
+// Test 15: Variadic macro with multiple arguments
+TEST_F(MediumPriorityFixesTest, VariadicMacroMultipleArgs) {
+  // Define a variadic macro
+  PP->enterSourceFile("test.cpp", "#define SUM(x, ...) sum(x, __VA_ARGS__)\nSUM(1, 2, 3)\n");
+  
+  Token Tok;
+  ASSERT_TRUE(PP->lexToken(Tok));
+  EXPECT_EQ(Tok.getKind(), TokenKind::identifier);
+  EXPECT_EQ(Tok.getText(), "sum");
+}

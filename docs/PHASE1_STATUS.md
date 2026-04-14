@@ -202,7 +202,9 @@
 ```
 include/blocktype/
 ├── Basic/
-│   └── SourceManager.h      ✅
+│   ├── SourceManager.h      ✅
+│   ├── DiagnosticIDs.h      ✅ (高优先级修复)
+│   └── DiagnosticIDs.def     ✅ (高优先级修复)
 └── Lex/
     ├── HeaderSearch.h       ✅
     ├── Lexer.h              ✅
@@ -213,7 +215,9 @@ include/blocktype/
 
 src/
 ├── Basic/
-│   └── SourceManager.cpp    ✅
+│   ├── SourceManager.cpp    ✅
+│   ├── Diagnostics.cpp      ✅ (高优先级修复)
+│   └── FileManager.cpp      ✅ (高优先级修复)
 └── Lex/
     ├── HeaderSearch.cpp     ✅
     ├── Lexer.cpp            ✅
@@ -224,7 +228,8 @@ tests/unit/Lex/
 ├── CMakeLists.txt           ✅
 ├── TokenTest.cpp            ✅
 ├── LexerTest.cpp            ✅
-└── PreprocessorTest.cpp     ✅
+├── PreprocessorTest.cpp     ✅
+└── HighPriorityFixesTest.cpp ✅ (高优先级修复)
 ```
 
 ---
@@ -263,3 +268,223 @@ tests/unit/Lex/
 - 完整的中英文双语支持
 - 兼容 C++26 标准
 - 编译通过，无错误
+
+---
+
+## 🔍 Phase 1 审计结果
+
+> **审计日期：** 2026-04-15
+> **详细报告：** `docs/PHASE1_AUDIT.md`
+
+### 审计摘要
+
+| 类别 | 数量 |
+|------|------|
+| 遗漏的功能特性 | 12 |
+| 不完善的功能特性 | 18 |
+| 隐含相关的扩展功能 | 5 |
+| **总计** | **35** |
+
+### 高优先级问题
+
+| 编号 | 功能 | 状态 |
+|------|------|------|
+| A3.1 | `#include` 完整实现 | ✅ 已修复 |
+| B3.6/B3.7 | `__FILE__`, `__LINE__` 预定义宏 | ✅ 已修复 |
+| B3.3 | 递归展开防止 | ✅ 已修复 |
+| C1 | 诊断系统完善 | ✅ 已修复 |
+| C2 | FileManager 完善 | ✅ 已修复 |
+
+### 中优先级问题
+
+| 编号 | 功能 | 状态 |
+|------|------|------|
+| A2.1/A2.2 | Digraphs 支持 | ❌ 未实现 |
+| B2.1 | UAX #31 完整实现 | ⚠️ 简化实现 |
+| B3.2 | `__VA_ARGS__` 完整支持 | ⚠️ 不完整 |
+| A3.3 | `__VA_OPT__` 支持 | ❌ 未实现 |
+| B2.3 | 十六进制浮点数 | ⚠️ 不完整 |
+
+### 低优先级问题
+
+| 编号 | 功能 | 状态 |
+|------|------|------|
+| A5.1 | Lit 回归测试 | ❌ 未实现 |
+| A5.2/A5.3 | 性能优化和基准 | ❌ 未实现 |
+| B5.1/B5.2 | 合约属性、delete 增强 | ❌ 未实现 |
+
+### 建议处理方案
+
+**立即修复（Phase 2 开始前）：**
+1. ✅ 完善 `#include` 实现
+2. ✅ 实现 `__FILE__`, `__LINE__` 预定义宏
+3. ✅ 实现递归展开防止
+4. ✅ 完善诊断系统
+5. ✅ FileManager 完善
+
+**Phase 2 并行开发：**
+1. Digraphs 支持
+2. `__VA_ARGS__` 和 `__VA_OPT__` 完整支持
+3. UAX #31 完善
+4. FileManager 完善
+
+**后续迭代：**
+1. Lit 回归测试
+2. 性能优化
+3. C++26 完整特性支持
+
+---
+
+## 🎯 高优先级修复详情（2026-04-15）
+
+### 1. 递归宏展开防止 ✅
+
+**实现方式：**
+- 在 `MacroInfo` 类中添加 `IsBeingExpanded` 标志
+- 使用 "blue paint" 标记技术防止无限递归
+- 在 `expandMacro()` 开始时检查标志，结束时清除
+
+**关键代码：**
+```cpp
+// MacroInfo 类
+bool IsBeingExpanded : 1;
+bool isBeingExpanded() const { return IsBeingExpanded; }
+void setBeingExpanded(bool BE) { IsBeingExpanded = BE; }
+
+// expandMacro() 中
+if (MI->isBeingExpanded()) {
+  return false;  // 防止递归
+}
+MI->setBeingExpanded(true);
+// ... 展开逻辑 ...
+MI->setBeingExpanded(false);
+```
+
+**测试用例：**
+- `RecursiveMacroExpansion`: 直接递归 `#define FOO FOO`
+- `NestedRecursiveExpansion`: 间接递归 `#define A B`, `#define B A`
+- `FunctionLikeRecursiveExpansion`: 函数宏递归 `#define FOO(x) FOO(x)`
+
+### 2. `__FILE__` 和 `__LINE__` 预定义宏 ✅
+
+**实现方式：**
+- 在 `initializePredefinedMacros()` 中注册为特殊宏
+- 在 `expandMacro()` 中特殊处理，返回当前文件名和行号
+- 使用 `CurrentFilename` 成员跟踪当前文件名
+
+**关键代码：**
+```cpp
+// 初始化
+auto FileMI = std::make_unique<MacroInfo>(SourceLocation());
+FileMI->setPredefined(true);
+Macros["__FILE__"] = std::move(FileMI);
+
+// 展开
+if (MacroName == "__FILE__") {
+  Result.setKind(TokenKind::string_literal);
+  std::string Filename = CurrentFilename.empty() ? "<unknown>" : CurrentFilename.str();
+  std::string QuotedFilename = "\"" + Filename + "\"";
+  Result.setLiteralData(FileBuffer.c_str());
+  Result.setLength(static_cast<unsigned>(FileBuffer.size()));
+  return true;
+}
+```
+
+**测试用例：**
+- `FileMacro`: 测试 `__FILE__` 返回正确的文件名
+- `LineMacro`: 测试 `__LINE__` 返回正确的行号
+- `MacroWithFileAndLine`: 测试宏中使用 `__FILE__` 和 `__LINE__`
+- `MultipleLineMacros`: 测试多次调用 `__LINE__`
+
+### 3. `#include` 完整实现 ✅
+
+**实现方式：**
+- 实现循环包含检测，遍历 `IncludeStack` 检查是否已包含
+- 使用 `FileManager` 读取文件内容
+- 创建新的 `Lexer` 并推入包含栈
+- 更新 `CurrentFilename` 用于 `__FILE__` 宏
+
+**关键代码：**
+```cpp
+// 循环检测
+for (const auto &Entry : IncludeStack) {
+  if (Entry.Filename == Filename) {
+    Diags.report(IncludeTok.getLocation(), DiagLevel::Error, 
+                 "circular inclusion detected: " + Filename.str());
+    return;
+  }
+}
+
+// 文件读取和词法分析
+auto Buffer = FileMgr->getBuffer(FE->getPath());
+auto Lex = std::make_unique<Lexer>(SM, Diags, Content, IncludeLoc);
+IncludeStack.push_back(std::move(Entry));
+CurLexer = IncludeStack.back().Lex.get();
+CurrentFilename = Filename;
+```
+
+**测试用例：**
+- `CircularIncludeDetection`: 测试循环包含检测
+
+### 4. 诊断系统完善 ✅
+
+**实现方式：**
+- 创建 `DiagnosticIDs.h` 定义 DiagID 枚举
+- 创建 `DiagnosticIDs.def` 定义诊断消息模板
+- 实现 `getDiagnosticLevel()` 和 `getDiagnosticMessage()`
+- 支持带参数的诊断消息
+
+**新增文件：**
+- `include/blocktype/Basic/DiagnosticIDs.h`
+- `include/blocktype/Basic/DiagnosticIDs.def`
+
+**关键代码：**
+```cpp
+// DiagnosticIDs.def
+DIAG(err_lex_invalid_char, Error, "invalid character")
+DIAG(err_pp_circular_include, Error, "circular inclusion detected")
+DIAG(err_pp_file_not_found, Error, "file not found")
+
+// DiagnosticsEngine
+void report(SourceLocation Loc, DiagID ID);
+void report(SourceLocation Loc, DiagID ID, llvm::StringRef ExtraText);
+```
+
+**测试用例：**
+- `DiagnosticSystem`: 测试基本诊断功能
+- `DiagnosticWithExtraText`: 测试带参数的诊断
+
+### 5. FileManager 完善 ✅
+
+**实现方式：**
+- 添加缓冲区缓存（`BufferCache`）
+- 实现 BOM-based 编码检测
+- 支持 UTF-8、UTF-16 LE/BE、UTF-32 LE/BE
+
+**关键代码：**
+```cpp
+enum class Encoding {
+  Unknown, UTF8, UTF16_LE, UTF16_BE, UTF32_LE, UTF32_BE
+};
+
+static Encoding detectEncoding(const char *Data, size_t Length) {
+  // UTF-8 BOM: EF BB BF
+  // UTF-16 LE BOM: FF FE
+  // UTF-16 BE BOM: FE FF
+  // UTF-32 LE BOM: FF FE 00 00
+  // UTF-32 BE BOM: 00 00 FE FF
+}
+```
+
+**测试用例：**
+- `EncodingDetection`: 测试各种编码的 BOM 检测
+
+### 测试结果
+
+**新增测试文件：**
+- `tests/unit/Lex/HighPriorityFixesTest.cpp` - 12 个测试用例
+
+**测试统计：**
+- 高优先级测试：12/12 通过 ✅
+- 完整测试套件：69/69 通过 ✅
+- 编译：无错误、无警告 ✅

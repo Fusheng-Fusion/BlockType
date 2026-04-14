@@ -2,6 +2,8 @@ add_executable(blocktype-lex-test
   LexerTest.cpp
   PreprocessorTest.cpp
   TokenTest.cpp
+  HighPriorityFixesTest.cpp
+  MediumPriorityFixesTest.cpp
 )
 
 target_include_directories(blocktype-lex-test PUBLIC
