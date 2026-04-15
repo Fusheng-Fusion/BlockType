@@ -20,4 +20,5 @@ target_link_libraries(blocktype-parse
     blocktype-ast
     blocktype-lex
     blocktype-basic
+    blocktype-sema
 )

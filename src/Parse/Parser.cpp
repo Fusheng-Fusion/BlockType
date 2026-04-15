@@ -12,6 +12,7 @@
 
 #include "blocktype/Parse/Parser.h"
 #include "blocktype/AST/Expr.h"
+#include "blocktype/AST/Decl.h"
 #include "blocktype/Basic/Diagnostics.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -100,6 +101,22 @@ Expr *Parser::createRecoveryExpr(SourceLocation Loc) {
   // Create a placeholder integer literal for recovery
   // This prevents cascading errors
   return Context.create<IntegerLiteral>(Loc, llvm::APInt(32, 0));
+}
+
+//===----------------------------------------------------------------------===//
+// Scope management
+//===----------------------------------------------------------------------===//
+
+void Parser::pushScope(ScopeFlags Flags) {
+  CurrentScope = new Scope(CurrentScope, Flags);
+}
+
+void Parser::popScope() {
+  if (CurrentScope) {
+    Scope *Parent = CurrentScope->getParent();
+    delete CurrentScope;
+    CurrentScope = Parent;
+  }
 }
 
 //===----------------------------------------------------------------------===//

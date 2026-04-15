@@ -11,7 +11,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/Parse/Parser.h"
+#include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
+#include "blocktype/Sema/Scope.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/raw_ostream.h"
@@ -378,8 +380,19 @@ Expr *Parser::parseIdentifier() {
   StringRef Name = Tok.getText();
 
   consumeToken();
-  // TODO: Lookup the declaration
-  // For now, create a placeholder
+
+  // Lookup the declaration in the current scope
+  if (CurrentScope) {
+    if (NamedDecl *D = CurrentScope->lookup(Name)) {
+      // Found the declaration, create a DeclRefExpr
+      if (auto *VD = dyn_cast<ValueDecl>(D)) {
+        return Context.create<DeclRefExpr>(Loc, VD);
+      }
+    }
+  }
+
+  // Not found or no scope, create a placeholder for error recovery
+  // TODO: Emit an error for undefined identifier
   return createRecoveryExpr(Loc);
 }
 
