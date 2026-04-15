@@ -1397,15 +1397,11 @@ TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
 
   // Parse optional requires-clause (C++20)
   // type-constraint ::= 'requires' constraint-expression
+  Expr *Constraint = nullptr;
   if (Tok.is(TokenKind::kw_requires)) {
     consumeToken(); // consume 'requires'
     // Parse constraint expression
-    Expr *Constraint = parseConstraintExpression();
-    if (Constraint) {
-      // Store the constraint in the parameter
-      // Note: TemplateTemplateParmDecl should have a constraint field
-      // For now, we just parse and discard
-    }
+    Constraint = parseConstraintExpression();
   }
 
   // Expect 'class' or 'typename'
@@ -1437,6 +1433,11 @@ TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
   // Use 0 for depth and index (will be set correctly later)
   TemplateTemplateParmDecl *Param = Context.create<TemplateTemplateParmDecl>(
       NameLoc, Name, 0, 0, IsParameterPack);
+
+  // Set constraint if present
+  if (Constraint) {
+    Param->setConstraint(Constraint);
+  }
 
   // Add template parameters
   for (auto *P : Params) {
@@ -1490,11 +1491,9 @@ TemplateArgument Parser::parseTemplateArgument() {
     consumeToken(); // consume '...'
 
     // Parse the pack pattern (could be a type or expression)
-    // For now, we just parse it as a type or expression
-    // In a real compiler, this would be marked as a pack expansion
     TemplateArgument Pattern = parseTemplateArgument();
-    // Note: We should mark this as a pack expansion
-    // For now, we just return the pattern
+    // ✅ Mark this as a pack expansion
+    Pattern.setPackExpansion(true);
     return Pattern;
   }
 
@@ -1516,13 +1515,18 @@ TemplateArgument Parser::parseTemplateArgument() {
     QualType Type = parseType();
 
     // Check for pack expansion after type: Type...
+    bool IsPackExpansion = false;
     if (!Type.isNull() && Tok.is(TokenKind::ellipsis)) {
       consumeToken(); // consume '...'
-      // Mark as pack expansion (for now, just return the type)
+      IsPackExpansion = true;
     }
 
     if (!Type.isNull()) {
-      return TemplateArgument(Type);
+      TemplateArgument Arg(Type);
+      if (IsPackExpansion) {
+        Arg.setPackExpansion(true);
+      }
+      return Arg;
     }
     return TemplateArgument(QualType());
   }
@@ -1536,13 +1540,18 @@ TemplateArgument Parser::parseTemplateArgument() {
       QualType Type = parseType();
 
       // Check for pack expansion after template-id: Template<Args>...
+      bool IsPackExpansion = false;
       if (!Type.isNull() && Tok.is(TokenKind::ellipsis)) {
         consumeToken(); // consume '...'
-        // Mark as pack expansion
+        IsPackExpansion = true;
       }
 
       if (!Type.isNull()) {
-        return TemplateArgument(Type);
+        TemplateArgument Arg(Type);
+        if (IsPackExpansion) {
+          Arg.setPackExpansion(true);
+        }
+        return Arg;
       }
       return TemplateArgument(QualType());
     }
@@ -1551,13 +1560,18 @@ TemplateArgument Parser::parseTemplateArgument() {
     Expr *E = parseExpression();
 
     // Check for pack expansion after expression: expr...
+    bool IsPackExpansion = false;
     if (E && Tok.is(TokenKind::ellipsis)) {
       consumeToken(); // consume '...'
-      // Mark as pack expansion
+      IsPackExpansion = true;
     }
 
     if (E) {
-      return TemplateArgument(E);
+      TemplateArgument Arg(E);
+      if (IsPackExpansion) {
+        Arg.setPackExpansion(true);
+      }
+      return Arg;
     }
     return TemplateArgument(static_cast<Expr *>(nullptr));
   }
@@ -1571,13 +1585,18 @@ TemplateArgument Parser::parseTemplateArgument() {
     Expr *E = parseExpression();
 
     // Check for pack expansion (rare but possible)
+    bool IsPackExpansion = false;
     if (E && Tok.is(TokenKind::ellipsis)) {
       consumeToken(); // consume '...'
-      // Mark as pack expansion
+      IsPackExpansion = true;
     }
 
     if (E) {
-      return TemplateArgument(E);
+      TemplateArgument Arg(E);
+      if (IsPackExpansion) {
+        Arg.setPackExpansion(true);
+      }
+      return Arg;
     }
     return TemplateArgument(static_cast<Expr *>(nullptr));
   }
@@ -1697,36 +1716,8 @@ Decl *Parser::parseNamespaceDeclaration() {
 
     // Check for namespace alias: namespace AB = A::B;
     if (Tok.is(TokenKind::equal)) {
-      // Backtrack and parse as namespace alias
-      // Note: We've already consumed the alias name, so we need to handle it
-      // Actually, we can just call parseNamespaceAlias with the current state
-      // But parseNamespaceAlias expects to start after 'namespace' keyword
-      // So we need to handle it inline here
-
-      // Expect '='
-      consumeToken(); // consume '='
-
-      // Parse nested-name-specifier (optional)
-      llvm::StringRef NestedName = parseNestedNameSpecifier();
-
-      // Parse target namespace name
-      if (!Tok.is(TokenKind::identifier)) {
-        emitError(DiagID::err_expected_identifier);
-        return nullptr;
-      }
-
-      llvm::StringRef TargetName = Tok.getText();
-      consumeToken();
-
-      // Expect ';'
-      if (!Tok.is(TokenKind::semicolon)) {
-        emitError(DiagID::err_expected_semi);
-        return nullptr;
-      }
-
-      consumeToken(); // consume ';'
-
-      return Context.create<NamespaceAliasDecl>(NameLoc, Name, TargetName, NestedName);
+      // Parse as namespace alias, passing the already-parsed alias name
+      return parseNamespaceAlias(Name, NameLoc);
     }
 
     // Check for nested namespace definition (C++17): namespace A::B::C { ... }
@@ -1944,18 +1935,21 @@ UsingDirectiveDecl *Parser::parseUsingDirective() {
 ///
 /// namespace-alias ::= 'namespace' identifier '=' qualified-namespace-specifier ';'
 /// qualified-namespace-specifier ::= nested-name-specifier? namespace-name
-NamespaceAliasDecl *Parser::parseNamespaceAlias() {
-  // Expect 'namespace' keyword (already consumed by caller)
+///
+/// If AliasName and AliasLoc are provided, the alias name has already been parsed.
+NamespaceAliasDecl *Parser::parseNamespaceAlias(llvm::StringRef AliasName,
+                                                SourceLocation AliasLoc) {
+  // Parse alias name if not already provided
+  if (AliasName.empty()) {
+    if (!Tok.is(TokenKind::identifier)) {
+      emitError(DiagID::err_expected_identifier);
+      return nullptr;
+    }
 
-  // Parse alias name
-  if (!Tok.is(TokenKind::identifier)) {
-    emitError(DiagID::err_expected_identifier);
-    return nullptr;
+    AliasName = Tok.getText();
+    AliasLoc = Tok.getLocation();
+    consumeToken();
   }
-
-  llvm::StringRef AliasName = Tok.getText();
-  SourceLocation AliasNameLoc = Tok.getLocation();
-  consumeToken();
 
   // Expect '='
   if (!Tok.is(TokenKind::equal)) {
@@ -1985,7 +1979,7 @@ NamespaceAliasDecl *Parser::parseNamespaceAlias() {
 
   consumeToken(); // consume ';'
 
-  return Context.create<NamespaceAliasDecl>(AliasNameLoc, AliasName, TargetName, NestedName);
+  return Context.create<NamespaceAliasDecl>(AliasLoc, AliasName, TargetName, NestedName);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2354,13 +2348,13 @@ EnumDecl *Parser::parseEnumDeclaration(SourceLocation EnumLoc) {
 
   // Create EnumDecl
   EnumDecl *Enum = Context.create<EnumDecl>(NameLoc, Name);
+  Enum->setScoped(IsScoped);
 
   // Parse optional underlying type (enum : int)
   if (Tok.is(TokenKind::colon)) {
     consumeToken();
     QualType UnderlyingType = parseType();
-    // Note: We should store the underlying type in EnumDecl
-    // For now, we just parse it and discard
+    Enum->setUnderlyingType(UnderlyingType);
   }
 
   // Parse enum body
@@ -2836,6 +2830,7 @@ CXXDeductionGuideDecl *Parser::parseDeductionGuide(SourceLocation Loc) {
 /// attribute-specifier ::= '[[' attribute-list ']]'
 /// attribute-list ::= attribute (',' attribute)*
 /// attribute ::= identifier ('(' argument-clause? ')')?
+///             | identifier '::' identifier ('(' argument-clause? ')')?
 AttributeDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
   // Expect '[['
   if (!Tok.is(TokenKind::l_square)) {
@@ -2852,24 +2847,49 @@ AttributeDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
 
   consumeToken(); // consume '['
 
-  // Parse attribute name
+  // Parse attribute(s) - we support multiple attributes separated by commas
+  llvm::StringRef Namespace;
+  llvm::StringRef AttrName;
+  Expr *ArgExpr = nullptr;
+
+  // Parse first attribute
   if (!Tok.is(TokenKind::identifier)) {
     emitError(DiagID::err_expected_identifier);
     return nullptr;
   }
 
-  llvm::StringRef AttrName = Tok.getText();
+  AttrName = Tok.getText();
   consumeToken();
 
+  // Check for namespace::attribute syntax
+  if (Tok.is(TokenKind::coloncolon)) {
+    consumeToken();
+    Namespace = AttrName;
+
+    if (!Tok.is(TokenKind::identifier)) {
+      emitError(DiagID::err_expected_identifier);
+      return nullptr;
+    }
+
+    AttrName = Tok.getText();
+    consumeToken();
+  }
+
   // Parse optional attribute argument
-  llvm::StringRef AttrValue;
   if (Tok.is(TokenKind::l_paren)) {
     consumeToken(); // consume '('
 
-    // Parse argument (simplified - just parse string literal)
+    // Parse argument expression
     if (Tok.is(TokenKind::string_literal)) {
-      AttrValue = Tok.getText();
+      // Simple case: string literal
+      llvm::StringRef StrValue = Tok.getText();
       consumeToken();
+      // Create a StringLiteral expression
+      ArgExpr = Context.create<StringLiteral>(
+          SourceLocation(), StrValue);
+    } else if (Tok.isNot(TokenKind::r_paren)) {
+      // General case: parse as expression
+      ArgExpr = parseExpression();
     }
 
     if (!Tok.is(TokenKind::r_paren)) {
@@ -2878,6 +2898,38 @@ AttributeDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
     }
 
     consumeToken(); // consume ')'
+  }
+
+  // Skip any additional attributes (comma-separated)
+  // For now, we just parse and discard them to avoid errors
+  while (Tok.is(TokenKind::comma)) {
+    consumeToken();
+
+    // Skip the next attribute
+    if (Tok.is(TokenKind::identifier)) {
+      consumeToken();
+
+      // Check for namespace
+      if (Tok.is(TokenKind::coloncolon)) {
+        consumeToken();
+        if (Tok.is(TokenKind::identifier)) {
+          consumeToken();
+        }
+      }
+
+      // Skip argument if present
+      if (Tok.is(TokenKind::l_paren)) {
+        consumeToken();
+        int ParenDepth = 1;
+        while (ParenDepth > 0 && Tok.isNot(TokenKind::eof)) {
+          if (Tok.is(TokenKind::l_paren))
+            ParenDepth++;
+          else if (Tok.is(TokenKind::r_paren))
+            ParenDepth--;
+          consumeToken();
+        }
+      }
+    }
   }
 
   // Expect ']]'
@@ -2896,7 +2948,11 @@ AttributeDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
   consumeToken(); // consume ']'
 
   // Create AttributeDecl
-  return Context.create<AttributeDecl>(Loc, AttrName, AttrValue);
+  if (Namespace.empty()) {
+    return Context.create<AttributeDecl>(Loc, AttrName, ArgExpr);
+  } else {
+    return Context.create<AttributeDecl>(Loc, Namespace, AttrName, ArgExpr);
+  }
 }
 
 //===----------------------------------------------------------------------===//

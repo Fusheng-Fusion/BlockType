@@ -295,6 +295,18 @@ public:
   /// Returns the number of tokens in the buffer.
   size_t tokenBufferSize() const { return TokenBuffer.size() - TokenBufferIndex; }
 
+  /// Saves the current token buffer state for tentative parsing.
+  /// Returns the current TokenBufferIndex that can be restored later.
+  size_t saveTokenBufferState() const { return TokenBufferIndex; }
+
+  /// Restores the token buffer to a previously saved state.
+  /// This is used for backtracking during tentative parsing.
+  void restoreTokenBufferState(size_t SavedIndex);
+
+  /// Clears the token buffer, removing all pending tokens.
+  /// This is called after a successful tentative parse to commit the tokens.
+  void clearTokenBuffer();
+
   //===--------------------------------------------------------------------===//
   // Accessors
   //===--------------------------------------------------------------------===//

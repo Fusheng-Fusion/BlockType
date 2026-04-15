@@ -41,6 +41,11 @@ void TemplateArgument::dump(llvm::raw_ostream &OS) const {
     }
     break;
   }
+  
+  // ✅ Show pack expansion flag
+  if (IsPackExpansion) {
+    OS << "...";
+  }
 }
 
 //===----------------------------------------------------------------------===//

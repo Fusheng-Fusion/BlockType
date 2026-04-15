@@ -159,7 +159,15 @@ void TypedefDecl::dump(raw_ostream &OS, unsigned Indent) const {
 
 void EnumDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
-  OS << "EnumDecl " << getName() << "\n";
+  OS << "EnumDecl " << getName();
+  if (IsScoped) {
+    OS << " scoped";
+  }
+  if (UnderlyingType.getTypePtr()) {
+    OS << " : ";
+    UnderlyingType.dump(OS);
+  }
+  OS << "\n";
   for (auto *Enumerator : Enumerators) {
     Enumerator->dump(OS, Indent + 2);
   }
@@ -524,6 +532,10 @@ void TemplateTemplateParmDecl::dump(raw_ostream &OS, unsigned Indent) const {
   OS << "TemplateTemplateParmDecl " << getName();
   if (IsParameterPack)
     OS << " ...";
+  if (Constraint) {
+    OS << " requires ";
+    Constraint->dump(OS, Indent);
+  }
   OS << "\n";
 
   if (!TemplateParams.empty()) {
@@ -709,9 +721,15 @@ void CXXDeductionGuideDecl::dump(raw_ostream &OS, unsigned Indent) const {
 
 void AttributeDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
-  OS << "AttributeDecl [[" << AttributeName;
-  if (hasValue()) {
-    OS << "(\"" << AttributeValue << "\")";
+  OS << "AttributeDecl [[";
+  if (hasNamespace()) {
+    OS << AttributeNamespace << "::";
+  }
+  OS << AttributeName;
+  if (ArgumentExpr) {
+    OS << "(";
+    ArgumentExpr->dump(OS, Indent + 2);
+    OS << ")";
   }
   OS << "]]\n";
 }

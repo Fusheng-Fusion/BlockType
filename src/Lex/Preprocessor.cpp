@@ -251,6 +251,20 @@ bool Preprocessor::consumeToken(Token &Result) {
   return !Result.is(TokenKind::eof);
 }
 
+void Preprocessor::restoreTokenBufferState(size_t SavedIndex) {
+  // Restore the token buffer index to the saved state
+  // This allows backtracking during tentative parsing
+  if (SavedIndex <= TokenBuffer.size()) {
+    TokenBufferIndex = SavedIndex;
+  }
+}
+
+void Preprocessor::clearTokenBuffer() {
+  // Clear all pending tokens from the buffer
+  TokenBuffer.clear();
+  TokenBufferIndex = 0;
+}
+
 void Preprocessor::enterSourceFile(StringRef Filename, StringRef Content) {
   auto Lex = std::make_unique<Lexer>(SM, Diags, Content, SM.createMainFileID(Filename, Content));
 

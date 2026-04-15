@@ -449,7 +449,9 @@ public:
   UsingDirectiveDecl *parseUsingDirective();
 
   /// Parses a namespace alias.
-  NamespaceAliasDecl *parseNamespaceAlias();
+  /// If AliasName and AliasLoc are provided, they have already been parsed.
+  NamespaceAliasDecl *parseNamespaceAlias(llvm::StringRef AliasName = llvm::StringRef(),
+                                          SourceLocation AliasLoc = SourceLocation());
 
   /// Parses a module declaration (C++20).
   ModuleDecl *parseModuleDeclaration();
@@ -625,6 +627,55 @@ private:
 
   /// Converts TokenKind to UnaryOpKind.
   static UnaryOpKind getUnaryOpKind(TokenKind K);
+
+  /// Returns true if the token is a type keyword.
+  static bool isTypeKeyword(TokenKind K);
+
+  /// Tries to parse a template specialization or comparison expression.
+  /// This is used when we see identifier '<' and need to disambiguate.
+  /// Returns a TemplateSpecializationExpr if it looks like template args,
+  /// or nullptr if it should be parsed as a comparison.
+  Expr *tryParseTemplateOrComparison(SourceLocation Loc, llvm::StringRef Name);
+};
+
+//===----------------------------------------------------------------------===//
+// TentativeParsingAction - Support for tentative parsing and backtracking
+//===----------------------------------------------------------------------===//
+
+/// TentativeParsingAction - Saves the parser state and allows backtracking.
+///
+/// This class is used for tentative parsing, where we try to parse something
+/// and may need to backtrack if it doesn't work out. The destructor automatically
+/// restores the state if commit() was not called.
+///
+/// Usage:
+///   TentativeParsingAction TPA(*this);
+///   Expr *Result = tryParseSomething();
+///   if (Result) {
+///     TPA.commit();
+///     return Result;
+///   }
+///   TPA.abort();
+///   return nullptr;
+class TentativeParsingAction {
+  Parser &P;
+  Token SavedTok;
+  Token SavedNextTok;
+  size_t SavedBufferIndex;
+  bool Committed = false;
+
+public:
+  /// Saves the current parser state.
+  explicit TentativeParsingAction(Parser &Parser);
+
+  /// Restores the parser state if not committed.
+  ~TentativeParsingAction();
+
+  /// Commits the parsing result, preventing state restoration.
+  void commit() { Committed = true; }
+
+  /// Explicitly aborts and restores the state.
+  void abort();
 };
 
 } // namespace blocktype

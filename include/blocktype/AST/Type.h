@@ -614,6 +614,7 @@ enum class TemplateArgumentKind {
 /// A template argument can be a type, a non-type (expression), or a template.
 class TemplateArgument {
   TemplateArgumentKind Kind;
+  bool IsPackExpansion = false;  // ✅ Added: Mark if this is a pack expansion (Ts...)
   union {
     QualType AsType;
     Expr *AsExpr;
@@ -635,6 +636,12 @@ public:
   bool isType() const { return Kind == TemplateArgumentKind::Type; }
   bool isNonType() const { return Kind == TemplateArgumentKind::NonType; }
   bool isTemplate() const { return Kind == TemplateArgumentKind::Template; }
+
+  /// Check if this template argument is a pack expansion (Ts...).
+  bool isPackExpansion() const { return IsPackExpansion; }
+  
+  /// Mark this template argument as a pack expansion.
+  void setPackExpansion(bool IsPack = true) { IsPackExpansion = IsPack; }
 
   QualType getAsType() const {
     assert(isType() && "Template argument is not a type");

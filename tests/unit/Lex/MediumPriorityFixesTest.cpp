@@ -663,3 +663,52 @@ TEST_F(MediumPriorityFixesTest, CircularIncludeDetection) {
   ASSERT_TRUE(PP->lexToken(Tok));
   EXPECT_EQ(Tok.getKind(), TokenKind::kw_int);
 }
+
+//===----------------------------------------------------------------------===//
+// HeaderSearch Path Canonicalization Tests
+//===----------------------------------------------------------------------===//
+
+TEST_F(MediumPriorityFixesTest, CanonicalPathSimple) {
+  EXPECT_EQ(Headers->getCanonicalPath("foo/bar"), "foo/bar");
+}
+
+TEST_F(MediumPriorityFixesTest, CanonicalPathCurrentDir) {
+  EXPECT_EQ(Headers->getCanonicalPath("foo/./bar"), "foo/bar");
+  EXPECT_EQ(Headers->getCanonicalPath("./foo"), "foo");
+}
+
+TEST_F(MediumPriorityFixesTest, CanonicalPathParentDir) {
+  EXPECT_EQ(Headers->getCanonicalPath("foo/bar/.."), "foo");
+  EXPECT_EQ(Headers->getCanonicalPath("foo/../bar"), "bar");
+  EXPECT_EQ(Headers->getCanonicalPath("foo/bar/../baz"), "foo/baz");
+}
+
+TEST_F(MediumPriorityFixesTest, CanonicalPathMultipleSlashes) {
+  EXPECT_EQ(Headers->getCanonicalPath("foo//bar"), "foo/bar");
+  EXPECT_EQ(Headers->getCanonicalPath("foo///bar"), "foo/bar");
+}
+
+TEST_F(MediumPriorityFixesTest, CanonicalPathAbsolute) {
+  EXPECT_EQ(Headers->getCanonicalPath("/foo/bar"), "/foo/bar");
+  EXPECT_EQ(Headers->getCanonicalPath("/foo/../bar"), "/bar");
+}
+
+TEST_F(MediumPriorityFixesTest, CanonicalPathComplex) {
+  EXPECT_EQ(Headers->getCanonicalPath("foo/./bar/../baz/./qux"), "foo/baz/qux");
+}
+
+TEST_F(MediumPriorityFixesTest, CanonicalPathEmpty) {
+  EXPECT_EQ(Headers->getCanonicalPath(""), "");
+}
+
+TEST_F(MediumPriorityFixesTest, CanonicalPathRoot) {
+  EXPECT_EQ(Headers->getCanonicalPath("/"), "/");
+  EXPECT_EQ(Headers->getCanonicalPath("/.."), "/");
+}
+
+TEST_F(MediumPriorityFixesTest, CanonicalPathRelativeParent) {
+  // Can't go above root for relative paths
+  EXPECT_EQ(Headers->getCanonicalPath("../foo"), "../foo");
+  EXPECT_EQ(Headers->getCanonicalPath("../../foo"), "../../foo");
+}
+

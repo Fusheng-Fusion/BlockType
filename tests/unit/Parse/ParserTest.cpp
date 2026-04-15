@@ -412,6 +412,66 @@ TEST_F(ParserTest, GreaterEqual) {
 }
 
 //===----------------------------------------------------------------------===//
+// Template Specialization Expression Tests
+//===----------------------------------------------------------------------===//
+
+TEST_F(ParserTest, TemplateSpecializationWithBuiltinType) {
+  // Test: Vector<int> should be parsed as template specialization
+  parse("Vector<int>");
+  Expr *E = P->parseExpression();
+  ASSERT_NE(E, nullptr);
+  EXPECT_TRUE(llvm::isa<TemplateSpecializationExpr>(E));
+}
+
+TEST_F(ParserTest, TemplateSpecializationWithIdentifier) {
+  // Test: Container<T> should be parsed as template specialization
+  // This tests the tentative parsing layer
+  parse("Container<T>");
+  Expr *E = P->parseExpression();
+  ASSERT_NE(E, nullptr);
+  // After tentative parsing, this should be recognized as template specialization
+  EXPECT_TRUE(llvm::isa<TemplateSpecializationExpr>(E));
+}
+
+TEST_F(ParserTest, TemplateSpecializationNested) {
+  // Test: Vector<Vector<int>> should be parsed as nested template specialization
+  parse("Vector<Vector<int>>");
+  Expr *E = P->parseExpression();
+  ASSERT_NE(E, nullptr);
+  EXPECT_TRUE(llvm::isa<TemplateSpecializationExpr>(E));
+}
+
+TEST_F(ParserTest, TemplateSpecializationMultipleArgs) {
+  // Test: Pair<int, float> should be parsed as template specialization
+  parse("Pair<int, float>");
+  Expr *E = P->parseExpression();
+  ASSERT_NE(E, nullptr);
+  EXPECT_TRUE(llvm::isa<TemplateSpecializationExpr>(E));
+}
+
+TEST_F(ParserTest, ComparisonNotTemplate) {
+  // Test: a < b should be parsed as comparison, not template
+  parse("a < b");
+  Expr *E = P->parseExpression();
+  ASSERT_NE(E, nullptr);
+  EXPECT_TRUE(llvm::isa<BinaryOperator>(E));
+
+  auto *BinOp = llvm::cast<BinaryOperator>(E);
+  EXPECT_EQ(BinOp->getOpcode(), BinaryOpKind::LT);
+}
+
+TEST_F(ParserTest, ChainedComparison) {
+  // Test: a < b < c should be parsed as chained comparisons
+  parse("a < b < c");
+  Expr *E = P->parseExpression();
+  ASSERT_NE(E, nullptr);
+  EXPECT_TRUE(llvm::isa<BinaryOperator>(E));
+
+  auto *BinOp = llvm::cast<BinaryOperator>(E);
+  EXPECT_EQ(BinOp->getOpcode(), BinaryOpKind::LT);
+}
+
+//===----------------------------------------------------------------------===//
 // Logical Operator Tests
 //===----------------------------------------------------------------------===//
 

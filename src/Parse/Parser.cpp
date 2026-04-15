@@ -166,4 +166,29 @@ void Parser::initializeTokenLookahead() {
   }
 }
 
+//===----------------------------------------------------------------------===//
+// TentativeParsingAction Implementation
+//===----------------------------------------------------------------------===//
+
+TentativeParsingAction::TentativeParsingAction(Parser &Parser)
+    : P(Parser), SavedTok(Parser.Tok), SavedNextTok(Parser.NextTok),
+      SavedBufferIndex(Parser.PP.saveTokenBufferState()) {}
+
+TentativeParsingAction::~TentativeParsingAction() {
+  if (!Committed) {
+    abort();
+  }
+}
+
+void TentativeParsingAction::abort() {
+  // Restore the parser's token state
+  P.Tok = SavedTok;
+  P.NextTok = SavedNextTok;
+
+  // Restore the preprocessor's token buffer state
+  P.PP.restoreTokenBufferState(SavedBufferIndex);
+
+  Committed = false;
+}
+
 } // namespace blocktype

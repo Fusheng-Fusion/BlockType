@@ -157,6 +157,15 @@ DIAG(err_unexpected_token, Error, \
 DIAG(err_invalid_operator, Error, \
   "invalid operator", \
   "无效的运算符")
+DIAG(err_invalid_floating_literal, Error, \
+  "invalid floating point literal '%0'", \
+  "无效的浮点数字面量 '%0'")
+DIAG(err_float_literal_overflow, Error, \
+  "floating point literal '%0' overflows", \
+  "浮点数字面量 '%0' 溢出")
+DIAG(err_float_literal_underflow, Error, \
+  "floating point literal '%0' underflows", \
+  "浮点数字面量 '%0' 下溢")
 
 //===----------------------------------------------------------------------===//
 // General Diagnostics

@@ -336,6 +336,8 @@ public:
 /// EnumDecl - Enum declaration.
 class EnumDecl : public TagDecl {
   llvm::SmallVector<EnumConstantDecl *, 8> Enumerators;
+  QualType UnderlyingType; // The underlying type (e.g., int for "enum E : int")
+  bool IsScoped = false;   // Whether this is an enum class/struct
 
 public:
   EnumDecl(SourceLocation Loc, llvm::StringRef Name)
@@ -343,6 +345,12 @@ public:
 
   llvm::ArrayRef<EnumConstantDecl *> enumerators() const { return Enumerators; }
   void addEnumerator(EnumConstantDecl *D) { Enumerators.push_back(D); }
+
+  QualType getUnderlyingType() const { return UnderlyingType; }
+  void setUnderlyingType(QualType T) { UnderlyingType = T; }
+
+  bool isScoped() const { return IsScoped; }
+  void setScoped(bool Scoped = true) { IsScoped = Scoped; }
 
   NodeKind getKind() const override { return NodeKind::EnumDeclKind; }
 
@@ -961,6 +969,7 @@ class TemplateTemplateParmDecl : public TemplateDecl {
   unsigned Index;
   bool IsParameterPack;
   TemplateDecl *DefaultArg;
+  Expr *Constraint = nullptr; // C++20 requires-clause constraint
 
 public:
   TemplateTemplateParmDecl(SourceLocation Loc, llvm::StringRef Name,
@@ -975,6 +984,10 @@ public:
   TemplateDecl *getDefaultArgument() const { return DefaultArg; }
   void setDefaultArgument(TemplateDecl *Arg) { DefaultArg = Arg; }
   bool hasDefaultArgument() const { return DefaultArg != nullptr; }
+
+  Expr *getConstraint() const { return Constraint; }
+  void setConstraint(Expr *C) { Constraint = C; }
+  bool hasConstraint() const { return Constraint != nullptr; }
 
   NodeKind getKind() const override { return NodeKind::TemplateTemplateParmDeclKind; }
 
@@ -1301,17 +1314,33 @@ public:
 /// AttributeDecl - Attribute specifier declaration.
 /// Example: [[nodiscard]], [[deprecated("reason")]]
 class AttributeDecl : public Decl {
-  llvm::StringRef AttributeName; // The attribute name
-  llvm::StringRef AttributeValue; // Optional attribute value (e.g., "reason")
+  llvm::StringRef AttributeNamespace; // Optional namespace (e.g., "gnu" in [[gnu::unused]])
+  llvm::StringRef AttributeName;       // The attribute name
+  Expr *ArgumentExpr = nullptr;         // Optional argument expression
 
 public:
-  AttributeDecl(SourceLocation Loc, llvm::StringRef Name,
-                llvm::StringRef Value = "")
-      : Decl(Loc), AttributeName(Name), AttributeValue(Value) {}
+  AttributeDecl(SourceLocation Loc, llvm::StringRef Namespace,
+                llvm::StringRef Name, Expr *Arg = nullptr)
+      : Decl(Loc), AttributeNamespace(Namespace), AttributeName(Name),
+        ArgumentExpr(Arg) {}
 
+  // Convenience constructor for attributes without namespace
+  AttributeDecl(SourceLocation Loc, llvm::StringRef Name, Expr *Arg = nullptr)
+      : Decl(Loc), AttributeName(Name), ArgumentExpr(Arg) {}
+
+  bool hasNamespace() const { return !AttributeNamespace.empty(); }
+  llvm::StringRef getNamespace() const { return AttributeNamespace; }
   llvm::StringRef getAttributeName() const { return AttributeName; }
-  llvm::StringRef getAttributeValue() const { return AttributeValue; }
-  bool hasValue() const { return !AttributeValue.empty(); }
+  Expr *getArgumentExpr() const { return ArgumentExpr; }
+  bool hasArgument() const { return ArgumentExpr != nullptr; }
+
+  /// Get the full attribute name including namespace (e.g., "gnu::unused")
+  std::string getFullName() const {
+    if (hasNamespace()) {
+      return (AttributeNamespace + "::" + AttributeName).str();
+    }
+    return AttributeName.str();
+  }
 
   NodeKind getKind() const override { return NodeKind::AttributeDeclKind; }
 

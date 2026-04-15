@@ -9,6 +9,7 @@
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/Type.h"
 #include "blocktype/AST/Decl.h"
+#include "blocktype/AST/Expr.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/StringRef.h"
@@ -65,12 +66,15 @@ RValueReferenceType *ASTContext::getRValueReferenceType(const Type *Referenced) 
 }
 
 ArrayType *ASTContext::getArrayType(const Type *Element, Expr *Size) {
-  // For backward compatibility, create a constant array type
-  // This method is kept for compatibility with existing code
   if (Size) {
     // Try to evaluate the size expression
-    // For now, create an incomplete array type
-    return getIncompleteArrayType(Element);
+    if (auto *IL = dyn_cast<IntegerLiteral>(Size)) {
+      // Constant size array
+      return getConstantArrayType(Element, Size, IL->getValue());
+    }
+    // For non-constant expressions (e.g., template parameters),
+    // create a variable length array type
+    return getVariableArrayType(Element, Size);
   }
   return getIncompleteArrayType(Element);
 }

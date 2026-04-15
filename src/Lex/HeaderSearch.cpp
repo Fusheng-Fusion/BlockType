@@ -137,8 +137,60 @@ bool HeaderSearch::hasIncludeGuard(StringRef Filename) const {
 }
 
 std::string HeaderSearch::getCanonicalPath(StringRef Filename) {
-  // Simplified canonical path - just return the filename
-  return Filename.str();
+  // Implement proper path canonicalization
+  // Handle: . (current directory), .. (parent directory), multiple slashes
+
+  if (Filename.empty()) {
+    return "";
+  }
+
+  std::string Result;
+  std::vector<std::string> Components;
+
+  // Split path into components
+  bool IsAbs = isAbsolutePath(Filename);
+  size_t Start = IsAbs ? 1 : 0;
+
+  for (size_t Idx = Start; Idx < Filename.size(); ) {
+    size_t Next = Filename.find('/', Idx);
+    if (Next == StringRef::npos) {
+      Next = Filename.size();
+    }
+
+    StringRef Component = Filename.substr(Idx, Next - Idx);
+    Idx = Next + 1;
+
+    if (Component.empty() || Component == ".") {
+      // Skip empty components and current directory
+      continue;
+    }
+
+    if (Component == "..") {
+      // Parent directory - pop last component if possible
+      if (!Components.empty() && Components.back() != "..") {
+        Components.pop_back();
+      } else if (!IsAbs) {
+        // Can't go above root, keep ".." for relative paths
+        Components.emplace_back("..");
+      }
+    } else {
+      Components.emplace_back(Component.str());
+    }
+  }
+
+  // Reconstruct path
+  if (IsAbs) {
+    Result = "/";
+  }
+
+  for (size_t Idx = 0; Idx < Components.size(); ++Idx) {
+    if (Idx > 0) {
+      Result += "/";
+    }
+    Result += Components[Idx];
+  }
+
+  return Result.empty() ? (IsAbs ? "/" : ".") : Result;
 }
 
 bool HeaderSearch::isAbsolutePath(StringRef Path) {
@@ -170,16 +222,57 @@ const FileEntry *HeaderSearch::searchInPath(StringRef Path, StringRef Filename) 
 }
 
 const FileEntry *HeaderSearch::searchFramework(StringRef Path, StringRef Filename) {
-  // Framework search: FrameworkName.framework/Headers/HeaderName
-  // Simplified implementation
-  std::string FrameworkPath = Path.str() + "/" + Filename.str() + ".framework/Headers/" + Filename.str();
+  // Framework search follows macOS/iOS conventions:
+  // 1. FrameworkName.framework/Headers/HeaderName
+  // 2. FrameworkName.framework/Headers/HeaderName.h (if HeaderName doesn't have extension)
+  // 3. FrameworkName.framework/PrivateHeaders/HeaderName (for private headers)
+  // 4. FrameworkName.framework/Versions/A/Headers/HeaderName (versioned frameworks)
+  // 5. FrameworkName.framework/Versions/Current/Headers/HeaderName
 
-  // D13: Use cached existence check
-  if (!cachedFileExists(FrameworkPath)) {
-    return nullptr;
+  std::string FrameworkName = Filename.str();
+
+  // Extract header name (remove extension if present)
+  std::string HeaderName = FrameworkName;
+  size_t DotPos = HeaderName.rfind('.');
+  bool HasExtension = (DotPos != std::string::npos && DotPos > 0);
+  if (HasExtension) {
+    FrameworkName = HeaderName.substr(0, DotPos);
   }
 
-  return FileMgr.getFile(FrameworkPath);
+  // List of possible search locations within a framework
+  std::vector<std::string> SearchLocations = {
+    // Standard location
+    "Headers",
+    // Private headers
+    "PrivateHeaders",
+    // Versioned frameworks (A is the most common version)
+    "Versions/A/Headers",
+    "Versions/A/PrivateHeaders",
+    // Current version (symlink to the current version)
+    "Versions/Current/Headers",
+    "Versions/Current/PrivateHeaders"
+  };
+
+  // Try each search location
+  for (const auto& Location : SearchLocations) {
+    std::string FrameworkPath = Path.str() + "/" + FrameworkName + ".framework/" +
+                                Location + "/" + HeaderName;
+
+    // D13: Use cached existence check
+    if (cachedFileExists(FrameworkPath)) {
+      return FileMgr.getFile(FrameworkPath);
+    }
+
+    // If header doesn't have extension, try adding .h
+    if (!HasExtension) {
+      std::string FrameworkPathWithExt = FrameworkPath + ".h";
+      if (cachedFileExists(FrameworkPathWithExt)) {
+        return FileMgr.getFile(FrameworkPathWithExt);
+      }
+    }
+  }
+
+  return nullptr;
 }
 
 bool HeaderSearch::cachedFileExists(StringRef Path) {

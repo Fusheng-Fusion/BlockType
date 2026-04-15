@@ -8,7 +8,9 @@
 
 #include "blocktype/Basic/Diagnostics.h"
 #include "blocktype/Basic/SourceManager.h"
+#include "blocktype/Basic/Translation.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/FileSystem.h"
 #include "gtest/gtest.h"
 #include <sstream>
 
@@ -162,6 +164,59 @@ TEST(DiagnosticsTest, Reset) {
   EXPECT_EQ(Diags.getNumErrors(), 0u);
   EXPECT_EQ(Diags.getNumWarnings(), 0u);
   EXPECT_FALSE(Diags.hasErrorOccurred());
+}
+
+//===----------------------------------------------------------------------===//
+// TranslationManager Tests
+//===----------------------------------------------------------------------===//
+
+TEST(TranslationManagerTest, LoadEnglishYAML) {
+  TranslationManager TM;
+  bool Loaded = TM.loadTranslations(Language::English, "diagnostics/en-US.yaml");
+  ASSERT_TRUE(Loaded);
+
+  TM.setLanguage(Language::English);
+
+  // Check that translations were loaded
+  EXPECT_TRUE(TM.hasTranslation("err_undeclared_var"));
+  EXPECT_TRUE(TM.hasTranslation("err_type_mismatch"));
+  EXPECT_TRUE(TM.hasTranslation("warn_unused_var"));
+
+  // Check message content
+  EXPECT_EQ(TM.translate("err_undeclared_var"), "undeclared variable '%0'");
+  EXPECT_EQ(TM.translate("err_type_mismatch"), "type mismatch: expected '%0', got '%1'");
+}
+
+TEST(TranslationManagerTest, LoadChineseYAML) {
+  TranslationManager TM;
+  bool Loaded = TM.loadTranslations(Language::Chinese, "diagnostics/zh-CN.yaml");
+  ASSERT_TRUE(Loaded);
+
+  TM.setLanguage(Language::Chinese);
+
+  // Check that translations were loaded
+  EXPECT_TRUE(TM.hasTranslation("err_undeclared_var"));
+  EXPECT_TRUE(TM.hasTranslation("err_type_mismatch"));
+  EXPECT_TRUE(TM.hasTranslation("warn_unused_var"));
+
+  // Check message content (Chinese)
+  EXPECT_EQ(TM.translate("err_undeclared_var"), "未声明的变量 '%0'");
+  EXPECT_EQ(TM.translate("err_type_mismatch"), "类型不匹配：期望 '%0'，实际 '%1'");
+}
+
+TEST(TranslationManagerTest, MissingTranslation) {
+  TranslationManager TM;
+  TM.setLanguage(Language::English);
+
+  // Check that missing keys return the key itself
+  EXPECT_EQ(TM.translate("nonexistent_key"), "nonexistent_key");
+  EXPECT_FALSE(TM.hasTranslation("nonexistent_key"));
+}
+
+TEST(TranslationManagerTest, InvalidYAMLFile) {
+  TranslationManager TM;
+  bool Loaded = TM.loadTranslations(Language::English, "nonexistent.yaml");
+  EXPECT_FALSE(Loaded);
 }
 
 } // anonymous namespace

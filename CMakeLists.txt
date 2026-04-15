@@ -37,6 +37,9 @@ include(LLVM)
 include(GTest)
 include(AI)
 
+# 添加第三方库
+add_subdirectory(third_party/utf8proc)
+
 # 添加子目录
 add_subdirectory(src/Basic)
 add_subdirectory(src/Unicode)

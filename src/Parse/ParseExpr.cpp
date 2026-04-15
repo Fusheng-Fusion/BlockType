@@ -63,12 +63,45 @@ ValueDecl *Parser::lookupMemberInType(llvm::StringRef MemberName, QualType BaseT
     return nullptr;
   }
 
-  // Look up the member in the record
-  // For now, we do a simple linear search through fields
-  // A full implementation would use a symbol table for faster lookup
+  // Search in the current class
+  // 1. Search fields
   for (FieldDecl *Field : RD->fields()) {
     if (Field->getName() == MemberName) {
       return Field;
+    }
+  }
+
+  // 2. Search methods (if CXXRecordDecl)
+  if (auto *CXXRD = llvm::dyn_cast<CXXRecordDecl>(RD)) {
+    for (CXXMethodDecl *Method : CXXRD->methods()) {
+      if (Method->getName() == MemberName) {
+        return Method;
+      }
+    }
+
+    // 3. Search base classes
+    for (const auto &Base : CXXRD->bases()) {
+      QualType BaseType = Base.getType();
+      if (auto *BaseRT = llvm::dyn_cast_or_null<RecordType>(BaseType.getTypePtr())) {
+        if (RecordDecl *BaseRD = BaseRT->getDecl()) {
+          // Recursively search in base class
+          for (FieldDecl *Field : BaseRD->fields()) {
+            if (Field->getName() == MemberName) {
+              // TODO: Check access control
+              // For now, return the first found member
+              return Field;
+            }
+          }
+          if (auto *BaseCXXRD = llvm::dyn_cast<CXXRecordDecl>(BaseRD)) {
+            for (CXXMethodDecl *Method : BaseCXXRD->methods()) {
+              if (Method->getName() == MemberName) {
+                // TODO: Check access control
+                return Method;
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -556,9 +589,24 @@ Expr *Parser::parseFloatingLiteral() {
     // Try to parse the value
     auto Result = Value.convertFromString(
         Text, llvm::APFloat::rmNearestTiesToEven);
-    // Ignore conversion errors for now
+
+    // Check for conversion errors
     if (Result) {
-      // Conversion successful
+      llvm::APFloat::opStatus Status = Result.get();
+      if (Status & llvm::APFloat::opInvalidOp) {
+        // Invalid floating point literal
+        emitError(Loc, DiagID::err_invalid_floating_literal);
+      } else if (Status & llvm::APFloat::opOverflow) {
+        // Overflow
+        emitError(Loc, DiagID::err_float_literal_overflow);
+      } else if (Status & llvm::APFloat::opUnderflow) {
+        // Underflow
+        emitError(Loc, DiagID::err_float_literal_underflow);
+      }
+      // Other status flags (inexact, etc.) are acceptable
+    } else {
+      // Conversion failed completely
+      emitError(Loc, DiagID::err_invalid_floating_literal);
     }
   }
 
@@ -678,40 +726,28 @@ Expr *Parser::parseIdentifier() {
 
   // Check for template argument list
   if (Tok.is(TokenKind::less)) {
-    // We need to distinguish between:
-    // 1. Template specialization: a<int>, a<T>
-    // 2. Comparison expression: a < b
-    
-    // Use a heuristic: look ahead to see if this looks like template arguments
-    // Template arguments typically start with:
-    // - Type keywords (int, float, etc.)
-    // - Identifiers that might be types
-    // - Constants
-    // - Other template specializations (nested)
-    
+    // Three-layer disambiguation strategy:
+
+    // Layer 1: Check if next token is a type keyword
     Token NextTok = PP.peekToken(0);
-    
-    // If next token is a type keyword, it's likely a template argument
-    if (NextTok.is(TokenKind::kw_void) || NextTok.is(TokenKind::kw_bool) ||
-        NextTok.is(TokenKind::kw_char) || NextTok.is(TokenKind::kw_short) ||
-        NextTok.is(TokenKind::kw_int) || NextTok.is(TokenKind::kw_long) ||
-        NextTok.is(TokenKind::kw_float) || NextTok.is(TokenKind::kw_double) ||
-        NextTok.is(TokenKind::kw_const) || NextTok.is(TokenKind::kw_volatile) ||
-        NextTok.is(TokenKind::kw_unsigned) || NextTok.is(TokenKind::kw_signed)) {
+    if (isTypeKeyword(NextTok.getKind())) {
       return parseTemplateSpecializationExpr(Loc, Name);
     }
-    
-    // If next token is an identifier, we need to check further
-    // For now, we'll assume it's a comparison to be safe
-    // This might miss some template specializations like Vector<T>, but
-    // it's better than incorrectly parsing comparisons as templates
-    // 
-    // In a full implementation, we would:
-    // 1. Check if the identifier is a known template
-    // 2. Look for '>' followed by ',', '>', or end of expression
-    // 3. Use tentative parsing with backtracking
-    
-    // For now, fall through to treat as comparison
+
+    // Layer 2: Check if the identifier is a known template in the symbol table
+    if (CurrentScope) {
+      if (NamedDecl *D = CurrentScope->lookup(Name)) {
+        if (llvm::isa<TemplateDecl>(D)) {
+          return parseTemplateSpecializationExpr(Loc, Name);
+        }
+      }
+    }
+
+    // Layer 3: Tentative parsing
+    Expr *Result = tryParseTemplateOrComparison(Loc, Name);
+    if (Result) {
+      return Result;
+    }
   }
 
   // Lookup the declaration in the current scope
@@ -750,19 +786,28 @@ Expr *Parser::parseQualifiedName(SourceLocation StartLoc, llvm::StringRef FirstN
 
   // Check for template argument list after the qualified name
   if (Tok.is(TokenKind::less)) {
-    // Use the same heuristic as in parseIdentifier
+    // Three-layer disambiguation strategy (same as parseIdentifier):
+
+    // Layer 1: Check if next token is a type keyword
     Token NextTok = PP.peekToken(0);
-    
-    if (NextTok.is(TokenKind::kw_void) || NextTok.is(TokenKind::kw_bool) ||
-        NextTok.is(TokenKind::kw_char) || NextTok.is(TokenKind::kw_short) ||
-        NextTok.is(TokenKind::kw_int) || NextTok.is(TokenKind::kw_long) ||
-        NextTok.is(TokenKind::kw_float) || NextTok.is(TokenKind::kw_double) ||
-        NextTok.is(TokenKind::kw_const) || NextTok.is(TokenKind::kw_volatile) ||
-        NextTok.is(TokenKind::kw_unsigned) || NextTok.is(TokenKind::kw_signed)) {
+    if (isTypeKeyword(NextTok.getKind())) {
       return parseTemplateSpecializationExpr(StartLoc, FullName);
     }
-    
-    // Fall through to treat as comparison
+
+    // Layer 2: Check if the identifier is a known template in the symbol table
+    if (CurrentScope) {
+      if (NamedDecl *D = CurrentScope->lookup(FullName)) {
+        if (llvm::isa<TemplateDecl>(D)) {
+          return parseTemplateSpecializationExpr(StartLoc, FullName);
+        }
+      }
+    }
+
+    // Layer 3: Tentative parsing
+    Expr *Result = tryParseTemplateOrComparison(StartLoc, FullName);
+    if (Result) {
+      return Result;
+    }
   }
 
   // Lookup the declaration in the current scope
@@ -845,8 +890,79 @@ Expr *Parser::parseTemplateSpecializationExpr(SourceLocation StartLoc, llvm::Str
   }
 
   // Create TemplateSpecializationExpr with complete template argument information
-  return Context.create<TemplateSpecializationExpr>(StartLoc, TemplateName, 
+  return Context.create<TemplateSpecializationExpr>(StartLoc, TemplateName,
                                                      TemplateArgs, VD);
+}
+
+/// isTypeKeyword - Returns true if the token is a type keyword.
+bool Parser::isTypeKeyword(TokenKind K) {
+  return K == TokenKind::kw_void || K == TokenKind::kw_bool ||
+         K == TokenKind::kw_char || K == TokenKind::kw_short ||
+         K == TokenKind::kw_int || K == TokenKind::kw_long ||
+         K == TokenKind::kw_float || K == TokenKind::kw_double ||
+         K == TokenKind::kw_const || K == TokenKind::kw_volatile ||
+         K == TokenKind::kw_unsigned || K == TokenKind::kw_signed;
+}
+
+/// tryParseTemplateOrComparison - Tries to parse a template specialization or
+/// comparison expression using tentative parsing.
+///
+/// This is the third layer of disambiguation. We try to parse template arguments
+/// and check if it looks like a valid template specialization. If not, we backtrack
+/// and return nullptr to indicate it should be parsed as a comparison.
+Expr *Parser::tryParseTemplateOrComparison(SourceLocation Loc, llvm::StringRef Name) {
+  // Save the current parser state for backtracking
+  TentativeParsingAction TPA(*this);
+
+  // Try to parse '<' template-arguments '>'
+  consumeToken(); // consume '<'
+
+  // Check if this looks like a template argument list
+  // A valid template argument list should:
+  // 1. Start with a type keyword, identifier, or constant
+  // 2. End with '>' (not '>>' which could be shift operator)
+  // 3. Have balanced angle brackets
+
+  bool IsValidTemplate = false;
+
+  // Simple heuristic: check if we can reach a matching '>' without errors
+  if (Tok.is(TokenKind::identifier) || isTypeKeyword(Tok.getKind()) ||
+      Tok.is(TokenKind::integer_literal) || Tok.is(TokenKind::floating_literal)) {
+
+    // Try to consume tokens until we find a matching '>'
+    int Depth = 1;
+    while (Depth > 0 && !Tok.is(TokenKind::eof)) {
+      if (Tok.is(TokenKind::less)) {
+        Depth++;
+      } else if (Tok.is(TokenKind::greater)) {
+        Depth--;
+        if (Depth == 0) {
+          IsValidTemplate = true;
+          break;
+        }
+      } else if (Tok.is(TokenKind::greatergreater)) {
+        // '>>' could be a nested template closing or shift operator
+        // In template context, it's usually nested closing
+        Depth -= 2;
+        if (Depth == 0) {
+          IsValidTemplate = true;
+          break;
+        }
+      }
+      consumeToken();
+    }
+  }
+
+  // Restore the parser state (we'll parse for real if it's valid)
+  TPA.abort();
+
+  // If it looks like a valid template specialization, parse it for real
+  if (IsValidTemplate) {
+    return parseTemplateSpecializationExpr(Loc, Name);
+  }
+
+  // Otherwise, return nullptr to indicate it should be parsed as a comparison
+  return nullptr;
 }
 
 Expr *Parser::parseParenExpression() {
