@@ -21,6 +21,7 @@ namespace blocktype {
 class Expr;
 class Decl;
 class VarDecl;
+class LabelDecl;
 
 //===----------------------------------------------------------------------===//
 // Stmt - Base class for all statements
@@ -271,15 +272,17 @@ public:
 
 /// GotoStmt - Goto statement.
 class GotoStmt : public Stmt {
+  LabelDecl *Label;
+
 public:
-  GotoStmt(SourceLocation Loc) : Stmt(Loc) {}
+  GotoStmt(SourceLocation Loc, LabelDecl *Label)
+      : Stmt(Loc), Label(Label) {}
+
+  LabelDecl *getLabel() const { return Label; }
 
   NodeKind getKind() const override { return NodeKind::GotoStmtKind; }
 
-  void dump(raw_ostream &OS, unsigned Indent = 0) const override {
-    printIndent(OS, Indent);
-    OS << "GotoStmt: goto\n";
-  }
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
 
   static bool classof(const ASTNode *N) {
     return N->getKind() == NodeKind::GotoStmtKind;
@@ -288,12 +291,14 @@ public:
 
 /// LabelStmt - Label statement.
 class LabelStmt : public Stmt {
+  LabelDecl *Label;
   Stmt *SubStmt;
 
 public:
-  LabelStmt(SourceLocation Loc, Stmt *SubStmt)
-      : Stmt(Loc), SubStmt(SubStmt) {}
+  LabelStmt(SourceLocation Loc, LabelDecl *Label, Stmt *SubStmt)
+      : Stmt(Loc), Label(Label), SubStmt(SubStmt) {}
 
+  LabelDecl *getLabel() const { return Label; }
   Stmt *getSubStmt() const { return SubStmt; }
 
   NodeKind getKind() const override { return NodeKind::LabelStmtKind; }

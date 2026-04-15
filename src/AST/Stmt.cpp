@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/AST/Stmt.h"
+#include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -129,9 +130,18 @@ void DefaultStmt::dump(raw_ostream &OS, unsigned Indent) const {
 
 void LabelStmt::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
-  OS << "LabelStmt:\n";
+  OS << "LabelStmt: " << (Label ? Label->getName() : "") << "\n";
   if (SubStmt)
     SubStmt->dump(OS, Indent + 1);
+}
+
+//===----------------------------------------------------------------------===//
+// GotoStmt
+//===----------------------------------------------------------------------===//
+
+void GotoStmt::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "GotoStmt: " << (Label ? Label->getName() : "") << "\n";
 }
 
 //===----------------------------------------------------------------------===//

@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/Parse/Parser.h"
+#include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Stmt.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -169,6 +170,7 @@ Stmt *Parser::parseNullStatement() {
 //===----------------------------------------------------------------------===//
 
 Stmt *Parser::parseExpressionStatement() {
+  SourceLocation Loc = Tok.getLocation();
   Expr *E = parseExpression();
   if (!E) {
     // Error recovery: skip to semicolon
@@ -181,9 +183,7 @@ Stmt *Parser::parseExpressionStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  // TODO: Create ExpressionStmt
-  // For now, return null
-  return nullptr;
+  return Context.create<ExprStmt>(Loc, E);
 }
 
 //===----------------------------------------------------------------------===//
@@ -215,8 +215,10 @@ Stmt *Parser::parseLabelStatement() {
     SubStmt = Context.create<NullStmt>(LabelLoc);
   }
 
-  // TODO: Create LabelStmt
-  return SubStmt;
+  // Create LabelDecl
+  LabelDecl *Label = Context.create<LabelDecl>(LabelLoc, LabelName);
+
+  return Context.create<LabelStmt>(LabelLoc, Label, SubStmt);
 }
 
 //===----------------------------------------------------------------------===//
@@ -243,8 +245,7 @@ Stmt *Parser::parseCaseStatement() {
     SubStmt = Context.create<NullStmt>(CaseLoc);
   }
 
-  // TODO: Create CaseStmt
-  return SubStmt;
+  return Context.create<CaseStmt>(CaseLoc, CaseVal, nullptr, SubStmt);
 }
 
 //===----------------------------------------------------------------------===//
@@ -265,8 +266,7 @@ Stmt *Parser::parseDefaultStatement() {
     SubStmt = Context.create<NullStmt>(DefaultLoc);
   }
 
-  // TODO: Create DefaultStmt
-  return SubStmt;
+  return Context.create<DefaultStmt>(DefaultLoc, SubStmt);
 }
 
 //===----------------------------------------------------------------------===//
@@ -281,8 +281,7 @@ Stmt *Parser::parseBreakStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  // TODO: Create BreakStmt
-  return Context.create<NullStmt>(BreakLoc);
+  return Context.create<BreakStmt>(BreakLoc);
 }
 
 //===----------------------------------------------------------------------===//
@@ -297,8 +296,7 @@ Stmt *Parser::parseContinueStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  // TODO: Create ContinueStmt
-  return Context.create<NullStmt>(ContinueLoc);
+  return Context.create<ContinueStmt>(ContinueLoc);
 }
 
 //===----------------------------------------------------------------------===//
@@ -318,14 +316,17 @@ Stmt *Parser::parseGotoStatement() {
   }
 
   StringRef LabelName = Tok.getText();
+  SourceLocation LabelLoc = Tok.getLocation();
   consumeToken(); // consume identifier
 
   if (!tryConsumeToken(TokenKind::semicolon)) {
     emitError(DiagID::err_expected_semi);
   }
 
-  // TODO: Create GotoStmt
-  return Context.create<NullStmt>(GotoLoc);
+  // Create LabelDecl
+  LabelDecl *Label = Context.create<LabelDecl>(LabelLoc, LabelName);
+
+  return Context.create<GotoStmt>(GotoLoc, Label);
 }
 
 //===----------------------------------------------------------------------===//
@@ -399,8 +400,7 @@ Stmt *Parser::parseSwitchStatement() {
     Body = Context.create<NullStmt>(SwitchLoc);
   }
 
-  // TODO: Create SwitchStmt
-  return Body;
+  return Context.create<SwitchStmt>(SwitchLoc, Cond, Body);
 }
 
 //===----------------------------------------------------------------------===//
@@ -432,8 +432,7 @@ Stmt *Parser::parseWhileStatement() {
     Body = Context.create<NullStmt>(WhileLoc);
   }
 
-  // TODO: Create WhileStmt
-  return Body;
+  return Context.create<WhileStmt>(WhileLoc, Cond, Body);
 }
 
 //===----------------------------------------------------------------------===//
@@ -453,13 +452,13 @@ Stmt *Parser::parseDoStatement() {
   // Parse 'while'
   if (!tryConsumeToken(TokenKind::kw_while)) {
     emitError(DiagID::err_expected);
-    return Body;
+    return Context.create<DoStmt>(DoLoc, Body, nullptr);
   }
 
   // Parse condition
   if (!tryConsumeToken(TokenKind::l_paren)) {
     emitError(DiagID::err_expected_lparen);
-    return Body;
+    return Context.create<DoStmt>(DoLoc, Body, nullptr);
   }
 
   Expr *Cond = parseExpression();
@@ -475,8 +474,7 @@ Stmt *Parser::parseDoStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  // TODO: Create DoStmt
-  return Body;
+  return Context.create<DoStmt>(DoLoc, Body, Cond);
 }
 
 //===----------------------------------------------------------------------===//
@@ -501,9 +499,10 @@ Stmt *Parser::parseForStatement() {
   if (!Tok.is(TokenKind::semicolon)) {
     // TODO: Check if it's a declaration
     // For now, treat as expression statement
+    SourceLocation InitLoc = Tok.getLocation();
     Expr *InitExpr = parseExpression();
     if (InitExpr) {
-      // TODO: Create expression statement
+      Init = Context.create<ExprStmt>(InitLoc, InitExpr);
     }
   }
   if (!tryConsumeToken(TokenKind::semicolon)) {
@@ -535,8 +534,7 @@ Stmt *Parser::parseForStatement() {
     Body = Context.create<NullStmt>(ForLoc);
   }
 
-  // TODO: Create ForStmt
-  return Body;
+  return Context.create<ForStmt>(ForLoc, Init, Cond, Inc, Body);
 }
 
 //===----------------------------------------------------------------------===//
