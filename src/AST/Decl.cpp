@@ -586,4 +586,27 @@ void TypeAliasDecl::dump(raw_ostream &OS, unsigned Indent) const {
   OS << "'\n";
 }
 
+//===----------------------------------------------------------------------===//
+// FriendDecl
+//===----------------------------------------------------------------------===//
+
+void FriendDecl::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "FriendDecl ";
+  if (IsFriendType) {
+    OS << "type '";
+    FriendType.dump(OS);
+    OS << "'";
+  } else if (FriendDecl_) {
+    OS << "decl '";
+    if (auto *FD = llvm::dyn_cast<FunctionDecl>(FriendDecl_)) {
+      OS << FD->getName();
+    } else if (auto *RD = llvm::dyn_cast<CXXRecordDecl>(FriendDecl_)) {
+      OS << RD->getName();
+    }
+    OS << "'";
+  }
+  OS << "\n";
+}
+
 } // namespace blocktype

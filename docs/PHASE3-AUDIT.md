@@ -48,6 +48,24 @@
 | **委托构造函数** | 解析构造函数委托 `ClassName() : ClassName(0) {}` | 🟢 低 | 中 |
 | **继承构造函数** | 解析 `using Base::Base;` | 🟢 低 | 中 |
 
+### 1.2.1 已实现功能 ✅ (2026-04-16 更新)
+
+| 功能 | 状态 | 实现位置 |
+|------|------|----------|
+| **构造函数解析** | ✅ 已实现 | ParseDecl.cpp:1866-1920 |
+| **析构函数解析** | ✅ 已实现 | ParseDecl.cpp:1926-1952 |
+| **成员初始化列表** | ✅ 已实现 | ParseDecl.cpp:2054-2077 |
+| **静态成员** | ✅ 已实现 | ParseDecl.cpp:576-592 |
+| **mutable 成员** | ✅ 已实现 | ParseDecl.cpp:576-592 |
+| **嵌套类定义** | ✅ 已实现 | ParseDecl.cpp:533-570 |
+| **友元声明** | ✅ 已实现 | ParseDecl.cpp:2178-2255 |
+| **类内成员初始化器** | ✅ 已实现 | ParseDecl.cpp:776-781 |
+| **纯虚函数** | ✅ 已实现 | ParseDecl.cpp:741-746 |
+| **override/final** | ✅ 已实现 | ParseDecl.cpp:665-680 |
+| **位域解析** | ✅ 已实现 | ParseDecl.cpp:770-774 |
+| **委托构造函数** | ✅ 已实现 | ParseDecl.cpp:2103-2105 |
+| **继承构造函数** | ✅ 已实现 | ParseDecl.cpp:571-618 |
+
 ### 1.3 不完善功能 ⚠️
 
 ```cpp
@@ -60,6 +78,15 @@
 return Context.create<CXXMethodDecl>(NameLoc, Name, Type, Params, Class, Body,
                                      false, IsConst, false, false, false);
 ```
+
+### 1.3.1 已修复功能 ✅ (2026-04-16 更新)
+
+| 功能 | 状态 | 实现位置 |
+|------|------|----------|
+| **ref-qualifier (&, &&)** | ✅ 已实现 | ParseDecl.cpp:656-663 |
+| **volatile 限定符** | ✅ 已实现 | ParseDecl.cpp:644-653 |
+| **noexcept 说明** | ✅ 已实现 | ParseDecl.cpp:692-723 |
+| **尾置返回类型** | ✅ 已实现 | ParseDecl.cpp:682-690 |
 
 ---
 
@@ -78,6 +105,13 @@ return Context.create<CXXMethodDecl>(NameLoc, Name, Type, Params, Class, Body,
 | **默认访问控制** | struct 默认为 public，当前实现不完整 | 🟡 中 | 低 |
 | **结构体继承** | struct 可以继承自 struct/class | 🟡 中 | 低 |
 
+### 2.2.1 已实现功能 ✅ (2026-04-16 更新)
+
+| 功能 | 状态 | 实现位置 |
+|------|------|----------|
+| **默认访问控制** | ✅ 已实现 | Decl.h:424 (CXXRecordDecl 构造函数) |
+| **结构体继承** | ✅ 已实现 | ParseDecl.cpp:464-470 |
+
 ### 2.3 问题说明
 
 ```cpp
@@ -85,6 +119,12 @@ return Context.create<CXXMethodDecl>(NameLoc, Name, Type, Params, Class, Body,
 Decl *Member = parseClassMember(nullptr); // 应该使用 RecordDecl*
 // 问题：无法正确设置成员的访问控制
 ```
+
+### 2.3.1 已修复问题 ✅ (2026-04-16 更新)
+
+- `parseStructDeclaration()` 现在返回 `CXXRecordDecl*` 并正确传递给 `parseClassBody()`
+- `parseUnionDeclaration()` 同样已修复
+- 访问控制现在正确设置（struct/union 默认 public，class 默认 private）
 
 ---
 

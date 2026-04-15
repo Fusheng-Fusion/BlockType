@@ -189,3 +189,6 @@ DECL(LinkageSpecDecl, Decl)
 
 // Type alias (C++11)
 DECL(TypeAliasDecl, TypeDecl)
+
+// Friend declaration
+DECL(FriendDecl, Decl)

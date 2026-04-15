@@ -440,7 +440,11 @@ public:
   void parseMemberInitializerList(CXXConstructorDecl *Ctor);
 
   /// Parses a single member initializer.
-  CXXCtorInitializer *parseMemberInitializer();
+  /// \param Ctor The constructor being parsed (used to detect delegating constructors).
+  CXXCtorInitializer *parseMemberInitializer(CXXConstructorDecl *Ctor);
+
+  /// Parses a friend declaration.
+  FriendDecl *parseFriendDeclaration(CXXRecordDecl *Class);
 
   //===--------------------------------------------------------------------===//
   // Statement parsing

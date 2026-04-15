@@ -1071,4 +1071,33 @@ public:
   }
 };
 
+//===----------------------------------------------------------------------===//
+// FriendDecl - Friend declaration
+//===----------------------------------------------------------------------===//
+
+/// FriendDecl - Friend declaration.
+/// Example: friend class Foo; or friend void bar(int);
+class FriendDecl : public Decl {
+  NamedDecl *FriendDecl_; // The friend declaration (function or class)
+  QualType FriendType;    // If friend is a type (friend class X;)
+  bool IsFriendType;      // true if friend is a type
+
+public:
+  FriendDecl(SourceLocation Loc, NamedDecl *FD, QualType FT = QualType(),
+             bool IsType = false)
+      : Decl(Loc), FriendDecl_(FD), FriendType(FT), IsFriendType(IsType) {}
+
+  NamedDecl *getFriendDecl() const { return FriendDecl_; }
+  QualType getFriendType() const { return FriendType; }
+  bool isFriendType() const { return IsFriendType; }
+
+  NodeKind getKind() const override { return NodeKind::FriendDeclKind; }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::FriendDeclKind;
+  }
+};
+
 } // namespace blocktype

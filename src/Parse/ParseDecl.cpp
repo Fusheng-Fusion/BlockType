@@ -514,6 +514,8 @@ void Parser::parseClassBody(CXXRecordDecl *Class) {
 /// member-declaration ::= decl-specifier-seq? member-declarator-list? ';'
 ///                      | function-definition
 ///                      | access-specifier ':'
+///                      | friend-declaration
+///                      | nested-class-definition
 Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
   // Check for access specifier
   if (Tok.is(TokenKind::kw_public) || Tok.is(TokenKind::kw_protected) ||
@@ -525,6 +527,104 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
       Class->setCurrentAccess(AccessSpec->getAccess());
     }
     return AccessSpec;
+  }
+
+  // Check for friend declaration
+  if (Tok.is(TokenKind::kw_friend)) {
+    return parseFriendDeclaration(Class);
+  }
+
+  // Check for nested class/struct/union declaration
+  if (Tok.is(TokenKind::kw_class) || Tok.is(TokenKind::kw_struct) ||
+      Tok.is(TokenKind::kw_union)) {
+    TokenKind Kind = Tok.is(TokenKind::kw_class) ? TokenKind::kw_class :
+                     Tok.is(TokenKind::kw_struct) ? TokenKind::kw_struct :
+                     TokenKind::kw_union;
+    SourceLocation TagLoc = Tok.getLocation();
+    consumeToken();
+
+    if (Kind == TokenKind::kw_class) {
+      CXXRecordDecl *NestedClass = parseClassDeclaration(TagLoc);
+      if (NestedClass && Class) {
+        Class->addMember(NestedClass);
+      }
+      // Consume optional semicolon
+      if (Tok.is(TokenKind::semicolon)) {
+        consumeToken();
+      }
+      return NestedClass;
+    } else if (Kind == TokenKind::kw_struct) {
+      CXXRecordDecl *NestedStruct = parseStructDeclaration(TagLoc);
+      if (NestedStruct && Class) {
+        Class->addMember(NestedStruct);
+      }
+      // Consume optional semicolon
+      if (Tok.is(TokenKind::semicolon)) {
+        consumeToken();
+      }
+      return NestedStruct;
+    } else {
+      CXXRecordDecl *NestedUnion = parseUnionDeclaration(TagLoc);
+      if (NestedUnion && Class) {
+        Class->addMember(NestedUnion);
+      }
+      // Consume optional semicolon
+      if (Tok.is(TokenKind::semicolon)) {
+        consumeToken();
+      }
+      return NestedUnion;
+    }
+  }
+
+  // Check for using declaration (including inheriting constructors: using Base::Base;)
+  if (Tok.is(TokenKind::kw_using)) {
+    SourceLocation UsingLoc = Tok.getLocation();
+    consumeToken(); // consume 'using'
+
+    // Check for inheriting constructor: using Base::Base;
+    if (Tok.is(TokenKind::identifier)) {
+      llvm::StringRef First = Tok.getText();
+      SourceLocation FirstLoc = Tok.getLocation();
+      consumeToken();
+
+      if (Tok.is(TokenKind::coloncolon)) {
+        consumeToken(); // consume '::'
+
+        if (Tok.is(TokenKind::identifier)) {
+          llvm::StringRef Second = Tok.getText();
+          consumeToken();
+
+          // If Second == First, this is inheriting constructor: using Base::Base;
+          if (Second == First) {
+            // This is an inheriting constructor declaration
+            // For now, create a UsingDecl to represent it
+            if (!Tok.is(TokenKind::semicolon)) {
+              emitError(DiagID::err_expected_semi);
+              return nullptr;
+            }
+            consumeToken();
+            return Context.create<UsingDecl>(UsingLoc, First);
+          }
+          // Otherwise, it's a regular using declaration
+          // Fall through to handle as regular using declaration
+        }
+      }
+      // If we get here, it's a type alias
+      // Put the tokens back conceptually by parsing as type alias
+      // For simplicity, we'll create a UsingDecl
+      if (Tok.is(TokenKind::equal)) {
+        // Type alias: using X = type;
+        return parseTypeAliasDeclaration(UsingLoc);
+      }
+      if (!Tok.is(TokenKind::semicolon)) {
+        emitError(DiagID::err_expected_semi);
+        return nullptr;
+      }
+      consumeToken();
+      return Context.create<UsingDecl>(FirstLoc, First);
+    }
+    emitError(DiagID::err_expected_identifier);
+    return nullptr;
   }
 
   // Check for constructor/destructor (if we're in a class scope)
@@ -1960,9 +2060,14 @@ void Parser::parseMemberInitializerList(CXXConstructorDecl *Ctor) {
   consumeToken(); // consume ':'
 
   do {
-    CXXCtorInitializer *Init = parseMemberInitializer();
+    CXXCtorInitializer *Init = parseMemberInitializer(Ctor);
     if (Init) {
       Ctor->addInitializer(Init);
+      // Check for delegating constructor
+      if (Init->isDelegatingInitializer()) {
+        // Delegating constructor cannot have other initializers
+        break;
+      }
     } else {
       // Error recovery: skip to next ',' or '{'
       skipUntil({TokenKind::comma, TokenKind::l_brace, TokenKind::semicolon});
@@ -1982,7 +2087,8 @@ void Parser::parseMemberInitializerList(CXXConstructorDecl *Ctor) {
 ///                      | identifier '{' expr-list? '}'
 ///                      | identifier
 ///
-CXXCtorInitializer *Parser::parseMemberInitializer() {
+/// For delegating constructors: ClassName '(' args ')' or ClassName '{' args '}'
+CXXCtorInitializer *Parser::parseMemberInitializer(CXXConstructorDecl *Ctor) {
   if (!Tok.is(TokenKind::identifier)) {
     emitError(DiagID::err_expected_identifier);
     return nullptr;
@@ -1991,6 +2097,12 @@ CXXCtorInitializer *Parser::parseMemberInitializer() {
   SourceLocation MemberLoc = Tok.getLocation();
   llvm::StringRef MemberName = Tok.getText();
   consumeToken();
+
+  // Check if this is a delegating constructor (name matches class name)
+  bool IsDelegating = false;
+  if (Ctor && Ctor->getParent() && MemberName == Ctor->getParent()->getName()) {
+    IsDelegating = true;
+  }
 
   llvm::SmallVector<Expr *, 4> Args;
 
@@ -2052,7 +2164,114 @@ CXXCtorInitializer *Parser::parseMemberInitializer() {
   }
   // else: member initializer without arguments (value initialization)
 
-  return new CXXCtorInitializer(MemberLoc, MemberName, Args, false, false);
+  return new CXXCtorInitializer(MemberLoc, MemberName, Args, false, IsDelegating);
+}
+
+//===----------------------------------------------------------------------===//
+// Friend Declaration Parsing
+//===----------------------------------------------------------------------===//
+
+/// parseFriendDeclaration - Parse a friend declaration.
+///
+/// friend-declaration ::= 'friend' friend-declaration-specifier
+///
+/// friend-declaration-specifier ::= class-key identifier
+///                                | type-specifier-seq declarator
+FriendDecl *Parser::parseFriendDeclaration(CXXRecordDecl *Class) {
+  assert(Tok.is(TokenKind::kw_friend) && "Expected 'friend'");
+  SourceLocation FriendLoc = Tok.getLocation();
+  consumeToken(); // consume 'friend'
+
+  // Check for friend class/struct/union
+  if (Tok.is(TokenKind::kw_class) || Tok.is(TokenKind::kw_struct) ||
+      Tok.is(TokenKind::kw_union)) {
+    consumeToken(); // consume class/struct/union
+
+    // Parse the type name
+    if (!Tok.is(TokenKind::identifier)) {
+      emitError(DiagID::err_expected_identifier);
+      return nullptr;
+    }
+
+    llvm::StringRef TypeName = Tok.getText();
+    SourceLocation TypeNameLoc = Tok.getLocation();
+    consumeToken();
+
+    // Create a forward declaration for the friend class
+    // For now, create a simple FriendDecl with the type name
+    QualType FriendType; // TODO: Look up or create the type
+    FriendDecl *FD = Context.create<FriendDecl>(FriendLoc, nullptr, FriendType, true);
+
+    // Expect semicolon
+    if (!Tok.is(TokenKind::semicolon)) {
+      emitError(DiagID::err_expected_semi);
+      return FD;
+    }
+    consumeToken();
+
+    return FD;
+  }
+
+  // Friend function declaration
+  // Parse type
+  QualType Type = parseType();
+  if (Type.isNull()) {
+    emitError(DiagID::err_expected_type);
+    return nullptr;
+  }
+
+  // Parse function name
+  if (!Tok.is(TokenKind::identifier)) {
+    emitError(DiagID::err_expected_identifier);
+    return nullptr;
+  }
+
+  llvm::StringRef Name = Tok.getText();
+  SourceLocation NameLoc = Tok.getLocation();
+  consumeToken();
+
+  // Parse parameter list
+  if (!Tok.is(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return nullptr;
+  }
+
+  llvm::SmallVector<ParmVarDecl *, 8> Params;
+  consumeToken(); // consume '('
+
+  if (!Tok.is(TokenKind::r_paren)) {
+    do {
+      ParmVarDecl *Param = parseParameterDeclaration();
+      if (Param) {
+        Params.push_back(Param);
+      }
+
+      if (Tok.is(TokenKind::comma)) {
+        consumeToken();
+      } else {
+        break;
+      }
+    } while (true);
+  }
+
+  if (!Tok.is(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+    return nullptr;
+  }
+  consumeToken(); // consume ')'
+
+  // Expect semicolon
+  if (!Tok.is(TokenKind::semicolon)) {
+    emitError(DiagID::err_expected_semi);
+    return nullptr;
+  }
+  consumeToken();
+
+  // Create a FunctionDecl for the friend function
+  FunctionDecl *FriendFunc = Context.create<FunctionDecl>(NameLoc, Name, Type, Params, nullptr);
+
+  // Create FriendDecl
+  return Context.create<FriendDecl>(FriendLoc, FriendFunc, QualType(), false);
 }
 
 } // namespace blocktype
