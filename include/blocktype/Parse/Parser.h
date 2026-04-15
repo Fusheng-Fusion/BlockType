@@ -251,6 +251,25 @@ public:
   Expr *parseCStyleCastExpr();
 
   //===--------------------------------------------------------------------===//
+  // Type parsing
+  //===--------------------------------------------------------------------===//
+
+  /// Parses a complete type.
+  QualType parseType();
+
+  /// Parses a type specifier (builtin types, named types).
+  QualType parseTypeSpecifier();
+
+  /// Parses a builtin type.
+  QualType parseBuiltinType();
+
+  /// Parses a declarator (pointers, references, arrays).
+  QualType parseDeclarator(QualType Base);
+
+  /// Parses an array dimension.
+  QualType parseArrayDimension(QualType Base);
+
+  //===--------------------------------------------------------------------===//
   // Statement parsing
   //===--------------------------------------------------------------------===//
 

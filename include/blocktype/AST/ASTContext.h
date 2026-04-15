@@ -13,11 +13,21 @@
 #pragma once
 
 #include "blocktype/AST/ASTNode.h"
+#include "blocktype/AST/Type.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Allocator.h"
 #include <memory>
 #include <vector>
 
 namespace blocktype {
+
+class Type;
+class BuiltinType;
+class PointerType;
+class LValueReferenceType;
+class RValueReferenceType;
+class ArrayType;
+class Expr;
 
 /// ASTContext - Manages memory allocation and lifetime of AST nodes.
 ///
@@ -37,6 +47,9 @@ class ASTContext {
   /// List of all allocated nodes for cleanup.
   /// We store raw pointers here because the allocator owns the memory.
   std::vector<ASTNode *> Nodes;
+  
+  /// Cached builtin types.
+  BuiltinType *BuiltinTypes[static_cast<unsigned>(BuiltinKind::NumBuiltinTypes)] = {};
 
 public:
   ASTContext() = default;
@@ -83,6 +96,25 @@ public:
 
   /// Dumps memory usage statistics for debugging.
   void dumpMemoryUsage(raw_ostream &OS) const;
+  
+  //===--------------------------------------------------------------------===//
+  // Type creation
+  //===--------------------------------------------------------------------===//
+  
+  /// Gets or creates a builtin type.
+  BuiltinType *getBuiltinType(BuiltinKind Kind);
+  
+  /// Gets or creates a pointer type.
+  PointerType *getPointerType(const Type *Pointee);
+  
+  /// Gets or creates an lvalue reference type.
+  LValueReferenceType *getLValueReferenceType(const Type *Referenced);
+  
+  /// Gets or creates an rvalue reference type.
+  RValueReferenceType *getRValueReferenceType(const Type *Referenced);
+  
+  /// Gets or creates an array type.
+  ArrayType *getArrayType(const Type *Element, Expr *Size);
 
 private:
   /// Destroys all nodes in reverse order of creation.

@@ -5,6 +5,7 @@ add_library(blocktype-parse
   ParseStmt.cpp
   ParseStmtCXX.cpp
   Parser.cpp
+  ParseType.cpp
 )
 
 target_include_directories(blocktype-parse
