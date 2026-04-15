@@ -46,6 +46,26 @@ Stmt *Parser::parseStatement() {
     Result = parseGotoStatement();
     break;
 
+  case TokenKind::kw_if:
+    Result = parseIfStatement();
+    break;
+
+  case TokenKind::kw_switch:
+    Result = parseSwitchStatement();
+    break;
+
+  case TokenKind::kw_while:
+    Result = parseWhileStatement();
+    break;
+
+  case TokenKind::kw_do:
+    Result = parseDoStatement();
+    break;
+
+  case TokenKind::kw_for:
+    Result = parseForStatement();
+    break;
+
   case TokenKind::kw_case:
     Result = parseCaseStatement();
     break;
@@ -302,6 +322,269 @@ Stmt *Parser::parseGotoStatement() {
 
   // TODO: Create GotoStmt
   return Context.create<NullStmt>(GotoLoc);
+}
+
+//===----------------------------------------------------------------------===//
+// If statement parsing
+//===----------------------------------------------------------------------===//
+
+Stmt *Parser::parseIfStatement() {
+  SourceLocation IfLoc = Tok.getLocation();
+  consumeToken(); // consume 'if'
+
+  // Parse condition
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return Context.create<NullStmt>(IfLoc);
+  }
+
+  Expr *Cond = parseExpression();
+  if (!Cond) {
+    Cond = createRecoveryExpr(IfLoc);
+  }
+
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+
+  // Parse then statement
+  Stmt *ThenStmt = parseStatement();
+  if (!ThenStmt) {
+    ThenStmt = Context.create<NullStmt>(IfLoc);
+  }
+
+  // Parse optional else statement
+  Stmt *ElseStmt = nullptr;
+  if (Tok.is(TokenKind::kw_else)) {
+    consumeToken(); // consume 'else'
+    ElseStmt = parseStatement();
+    if (!ElseStmt) {
+      ElseStmt = Context.create<NullStmt>(IfLoc);
+    }
+  }
+
+  return Context.create<IfStmt>(IfLoc, Cond, ThenStmt, ElseStmt);
+}
+
+//===----------------------------------------------------------------------===//
+// Switch statement parsing
+//===----------------------------------------------------------------------===//
+
+Stmt *Parser::parseSwitchStatement() {
+  SourceLocation SwitchLoc = Tok.getLocation();
+  consumeToken(); // consume 'switch'
+
+  // Parse condition
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return Context.create<NullStmt>(SwitchLoc);
+  }
+
+  Expr *Cond = parseExpression();
+  if (!Cond) {
+    Cond = createRecoveryExpr(SwitchLoc);
+  }
+
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+
+  // Parse body
+  Stmt *Body = parseStatement();
+  if (!Body) {
+    Body = Context.create<NullStmt>(SwitchLoc);
+  }
+
+  // TODO: Create SwitchStmt
+  return Body;
+}
+
+//===----------------------------------------------------------------------===//
+// While statement parsing
+//===----------------------------------------------------------------------===//
+
+Stmt *Parser::parseWhileStatement() {
+  SourceLocation WhileLoc = Tok.getLocation();
+  consumeToken(); // consume 'while'
+
+  // Parse condition
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return Context.create<NullStmt>(WhileLoc);
+  }
+
+  Expr *Cond = parseExpression();
+  if (!Cond) {
+    Cond = createRecoveryExpr(WhileLoc);
+  }
+
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+
+  // Parse body
+  Stmt *Body = parseStatement();
+  if (!Body) {
+    Body = Context.create<NullStmt>(WhileLoc);
+  }
+
+  // TODO: Create WhileStmt
+  return Body;
+}
+
+//===----------------------------------------------------------------------===//
+// Do-while statement parsing
+//===----------------------------------------------------------------------===//
+
+Stmt *Parser::parseDoStatement() {
+  SourceLocation DoLoc = Tok.getLocation();
+  consumeToken(); // consume 'do'
+
+  // Parse body
+  Stmt *Body = parseStatement();
+  if (!Body) {
+    Body = Context.create<NullStmt>(DoLoc);
+  }
+
+  // Parse 'while'
+  if (!tryConsumeToken(TokenKind::kw_while)) {
+    emitError(DiagID::err_expected);
+    return Body;
+  }
+
+  // Parse condition
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return Body;
+  }
+
+  Expr *Cond = parseExpression();
+  if (!Cond) {
+    Cond = createRecoveryExpr(DoLoc);
+  }
+
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+
+  if (!tryConsumeToken(TokenKind::semicolon)) {
+    emitError(DiagID::err_expected_semi);
+  }
+
+  // TODO: Create DoStmt
+  return Body;
+}
+
+//===----------------------------------------------------------------------===//
+// For statement parsing
+//===----------------------------------------------------------------------===//
+
+Stmt *Parser::parseForStatement() {
+  SourceLocation ForLoc = Tok.getLocation();
+  consumeToken(); // consume 'for'
+
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return Context.create<NullStmt>(ForLoc);
+  }
+
+  // Check for range-based for: for (decl : range)
+  // TODO: Detect range-based for
+  // For now, parse traditional for
+
+  // Parse init (expression statement or declaration)
+  Stmt *Init = nullptr;
+  if (!Tok.is(TokenKind::semicolon)) {
+    // TODO: Check if it's a declaration
+    // For now, treat as expression statement
+    Expr *InitExpr = parseExpression();
+    if (InitExpr) {
+      // TODO: Create expression statement
+    }
+  }
+  if (!tryConsumeToken(TokenKind::semicolon)) {
+    emitError(DiagID::err_expected_semi);
+  }
+
+  // Parse condition
+  Expr *Cond = nullptr;
+  if (!Tok.is(TokenKind::semicolon)) {
+    Cond = parseExpression();
+  }
+  if (!tryConsumeToken(TokenKind::semicolon)) {
+    emitError(DiagID::err_expected_semi);
+  }
+
+  // Parse increment
+  Expr *Inc = nullptr;
+  if (!Tok.is(TokenKind::r_paren)) {
+    Inc = parseExpression();
+  }
+
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+
+  // Parse body
+  Stmt *Body = parseStatement();
+  if (!Body) {
+    Body = Context.create<NullStmt>(ForLoc);
+  }
+
+  // TODO: Create ForStmt
+  return Body;
+}
+
+//===----------------------------------------------------------------------===//
+// C++11 range-based for statement parsing
+//===----------------------------------------------------------------------===//
+
+Stmt *Parser::parseCXXForRangeStatement() {
+  SourceLocation ForLoc = Tok.getLocation();
+  consumeToken(); // consume 'for'
+
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return Context.create<NullStmt>(ForLoc);
+  }
+
+  // Parse range declaration
+  // TODO: Parse declaration properly
+  if (!Tok.is(TokenKind::identifier)) {
+    emitError(DiagID::err_expected_identifier);
+    skipUntil({TokenKind::r_paren});
+    tryConsumeToken(TokenKind::r_paren);
+    return Context.create<NullStmt>(ForLoc);
+  }
+
+  consumeToken(); // consume variable name
+
+  // Expect ':'
+  if (!tryConsumeToken(TokenKind::colon)) {
+    emitError(DiagID::err_expected);
+    skipUntil({TokenKind::r_paren});
+    tryConsumeToken(TokenKind::r_paren);
+    return Context.create<NullStmt>(ForLoc);
+  }
+
+  // Parse range expression
+  Expr *Range = parseExpression();
+  if (!Range) {
+    Range = createRecoveryExpr(ForLoc);
+  }
+
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+
+  // Parse body
+  Stmt *Body = parseStatement();
+  if (!Body) {
+    Body = Context.create<NullStmt>(ForLoc);
+  }
+
+  // TODO: Create CXXForRangeStmt
+  return Body;
 }
 
 } // namespace blocktype

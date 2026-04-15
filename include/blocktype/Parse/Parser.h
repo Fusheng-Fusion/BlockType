@@ -290,6 +290,24 @@ public:
   /// Parses a goto statement.
   Stmt *parseGotoStatement();
 
+  /// Parses an if statement.
+  Stmt *parseIfStatement();
+
+  /// Parses a switch statement.
+  Stmt *parseSwitchStatement();
+
+  /// Parses a while statement.
+  Stmt *parseWhileStatement();
+
+  /// Parses a do-while statement.
+  Stmt *parseDoStatement();
+
+  /// Parses a for statement.
+  Stmt *parseForStatement();
+
+  /// Parses a C++11 range-based for statement.
+  Stmt *parseCXXForRangeStatement();
+
 private:
   //===--------------------------------------------------------------------===//
   // Internal helpers
