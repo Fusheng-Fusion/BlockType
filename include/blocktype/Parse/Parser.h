@@ -124,7 +124,7 @@ public:
   unsigned getErrorCount() const { return ErrorCount; }
 
   /// Returns true if any errors have been encountered.
-  bool hasErrors() const { return ErrorCount > 0; }
+  bool hasErrors() const { return ErrorCount > 0 || Diags.hasErrorOccurred(); }
 
   //===--------------------------------------------------------------------===//
   // Parsing context
@@ -181,6 +181,10 @@ public:
 
   /// Parses an expression.
   Expr *parseExpression();
+
+  /// Parses an assignment expression (stops at comma).
+  /// Used for function call arguments.
+  Expr *parseAssignmentExpression();
 
   /// Parses an expression with a minimum precedence level.
   Expr *parseExpressionWithPrecedence(PrecedenceLevel MinPrec);
@@ -257,6 +261,12 @@ public:
 
   /// Parses a requires expression (C++20).
   Expr *parseRequiresExpression();
+
+  /// Parses the optional parameter list of a requires expression.
+  void parseRequiresExpressionParameterList();
+
+  /// Parses a single requirement in a requires expression body.
+  Requirement *parseRequirement();
 
   /// Parses a C-style cast expression.
   Expr *parseCStyleCastExpr();

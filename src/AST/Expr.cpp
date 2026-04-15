@@ -7,9 +7,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/AST/Expr.h"
+#include "blocktype/AST/Decl.h"
+#include "blocktype/AST/Stmt.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace blocktype {
+
+// Helper function for Requirement classes (not derived from ASTNode)
+static void printRequirementIndent(raw_ostream &OS, unsigned Indent) {
+  for (unsigned I = 0; I < Indent; ++I)
+    OS << "  ";
+}
 
 //===----------------------------------------------------------------------===//
 // Helper Functions
@@ -284,6 +292,186 @@ void CStyleCastExpr::dump(raw_ostream &OS, unsigned Indent) const {
   OS << "CStyleCastExpr: " << getCastKindName(Kind) << "\n";
   if (SubExpr)
     SubExpr->dump(OS, Indent + 1);
+}
+
+//===----------------------------------------------------------------------===//
+// CoawaitExpr
+//===----------------------------------------------------------------------===//
+
+void CoawaitExpr::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "CoawaitExpr: co_await\n";
+  if (Operand != nullptr) {
+    Operand->dump(OS, Indent + 1);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// LambdaExpr
+//===----------------------------------------------------------------------===//
+
+void LambdaExpr::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "LambdaExpr";
+  if (IsMutable) {
+    OS << " mutable";
+  }
+  OS << "\n";
+
+  if (!Captures.empty()) {
+    printIndent(OS, Indent + 1);
+    OS << "Captures:\n";
+    for (const auto &Cap : Captures) {
+      printIndent(OS, Indent + 2);
+      switch (Cap.Kind) {
+      case LambdaCapture::ByCopy:
+        OS << "[=] " << Cap.Name;
+        break;
+      case LambdaCapture::ByRef:
+        OS << "[&] " << Cap.Name;
+        break;
+      case LambdaCapture::InitCopy:
+        OS << Cap.Name << " = ...";
+        break;
+      }
+      OS << "\n";
+    }
+  }
+
+  if (!Params.empty()) {
+    printIndent(OS, Indent + 1);
+    OS << "Parameters:\n";
+    for (const auto *Param : Params) {
+      if (Param != nullptr) {
+        Param->dump(OS, Indent + 2);
+      }
+    }
+  }
+
+  if (Body != nullptr) {
+    printIndent(OS, Indent + 1);
+    OS << "Body:\n";
+    Body->dump(OS, Indent + 2);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// Requirements
+//===----------------------------------------------------------------------===//
+
+void TypeRequirement::dump(raw_ostream &OS, unsigned Indent) const {
+  printRequirementIndent(OS, Indent);
+  OS << "TypeRequirement: ";
+  if (!Type.isNull()) {
+    OS << "<type>";
+  }
+  OS << "\n";
+}
+
+void ExprRequirement::dump(raw_ostream &OS, unsigned Indent) const {
+  printRequirementIndent(OS, Indent);
+  OS << "ExprRequirement";
+  if (IsNoexcept) {
+    OS << " noexcept";
+  }
+  OS << "\n";
+  if (Expression != nullptr) {
+    Expression->dump(OS, Indent + 1);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// RequiresExpr
+//===----------------------------------------------------------------------===//
+
+void RequiresExpr::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "RequiresExpr\n";
+
+  if (!Requirements.empty()) {
+    printIndent(OS, Indent + 1);
+    OS << "Requirements:\n";
+    for (const auto *Req : Requirements) {
+      if (Req != nullptr) {
+        Req->dump(OS, Indent + 2);
+      }
+    }
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// CXXFoldExpr
+//===----------------------------------------------------------------------===//
+
+void CXXFoldExpr::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "CXXFoldExpr '";
+  // Print operator
+  switch (Op) {
+  case BinaryOpKind::Add: OS << "+"; break;
+  case BinaryOpKind::Sub: OS << "-"; break;
+  case BinaryOpKind::Mul: OS << "*"; break;
+  case BinaryOpKind::Div: OS << "/"; break;
+  case BinaryOpKind::And: OS << "&"; break;
+  case BinaryOpKind::Or: OS << "|"; break;
+  case BinaryOpKind::Xor: OS << "^"; break;
+  case BinaryOpKind::LAnd: OS << "&&"; break;
+  case BinaryOpKind::LOr: OS << "||"; break;
+  case BinaryOpKind::Comma: OS << ","; break;
+  default: OS << "???"; break;
+  }
+  OS << "' " << (IsRightFold ? "(right fold)" : "(left fold)") << "\n";
+
+  if (LHS != nullptr) {
+    printIndent(OS, Indent + 1);
+    OS << "LHS:\n";
+    LHS->dump(OS, Indent + 2);
+  }
+  if (RHS != nullptr) {
+    printIndent(OS, Indent + 1);
+    OS << "RHS:\n";
+    RHS->dump(OS, Indent + 2);
+  }
+  if (Pattern != nullptr) {
+    printIndent(OS, Indent + 1);
+    OS << "Pattern:\n";
+    Pattern->dump(OS, Indent + 2);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// PackIndexingExpr
+//===----------------------------------------------------------------------===//
+
+void PackIndexingExpr::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "PackIndexingExpr\n";
+
+  if (Pack != nullptr) {
+    printIndent(OS, Indent + 1);
+    OS << "Pack:\n";
+    Pack->dump(OS, Indent + 2);
+  }
+  if (Index != nullptr) {
+    printIndent(OS, Indent + 1);
+    OS << "Index:\n";
+    Index->dump(OS, Indent + 2);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// ReflexprExpr
+//===----------------------------------------------------------------------===//
+
+void ReflexprExpr::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "ReflexprExpr\n";
+
+  if (Argument != nullptr) {
+    printIndent(OS, Indent + 1);
+    OS << "Argument:\n";
+    Argument->dump(OS, Indent + 2);
+  }
 }
 
 } // namespace blocktype

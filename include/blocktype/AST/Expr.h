@@ -841,15 +841,17 @@ public:
 
 /// CoawaitExpr - Co_await expression.
 class CoawaitExpr : public Expr {
+  Expr *Operand;
+
 public:
-  CoawaitExpr(SourceLocation Loc) : Expr(Loc) {}
+  CoawaitExpr(SourceLocation Loc, Expr *Operand)
+      : Expr(Loc), Operand(Operand) {}
+
+  Expr *getOperand() const { return Operand; }
 
   NodeKind getKind() const override { return NodeKind::CoawaitExprKind; }
 
-  void dump(raw_ostream &OS, unsigned Indent = 0) const override {
-    printIndent(OS, Indent);
-    OS << "CoawaitExpr\n";
-  }
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
 
   static bool classof(const ASTNode *N) {
     return N->getKind() == NodeKind::CoawaitExprKind;

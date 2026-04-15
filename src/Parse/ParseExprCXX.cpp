@@ -14,7 +14,6 @@
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Type.h"
-#include "llvm/Support/raw_ostream.h"
 
 namespace blocktype {
 
@@ -93,7 +92,7 @@ Expr *Parser::parseCXXDeleteExpression() {
 
   // Parse the argument (pointer to delete)
   Expr *Argument = parseUnaryExpression();
-  if (!Argument) {
+  if (Argument == nullptr) {
     Argument = createRecoveryExpr(DeleteLoc);
   }
 
@@ -109,8 +108,7 @@ Expr *Parser::parseCXXThisExpr() {
   SourceLocation ThisLoc = Tok.getLocation();
   consumeToken(); // consume 'this'
 
-  // TODO: Create proper CXXThisExpr
-  return createRecoveryExpr(ThisLoc);
+  return Context.create<CXXThisExpr>(ThisLoc);
 }
 
 //===----------------------------------------------------------------------===//
@@ -127,8 +125,7 @@ Expr *Parser::parseCXXThrowExpr() {
     Operand = parseExpression();
   }
 
-  // TODO: Create proper CXXThrowExpr
-  return createRecoveryExpr(ThrowLoc);
+  return Context.create<CXXThrowExpr>(ThrowLoc, Operand);
 }
 
 //===----------------------------------------------------------------------===//
@@ -151,12 +148,20 @@ Expr *Parser::parseLambdaExpression() {
   }
 
   // Parse parameter list (optional)
-  llvm::SmallVector<Expr *, 4> Params;
+  llvm::SmallVector<ParmVarDecl *, 4> Params;
   if (Tok.is(TokenKind::l_paren)) {
     consumeToken();
     if (!Tok.is(TokenKind::r_paren)) {
-      // TODO: Parse parameter declarations properly
-      auto Args = parseCallArguments();
+      // Parse parameter declarations
+      while (Tok.isNot(TokenKind::r_paren) && Tok.isNot(TokenKind::eof)) {
+        ParmVarDecl *Param = parseParameterDeclaration();
+        if (Param != nullptr) {
+          Params.push_back(Param);
+        }
+        if (!tryConsumeToken(TokenKind::comma)) {
+          break;
+        }
+      }
     }
     if (!tryConsumeToken(TokenKind::r_paren)) {
       emitError(DiagID::err_expected_rparen);
@@ -164,14 +169,17 @@ Expr *Parser::parseLambdaExpression() {
   }
 
   // Parse mutable (optional)
+  bool IsMutable = false;
   if (Tok.is(TokenKind::kw_mutable)) {
+    IsMutable = true;
     consumeToken();
   }
 
   // Parse return type (optional)
+  QualType ReturnType;
   if (Tok.is(TokenKind::arrow)) {
     consumeToken();
-    // TODO: Parse type
+    ReturnType = parseType();
   }
 
   // Parse body
@@ -180,26 +188,15 @@ Expr *Parser::parseLambdaExpression() {
     return createRecoveryExpr(LambdaLoc);
   }
 
-  // TODO: Parse compound statement
-  consumeToken(); // consume '{'
-
-  // Skip to matching '}'
-  unsigned Depth = 1;
-  while (Depth > 0 && !Tok.is(TokenKind::eof)) {
-    if (Tok.is(TokenKind::l_brace))
-      ++Depth;
-    else if (Tok.is(TokenKind::r_brace))
-      --Depth;
-    if (Depth > 0)
-      consumeToken();
+  SourceLocation LBraceLoc = Tok.getLocation();
+  Stmt *Body = parseCompoundStatement();
+  if (Body == nullptr) {
+    Body = Context.create<NullStmt>(Tok.getLocation());
   }
+  SourceLocation RBraceLoc = Tok.getLocation();
 
-  if (!tryConsumeToken(TokenKind::r_brace)) {
-    emitError(DiagID::err_expected_rbrace);
-  }
-
-  // TODO: Create proper LambdaExpr
-  return createRecoveryExpr(LambdaLoc);
+  return Context.create<LambdaExpr>(LambdaLoc, Captures, Params, Body,
+                                     IsMutable, ReturnType, LBraceLoc, RBraceLoc);
 }
 
 llvm::SmallVector<LambdaCapture, 4> Parser::parseLambdaCaptureList() {
@@ -207,6 +204,7 @@ llvm::SmallVector<LambdaCapture, 4> Parser::parseLambdaCaptureList() {
 
   while (Tok.isNot(TokenKind::r_square)) {
     LambdaCapture Capture;
+    SourceLocation CaptureLoc = Tok.getLocation();
 
     // Check for default capture
     if (Tok.is(TokenKind::amp)) {
@@ -214,7 +212,8 @@ llvm::SmallVector<LambdaCapture, 4> Parser::parseLambdaCaptureList() {
       consumeToken();
       if (Tok.is(TokenKind::identifier)) {
         Capture.Kind = LambdaCapture::ByRef;
-        // TODO: Set the captured variable
+        Capture.Name = Tok.getText();
+        Capture.Loc = CaptureLoc;
         consumeToken();
       }
     } else if (Tok.is(TokenKind::equal)) {
@@ -224,22 +223,24 @@ llvm::SmallVector<LambdaCapture, 4> Parser::parseLambdaCaptureList() {
     } else if (Tok.is(TokenKind::identifier)) {
       // identifier
       Capture.Kind = LambdaCapture::ByCopy;
-      // TODO: Set the captured variable
+      Capture.Name = Tok.getText();
+      Capture.Loc = CaptureLoc;
       consumeToken();
 
       // Check for init-capture: identifier = expr
       if (Tok.is(TokenKind::equal)) {
         consumeToken();
-        Expr *Init = parseExpression();
-        // TODO: Store the initializer
+        Capture.Kind = LambdaCapture::InitCopy;
+        Capture.InitExpr = parseExpression();
       }
     }
 
     Captures.push_back(Capture);
 
     // Check for comma
-    if (!tryConsumeToken(TokenKind::comma))
+    if (!tryConsumeToken(TokenKind::comma)) {
       break;
+    }
   }
 
   return Captures;
@@ -253,61 +254,126 @@ Expr *Parser::parseFoldExpression() {
   SourceLocation FoldLoc = Tok.getLocation();
   consumeToken(); // consume '('
 
-  // Parse left operand (if any)
   Expr *LHS = nullptr;
-  if (!Tok.is(TokenKind::ellipsis)) {
-    LHS = parseExpression();
-  }
-
-  // Expect ...
-  if (!Tok.is(TokenKind::ellipsis)) {
-    emitError(DiagID::err_expected);
-    return createRecoveryExpr(FoldLoc);
-  }
-  consumeToken();
-
-  // Parse operator
-  BinaryOpKind Op = getBinaryOpKind(Tok.getKind());
-  if (Op == BinaryOpKind::Add) {
-    // Default, but should check if it's a valid operator
-  }
-  consumeToken();
-
-  // Parse right operand (if any)
   Expr *RHS = nullptr;
-  if (!Tok.is(TokenKind::ellipsis)) {
+  Expr *Pattern = nullptr;
+  BinaryOpKind Operator = BinaryOpKind::Add;
+  bool IsRightFold = false;
+
+  // Check for unary left fold: (... op pack)
+  if (Tok.is(TokenKind::ellipsis)) {
+    consumeToken();
+
+    Operator = getBinaryOpKind(Tok.getKind());
+    consumeToken();
+
     RHS = parseExpression();
+    Pattern = RHS;
+    IsRightFold = false;
   } else {
-    consumeToken(); // consume second ...
+    // Parse first expression (pack or init)
+    LHS = parseExpression();
+
+    // Expect ...
+    if (!Tok.is(TokenKind::ellipsis)) {
+      emitError(DiagID::err_expected);
+      return createRecoveryExpr(FoldLoc);
+    }
+    consumeToken();
+
+    // Parse operator
+    Operator = getBinaryOpKind(Tok.getKind());
+    consumeToken();
+
+    // Check for second ... (unary right fold) or expression (binary fold)
+    if (Tok.is(TokenKind::ellipsis)) {
+      // Unary right fold: (pack op ...)
+      consumeToken();
+      Pattern = LHS;
+      IsRightFold = true;
+    } else {
+      // Binary fold: (pack op ... op init) or (init op ... op pack)
+      RHS = parseExpression();
+      Pattern = LHS;
+      IsRightFold = true;
+    }
   }
 
   if (!tryConsumeToken(TokenKind::r_paren)) {
     emitError(DiagID::err_expected_rparen);
   }
 
-  // TODO: Create proper CXXFoldExpr
-  return createRecoveryExpr(FoldLoc);
+  return Context.create<CXXFoldExpr>(FoldLoc, LHS, RHS, Pattern, Operator, IsRightFold);
 }
 
 //===----------------------------------------------------------------------===//
 // Requires expression parsing (C++20)
 //===----------------------------------------------------------------------===//
 
+/// Parse the optional parameter list of a requires expression.
+void Parser::parseRequiresExpressionParameterList() {
+  if (!Tok.is(TokenKind::l_paren)) {
+    return;
+  }
+  
+  consumeToken();
+  if (!Tok.is(TokenKind::r_paren)) {
+    // Skip to matching ')'
+    unsigned Depth = 1;
+    while (Depth > 0 && !Tok.is(TokenKind::eof)) {
+      if (Tok.is(TokenKind::l_paren)) {
+        ++Depth;
+      } else if (Tok.is(TokenKind::r_paren)) {
+        --Depth;
+      }
+      if (Depth > 0) {
+        consumeToken();
+      }
+    }
+  }
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+}
+
+/// Parse a single requirement in a requires expression body.
+Requirement *Parser::parseRequirement() {
+  // Type requirement: typename T
+  if (Tok.is(TokenKind::kw_typename)) {
+    consumeToken();
+    QualType TypeReq = parseType();
+    if (!tryConsumeToken(TokenKind::semicolon)) {
+      emitError(DiagID::err_expected);
+    }
+    return new TypeRequirement(TypeReq, Tok.getLocation());
+  }
+  
+  // Simple requirement: expression;
+  Expr *ExprReq = parseExpression();
+  if (ExprReq == nullptr) {
+    return nullptr;
+  }
+  
+  if (!tryConsumeToken(TokenKind::semicolon)) {
+    // Skip to semicolon or brace
+    while (Tok.isNot(TokenKind::semicolon) && Tok.isNot(TokenKind::r_brace) &&
+           Tok.isNot(TokenKind::eof)) {
+      consumeToken();
+    }
+    if (Tok.is(TokenKind::semicolon)) {
+      consumeToken();
+    }
+  }
+  
+  return new ExprRequirement(ExprReq, false, Tok.getLocation());
+}
+
 Expr *Parser::parseRequiresExpression() {
   SourceLocation RequiresLoc = Tok.getLocation();
   consumeToken(); // consume 'requires'
 
   // Parse optional parameter list
-  if (Tok.is(TokenKind::l_paren)) {
-    consumeToken();
-    if (!Tok.is(TokenKind::r_paren)) {
-      // TODO: Parse parameter declarations
-      auto Args = parseCallArguments();
-    }
-    if (!tryConsumeToken(TokenKind::r_paren)) {
-      emitError(DiagID::err_expected_rparen);
-    }
-  }
+  parseRequiresExpressionParameterList();
 
   // Parse requirement body
   if (!Tok.is(TokenKind::l_brace)) {
@@ -315,31 +381,24 @@ Expr *Parser::parseRequiresExpression() {
     return createRecoveryExpr(RequiresLoc);
   }
 
+  SourceLocation LBraceLoc = Tok.getLocation();
   consumeToken(); // consume '{'
 
   // Parse requirements
+  llvm::SmallVector<Requirement *, 4> Requirements;
   while (Tok.isNot(TokenKind::r_brace) && Tok.isNot(TokenKind::eof)) {
-    // TODO: Parse individual requirements
-    // - simple requirement: expression;
-    // - type requirement: typename T;
-    // - compound requirement: { expression } -> type;
-    // - nested requirement: requires constraint;
-
-    // For now, skip to semicolon or brace
-    while (Tok.isNot(TokenKind::semicolon) && Tok.isNot(TokenKind::r_brace) &&
-           Tok.isNot(TokenKind::eof)) {
-      consumeToken();
+    Requirement *Req = parseRequirement();
+    if (Req != nullptr) {
+      Requirements.push_back(Req);
     }
-    if (Tok.is(TokenKind::semicolon))
-      consumeToken();
   }
 
+  SourceLocation RBraceLoc = Tok.getLocation();
   if (!tryConsumeToken(TokenKind::r_brace)) {
     emitError(DiagID::err_expected_rbrace);
   }
 
-  // TODO: Create proper RequiresExpr
-  return createRecoveryExpr(RequiresLoc);
+  return Context.create<RequiresExpr>(RequiresLoc, Requirements, RequiresLoc, RBraceLoc);
 }
 
 //===----------------------------------------------------------------------===//
@@ -350,14 +409,12 @@ Expr *Parser::parseCStyleCastExpr() {
   SourceLocation LParenLoc = Tok.getLocation();
   consumeToken(); // consume '('
 
-  // Parse type (simplified)
-  // TODO: Implement proper type parsing
-  if (!Tok.is(TokenKind::identifier)) {
+  // Parse type
+  QualType CastType = parseType();
+  if (CastType.isNull()) {
     emitError(DiagID::err_expected_type);
     return createRecoveryExpr(LParenLoc);
   }
-
-  consumeToken(); // consume type name
 
   if (!tryConsumeToken(TokenKind::r_paren)) {
     emitError(DiagID::err_expected_rparen);
@@ -366,12 +423,11 @@ Expr *Parser::parseCStyleCastExpr() {
 
   // Parse the sub-expression
   Expr *SubExpr = parseUnaryExpression();
-  if (!SubExpr) {
+  if (SubExpr == nullptr) {
     SubExpr = createRecoveryExpr(LParenLoc);
   }
 
-  // TODO: Create proper CStyleCastExpr or CXXCastExpr
-  return SubExpr;
+  return Context.create<CStyleCastExpr>(LParenLoc, SubExpr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -383,7 +439,7 @@ Expr *Parser::parsePackIndexingExpr() {
 
   // Parse the pack expression
   Expr *Pack = parsePrimaryExpression();
-  if (!Pack) {
+  if (Pack == nullptr) {
     Pack = createRecoveryExpr(PackLoc);
   }
 
@@ -401,7 +457,7 @@ Expr *Parser::parsePackIndexingExpr() {
 
   // Parse the index
   Expr *Index = parseExpression();
-  if (!Index) {
+  if (Index == nullptr) {
     Index = createRecoveryExpr(PackLoc);
   }
 
@@ -409,8 +465,7 @@ Expr *Parser::parsePackIndexingExpr() {
     emitError(DiagID::err_expected);
   }
 
-  // TODO: Create PackIndexingExpr
-  return Pack;
+  return Context.create<PackIndexingExpr>(PackLoc, Pack, Index);
 }
 
 Expr *Parser::parseReflexprExpr() {
@@ -424,10 +479,9 @@ Expr *Parser::parseReflexprExpr() {
   }
 
   // Parse the argument (type-id or expression)
-  // TODO: Determine if it's a type or expression
   // For now, parse as expression
   Expr *Arg = parseExpression();
-  if (!Arg) {
+  if (Arg == nullptr) {
     Arg = createRecoveryExpr(ReflexprLoc);
   }
 
@@ -436,8 +490,7 @@ Expr *Parser::parseReflexprExpr() {
     emitError(DiagID::err_expected_rparen);
   }
 
-  // TODO: Create ReflexprExpr
-  return Arg;
+  return Context.create<ReflexprExpr>(ReflexprLoc, Arg);
 }
 
 } // namespace blocktype

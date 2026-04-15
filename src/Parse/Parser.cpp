@@ -125,7 +125,7 @@ void Parser::popScope() {
 
 void Parser::advanceToken() {
   Token Result;
-  if (PP.lexToken(Result)) {
+  if (!PP.lexToken(Result)) {
     // EOF reached
     NextTok.setKind(TokenKind::eof);
   } else {
@@ -136,7 +136,7 @@ void Parser::advanceToken() {
 void Parser::initializeTokenLookahead() {
   // Get the first token
   Token First;
-  if (PP.lexToken(First)) {
+  if (!PP.lexToken(First)) {
     Tok.setKind(TokenKind::eof);
     NextTok.setKind(TokenKind::eof);
   } else {

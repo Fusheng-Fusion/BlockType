@@ -38,6 +38,21 @@ Expr *Parser::parseExpression() {
   return Result;
 }
 
+Expr *Parser::parseAssignmentExpression() {
+  pushContext(ParsingContext::Expression);
+
+  Expr *LHS = parseUnaryExpression();
+  if (!LHS) {
+    popContext();
+    return nullptr;
+  }
+
+  // Stop at comma (Assignment precedence is higher than Comma)
+  Expr *Result = parseRHS(LHS, PrecedenceLevel::Assignment);
+  popContext();
+  return Result;
+}
+
 Expr *Parser::parseExpressionWithPrecedence(PrecedenceLevel MinPrec) {
   Expr *LHS = parseUnaryExpression();
   if (!LHS)
@@ -73,6 +88,7 @@ Expr *Parser::parseRHS(Expr *LHS, PrecedenceLevel MinPrec) {
     // Parse the RHS (unary expression)
     Expr *RHS = parseUnaryExpression();
     if (!RHS) {
+      emitError(DiagID::err_expected_expression);
       RHS = createRecoveryExpr(OpLoc);
     }
 
@@ -264,10 +280,17 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
 Expr *Parser::parsePrimaryExpression() {
   switch (Tok.getKind()) {
   // Literals
-  case TokenKind::numeric_constant:
+  case TokenKind::numeric_constant: {
     // Determine if integer or floating point
-    // For now, treat as integer
+    StringRef Text = Tok.getText();
+    bool IsFloat = Text.find('.') != StringRef::npos ||
+                   Text.find('e') != StringRef::npos ||
+                   Text.find('E') != StringRef::npos;
+    if (IsFloat) {
+      return parseFloatingLiteral();
+    }
     return parseIntegerLiteral();
+  }
 
   case TokenKind::char_constant:
     return parseCharacterLiteral();
@@ -311,9 +334,8 @@ Expr *Parser::parsePrimaryExpression() {
     return parseRequiresExpression();
 
   default:
-    if (canStartExpression(Tok.getKind())) {
-      emitError(DiagID::err_expected_expression);
-    }
+    // Emit error for unexpected token
+    emitError(DiagID::err_expected_expression);
     return nullptr;
   }
 }
@@ -440,18 +462,17 @@ Expr *Parser::parseIdentifier() {
   consumeToken();
 
   // Lookup the declaration in the current scope
+  ValueDecl *VD = nullptr;
   if (CurrentScope) {
     if (NamedDecl *D = CurrentScope->lookup(Name)) {
       // Found the declaration, create a DeclRefExpr
-      if (auto *VD = dyn_cast<ValueDecl>(D)) {
-        return Context.create<DeclRefExpr>(Loc, VD);
-      }
+      VD = dyn_cast<ValueDecl>(D);
     }
   }
 
-  // Not found or no scope, create a placeholder for error recovery
-  // TODO: Emit an error for undefined identifier
-  return createRecoveryExpr(Loc);
+  // Create DeclRefExpr (with or without declaration)
+  // If VD is nullptr, it's an undefined identifier (error recovery)
+  return Context.create<DeclRefExpr>(Loc, VD);
 }
 
 Expr *Parser::parseParenExpression() {
@@ -482,6 +503,7 @@ Expr *Parser::parseConditionalExpression(Expr *Cond) {
   // Parse the true expression
   Expr *TrueExpr = parseExpression();
   if (!TrueExpr) {
+    emitError(DiagID::err_expected_expression);
     TrueExpr = createRecoveryExpr(QuestionLoc);
   }
 
@@ -494,6 +516,7 @@ Expr *Parser::parseConditionalExpression(Expr *Cond) {
   // Parse the false expression
   Expr *FalseExpr = parseExpression();
   if (!FalseExpr) {
+    emitError(DiagID::err_expected_expression);
     FalseExpr = createRecoveryExpr(QuestionLoc);
   }
 
@@ -525,8 +548,10 @@ llvm::SmallVector<Expr *, 8> Parser::parseCallArguments() {
     return Args;
 
   while (true) {
-    Expr *Arg = parseExpression();
+    // Parse assignment expression (stops at comma)
+    Expr *Arg = parseAssignmentExpression();
     if (!Arg) {
+      emitError(DiagID::err_expected_expression);
       Arg = createRecoveryExpr(Tok.getLocation());
     }
     Args.push_back(Arg);
@@ -621,9 +646,9 @@ UnaryOpKind Parser::getUnaryOpKind(TokenKind K) {
   case TokenKind::minus:
     return UnaryOpKind::Minus;
   case TokenKind::exclaim:
-    return UnaryOpKind::Not;
-  case TokenKind::tilde:
     return UnaryOpKind::LNot;
+  case TokenKind::tilde:
+    return UnaryOpKind::Not;
   case TokenKind::star:
     return UnaryOpKind::Deref;
   case TokenKind::amp:

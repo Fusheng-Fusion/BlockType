@@ -71,6 +71,14 @@ Stmt *Parser::parseStatement() {
     Result = parseCXXTryStatement();
     break;
 
+  case TokenKind::kw_co_return:
+    Result = parseCoreturnStatement();
+    break;
+
+  case TokenKind::kw_co_yield:
+    Result = parseCoyieldStatement();
+    break;
+
   case TokenKind::kw_case:
     Result = parseCaseStatement();
     break;
@@ -187,18 +195,6 @@ Stmt *Parser::parseExpressionStatement() {
 }
 
 //===----------------------------------------------------------------------===//
-// Declaration statement parsing
-//===----------------------------------------------------------------------===//
-
-Stmt *Parser::parseDeclarationStatement() {
-  // TODO: Implement declaration parsing
-  // For now, just consume tokens until semicolon
-  skipUntil({TokenKind::semicolon});
-  tryConsumeToken(TokenKind::semicolon);
-  return nullptr;
-}
-
-//===----------------------------------------------------------------------===//
 // Label statement parsing
 //===----------------------------------------------------------------------===//
 
@@ -232,6 +228,7 @@ Stmt *Parser::parseCaseStatement() {
   // Parse the case value
   Expr *CaseVal = parseExpression();
   if (!CaseVal) {
+    emitError(DiagID::err_expected_expression);
     CaseVal = createRecoveryExpr(CaseLoc);
   }
 
@@ -345,6 +342,7 @@ Stmt *Parser::parseIfStatement() {
 
   Expr *Cond = parseExpression();
   if (!Cond) {
+    emitError(DiagID::err_expected_expression);
     Cond = createRecoveryExpr(IfLoc);
   }
 
@@ -387,6 +385,7 @@ Stmt *Parser::parseSwitchStatement() {
 
   Expr *Cond = parseExpression();
   if (!Cond) {
+    emitError(DiagID::err_expected_expression);
     Cond = createRecoveryExpr(SwitchLoc);
   }
 
@@ -419,6 +418,7 @@ Stmt *Parser::parseWhileStatement() {
 
   Expr *Cond = parseExpression();
   if (!Cond) {
+    emitError(DiagID::err_expected_expression);
     Cond = createRecoveryExpr(WhileLoc);
   }
 
@@ -491,9 +491,65 @@ Stmt *Parser::parseForStatement() {
   }
 
   // Check for range-based for: for (decl : range)
-  // TODO: Detect range-based for
-  // For now, parse traditional for
+  // Heuristic: check if we see pattern: auto? identifier : ...
+  // For example: for (auto x : arr) or for (x : arr)
+  bool IsRangeBased = false;
 
+  if (Tok.is(TokenKind::kw_auto) && NextTok.is(TokenKind::identifier)) {
+    // Pattern: auto identifier : ...
+    // We need to peek one more token to check for ':'
+    // Since we only have 2-token lookahead, we'll assume it's range-based
+    // and handle errors during actual parsing
+    IsRangeBased = true;
+  } else if (Tok.is(TokenKind::identifier) && NextTok.is(TokenKind::colon)) {
+    // Pattern: identifier : ...
+    IsRangeBased = true;
+  }
+
+  if (IsRangeBased) {
+    // Parse range-based for: for (decl : range)
+    // Parse declaration (simplified: just auto/var name)
+    QualType VarType;
+    if (Tok.is(TokenKind::kw_auto)) {
+      consumeToken();
+      // TODO: Create auto type
+    }
+
+    StringRef VarName;
+    SourceLocation VarLoc;
+    if (Tok.is(TokenKind::identifier)) {
+      VarLoc = Tok.getLocation();
+      VarName = Tok.getText();
+      consumeToken();
+    }
+
+    // Consume ':'
+    if (!tryConsumeToken(TokenKind::colon)) {
+      emitError(DiagID::err_expected);
+      return Context.create<NullStmt>(ForLoc);
+    }
+
+    // Parse range expression
+    Expr *Range = parseExpression();
+    if (!Range) {
+      Range = createRecoveryExpr(ForLoc);
+    }
+
+    if (!tryConsumeToken(TokenKind::r_paren)) {
+      emitError(DiagID::err_expected_rparen);
+    }
+
+    // Parse body
+    Stmt *Body = parseStatement();
+    if (!Body) {
+      Body = Context.create<NullStmt>(ForLoc);
+    }
+
+    // Create CXXForRangeStmt (simplified)
+    return Context.create<CXXForRangeStmt>(ForLoc, nullptr, Range, Body);
+  }
+
+  // Parse traditional for loop
   // Parse init (expression statement or declaration)
   Stmt *Init = nullptr;
   if (!Tok.is(TokenKind::semicolon)) {

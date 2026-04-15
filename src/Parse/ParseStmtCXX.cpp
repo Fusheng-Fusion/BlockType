@@ -11,8 +11,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/Parse/Parser.h"
+#include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Stmt.h"
-#include "llvm/Support/raw_ostream.h"
 
 namespace blocktype {
 
@@ -31,7 +31,7 @@ Stmt *Parser::parseCXXTryStatement() {
   }
 
   Stmt *TryBlock = parseCompoundStatement();
-  if (!TryBlock) {
+  if (TryBlock == nullptr) {
     TryBlock = Context.create<NullStmt>(TryLoc);
   }
 
@@ -39,13 +39,12 @@ Stmt *Parser::parseCXXTryStatement() {
   llvm::SmallVector<Stmt *, 4> CatchStmts;
   while (Tok.is(TokenKind::kw_catch)) {
     Stmt *Catch = parseCXXCatchClause();
-    if (Catch) {
+    if (Catch != nullptr) {
       CatchStmts.push_back(Catch);
     }
   }
 
-  // TODO: Create CXXTryStmt
-  return TryBlock;
+  return Context.create<CXXTryStmt>(TryLoc, TryBlock, CatchStmts);
 }
 
 //===----------------------------------------------------------------------===//
@@ -63,20 +62,26 @@ Stmt *Parser::parseCXXCatchClause() {
   }
 
   // Check for catch-all: catch (...)
-  bool IsCatchAll = false;
+  VarDecl *ExceptionDecl = nullptr;
   if (Tok.is(TokenKind::ellipsis)) {
-    IsCatchAll = true;
     consumeToken(); // consume '...'
+    // catch-all: ExceptionDecl is nullptr
   } else {
     // Parse exception declaration (type name)
-    // TODO: Parse type properly
-    if (Tok.is(TokenKind::identifier)) {
-      consumeToken(); // consume type name
-
+    QualType ExceptionType = parseType();
+    if (ExceptionType.isNull()) {
+      emitError(DiagID::err_expected_type);
+    } else {
       // Parse optional variable name
+      llvm::StringRef VarName;
+      SourceLocation VarLoc;
       if (Tok.is(TokenKind::identifier)) {
-        consumeToken(); // consume variable name
+        VarName = Tok.getText();
+        VarLoc = Tok.getLocation();
+        consumeToken();
       }
+      // Create VarDecl for exception declaration
+      ExceptionDecl = Context.create<VarDecl>(VarLoc, VarName, ExceptionType, nullptr);
     }
   }
 
@@ -92,12 +97,11 @@ Stmt *Parser::parseCXXCatchClause() {
   }
 
   Stmt *CatchBlock = parseCompoundStatement();
-  if (!CatchBlock) {
+  if (CatchBlock == nullptr) {
     CatchBlock = Context.create<NullStmt>(CatchLoc);
   }
 
-  // TODO: Create CXXCatchStmt
-  return CatchBlock;
+  return Context.create<CXXCatchStmt>(CatchLoc, ExceptionDecl, CatchBlock);
 }
 
 //===----------------------------------------------------------------------===//
@@ -113,7 +117,7 @@ Stmt *Parser::parseCoreturnStatement() {
   // Parse optional return value
   if (!Tok.is(TokenKind::semicolon)) {
     RetVal = parseExpression();
-    if (!RetVal) {
+    if (RetVal == nullptr) {
       RetVal = createRecoveryExpr(CoreturnLoc);
     }
   }
@@ -122,8 +126,7 @@ Stmt *Parser::parseCoreturnStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  // TODO: Create CoreturnStmt
-  return Context.create<NullStmt>(CoreturnLoc);
+  return Context.create<CoreturnStmt>(CoreturnLoc, RetVal);
 }
 
 Stmt *Parser::parseCoyieldStatement() {
@@ -131,7 +134,7 @@ Stmt *Parser::parseCoyieldStatement() {
   consumeToken(); // consume 'co_yield'
 
   Expr *Value = parseExpression();
-  if (!Value) {
+  if (Value == nullptr) {
     Value = createRecoveryExpr(CoyieldLoc);
   }
 
@@ -139,8 +142,7 @@ Stmt *Parser::parseCoyieldStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  // TODO: Create CoyieldStmt
-  return Context.create<NullStmt>(CoyieldLoc);
+  return Context.create<CoyieldStmt>(CoyieldLoc, Value);
 }
 
 Expr *Parser::parseCoawaitExpression() {
@@ -148,12 +150,11 @@ Expr *Parser::parseCoawaitExpression() {
   consumeToken(); // consume 'co_await'
 
   Expr *Operand = parseUnaryExpression();
-  if (!Operand) {
+  if (Operand == nullptr) {
     Operand = createRecoveryExpr(CoawaitLoc);
   }
 
-  // TODO: Create CoawaitExpr
-  return Operand;
+  return Context.create<CoawaitExpr>(CoawaitLoc, Operand);
 }
 
 } // namespace blocktype

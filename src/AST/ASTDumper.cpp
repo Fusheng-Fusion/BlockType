@@ -263,14 +263,42 @@ void ASTDumper::dumpStmt(const Stmt *S) {
   }
 
   case ASTNode::WhileStmtKind: {
+    auto *WS = llvm::cast<WhileStmt>(S);
     OS << "WhileStmt\n";
-    // TODO: Implement when WhileStmt is available
+
+    indent();
+    if (WS->getConditionVariable() != nullptr) {
+      printChildMarker(false);
+      OS << "ConditionVariable\n";
+    }
+    printChildMarker(false);
+    dumpExpr(WS->getCond());
+    printChildMarker(true);
+    dumpStmt(WS->getBody());
+    dedent();
     break;
   }
 
   case ASTNode::ForStmtKind: {
+    auto *FS = llvm::cast<ForStmt>(S);
     OS << "ForStmt\n";
-    // TODO: Implement when ForStmt is available
+
+    indent();
+    if (FS->getInit() != nullptr) {
+      printChildMarker(false);
+      dumpStmt(FS->getInit());
+    }
+    if (FS->getCond() != nullptr) {
+      printChildMarker(false);
+      dumpExpr(FS->getCond());
+    }
+    if (FS->getInc() != nullptr) {
+      printChildMarker(false);
+      dumpExpr(FS->getInc());
+    }
+    printChildMarker(true);
+    dumpStmt(FS->getBody());
+    dedent();
     break;
   }
 
