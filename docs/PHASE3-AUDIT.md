@@ -138,8 +138,8 @@ Decl *Member = parseClassMember(nullptr); // 应该使用 RecordDecl*
 | `parseTemplateParameters()` | ParseDecl.cpp | 662-679 | ✅ 完整 |
 | `parseTemplateParameter()` | ParseDecl.cpp | 684-697 | ✅ 完整 |
 | `parseTemplateTypeParameter()` | ParseDecl.cpp | 705-741 | ✅ 完整 |
-| `parseNonTypeTemplateParameter()` | ParseDecl.cpp | 746-785 | ⚠️ 部分 |
-| `parseTemplateTemplateParameter()` | ParseDecl.cpp | 790-863 | ⚠️ 部分 |
+| `parseNonTypeTemplateParameter()` | ParseDecl.cpp | 1133-1190 | ✅ 完整 |
+| `parseTemplateTemplateParameter()` | ParseDecl.cpp | 1192-1286 | ✅ 完整 |
 
 ### 3.2 缺失功能 ❌
 
@@ -193,6 +193,22 @@ if (Tok.is(TokenKind::equal)) {
 |------|------|----------|
 | **NonTypeTemplateParmDecl 默认值存储** | ✅ 已实现 | Decl.h:848-852, ParseDecl.cpp:1167-1172 |
 | **TemplateTemplateParmDecl 默认值解析** | ✅ 已实现 | Decl.h:878-882, ParseDecl.cpp:1245-1268 |
+
+### 3.1.1 parseNonTypeTemplateParameter 修复 ✅ (2026-04-16 更新)
+
+修复内容：
+- 添加 declarator 解析支持（指针、引用、数组等）
+- 支持参数包的两种语法位置（`int... N` 和 `int N...`）
+- 支持匿名非类型模板参数（无名称的参数）
+- 正确处理默认值存储
+
+### 3.1.2 parseTemplateTemplateParameter 修复 ✅ (2026-04-16 更新)
+
+修复内容：
+- 添加 C++20 requires-clause 支持（type-constraint）
+- 改进默认值解析（使用 parseNestedNameSpecifier）
+- 支持嵌套名称说明符的模板名称
+- 正确处理默认值存储
 
 ---
 

@@ -1133,6 +1133,7 @@ TemplateTypeParmDecl *Parser::parseTemplateTypeParameter() {
 /// parseNonTypeTemplateParameter - Parse a non-type template parameter.
 ///
 /// parameter-declaration ::= decl-specifier-seq declarator ('=' assignment-expression)?
+///                          | decl-specifier-seq declarator '...'
 NonTypeTemplateParmDecl *Parser::parseNonTypeTemplateParameter() {
   // Parse type
   QualType Type = parseType();
@@ -1141,22 +1142,34 @@ NonTypeTemplateParmDecl *Parser::parseNonTypeTemplateParameter() {
     return nullptr;
   }
 
-  // Check for parameter pack
+  // Parse declarator (handles pointers, references, arrays, etc.)
+  Type = parseDeclarator(Type);
+  if (Type.isNull()) {
+    return nullptr;
+  }
+
+  // Check for parameter pack (can appear before or after the name)
   bool IsParameterPack = false;
   if (Tok.is(TokenKind::ellipsis)) {
     IsParameterPack = true;
     consumeToken(); // consume '...'
   }
 
-  // Parse identifier
-  if (!Tok.is(TokenKind::identifier)) {
-    emitError(DiagID::err_expected_identifier);
-    return nullptr;
-  }
+  // Parse identifier (optional for unnamed parameters)
+  llvm::StringRef Name;
+  SourceLocation NameLoc;
 
-  llvm::StringRef Name = Tok.getText();
-  SourceLocation NameLoc = Tok.getLocation();
-  consumeToken();
+  if (Tok.is(TokenKind::identifier)) {
+    Name = Tok.getText();
+    NameLoc = Tok.getLocation();
+    consumeToken();
+
+    // Check for parameter pack after name (alternative syntax)
+    if (!IsParameterPack && Tok.is(TokenKind::ellipsis)) {
+      IsParameterPack = true;
+      consumeToken(); // consume '...'
+    }
+  }
 
   // Create NonTypeTemplateParmDecl
   // Use 0 for depth and index (will be set correctly later)
@@ -1177,7 +1190,8 @@ NonTypeTemplateParmDecl *Parser::parseNonTypeTemplateParameter() {
 
 /// parseTemplateTemplateParameter - Parse a template template parameter.
 ///
-/// template-template-parameter ::= 'template' '<' template-parameter-list '>' 'class' identifier? ('=' id-expression)?
+/// template-template-parameter ::= 'template' '<' template-parameter-list '>' type-constraint? 'class' identifier? ('=' id-expression)?
+/// type-constraint ::= 'requires' constraint-expression (C++20)
 TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
   // Expect 'template'
   if (!Tok.is(TokenKind::kw_template)) {
@@ -1206,6 +1220,18 @@ TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
   }
 
   consumeToken(); // consume '>'
+
+  // Parse optional requires-clause (C++20)
+  // type-constraint ::= 'requires' constraint-expression
+  if (Tok.is(TokenKind::kw_requires)) {
+    consumeToken(); // consume 'requires'
+    // TODO: Parse constraint-expression
+    // For now, we skip until we find 'class' or 'typename'
+    while (!Tok.is(TokenKind::kw_class) && !Tok.is(TokenKind::kw_typename) &&
+           !Tok.is(TokenKind::eof)) {
+      consumeToken();
+    }
+  }
 
   // Expect 'class' or 'typename'
   if (!Tok.is(TokenKind::kw_class) && !Tok.is(TokenKind::kw_typename)) {
