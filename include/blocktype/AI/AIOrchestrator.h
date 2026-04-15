@@ -20,7 +20,7 @@ public:
   void registerProvider(std::unique_ptr<AIInterface> Provider);
   
   /// 根据任务类型选择最佳提供者
-  AIInterface* selectProvider(AITaskType Type, Language Lang);
+  AIInterface* selectProvider(AITaskType Type, AILanguage Lang);
   
   /// 发送请求（自动选择提供者）
   llvm::Expected<AIResponse> sendRequest(const AIRequest& Request);

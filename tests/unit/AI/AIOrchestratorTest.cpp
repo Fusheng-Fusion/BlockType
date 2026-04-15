@@ -16,7 +16,7 @@ protected:
     Config.EnableCache = false;  // 测试时禁用缓存
   }
   
-  AIRequest createRequest(AITaskType Type, Language Lang, const std::string& Query) {
+  AIRequest createRequest(AITaskType Type, AILanguage Lang, const std::string& Query) {
     AIRequest Req;
     Req.TaskType = Type;
     Req.Lang = Lang;
@@ -37,8 +37,8 @@ TEST_F(AIOrchestratorTest, ProviderSelection) {
   Orchestrator.registerProvider(std::make_unique<LocalProvider>("http://localhost:11434", "codellama"));
   
   // 中文任务应该选择 Local（因为没有注册 Qwen）
-  auto Request = createRequest(AITaskType::ErrorFix, Language::Chinese, "测试查询");
-  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, Language::Chinese);
+  auto Request = createRequest(AITaskType::ErrorFix, AILanguage::Chinese, "测试查询");
+  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, AILanguage::Chinese);
   
   EXPECT_NE(Provider, nullptr);
   EXPECT_EQ(Provider->getProvider(), AIProvider::Local);
@@ -60,8 +60,8 @@ TEST_F(AIOrchestratorTest, FallbackProvider) {
   Orchestrator.registerProvider(std::make_unique<LocalProvider>("http://localhost:11434", "codellama"));
   
   // 任何任务都应该回退到本地提供者
-  auto Request = createRequest(AITaskType::ErrorFix, Language::English, "test query");
-  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, Language::English);
+  auto Request = createRequest(AITaskType::ErrorFix, AILanguage::English, "test query");
+  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, AILanguage::English);
   
   EXPECT_NE(Provider, nullptr);
   EXPECT_EQ(Provider->getProvider(), AIProvider::Local);
@@ -69,7 +69,7 @@ TEST_F(AIOrchestratorTest, FallbackProvider) {
 
 TEST_F(AIOrchestratorTest, NoProviderAvailable) {
   // 没有注册任何提供者
-  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, Language::English);
+  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, AILanguage::English);
   
   EXPECT_EQ(Provider, nullptr);
 }
@@ -88,7 +88,7 @@ TEST_F(AIOrchestratorTest, MultipleProviders) {
 TEST_F(AIOrchestratorTest, GetProviderInfo) {
   Orchestrator.registerProvider(std::make_unique<LocalProvider>("http://localhost:11434", "codellama"));
   
-  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, Language::English);
+  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, AILanguage::English);
   
   ASSERT_NE(Provider, nullptr);
   EXPECT_EQ(Provider->getProvider(), AIProvider::Local);

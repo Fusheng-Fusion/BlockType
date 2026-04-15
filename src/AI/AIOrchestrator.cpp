@@ -12,12 +12,12 @@ void AIOrchestrator::registerProvider(std::unique_ptr<AIInterface> Provider) {
   Providers.push_back(std::move(Provider));
 }
 
-AIInterface* AIOrchestrator::selectProvider(AITaskType Type, Language Lang) {
+AIInterface* AIOrchestrator::selectProvider(AITaskType Type, AILanguage Lang) {
   std::lock_guard<std::mutex> Lock(Mutex);
   
   // 根据任务类型和语言选择最佳提供者
   // 中文任务优先使用 Qwen
-  if (Lang == Language::Chinese) {
+  if (Lang == AILanguage::Chinese) {
     for (auto& P : Providers) {
       if (P->getProvider() == AIProvider::Qwen && P->isAvailable())
         return P.get();

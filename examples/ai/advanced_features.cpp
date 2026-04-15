@@ -131,13 +131,13 @@ void demonstrateProviderSelection() {
   Orchestrator.registerProvider(std::make_unique<LocalProvider>());
   
   // 选择提供者
-  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, Language::Chinese);
+  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, AILanguage::Chinese);
   if (Provider) {
     std::cout << "Selected provider for Chinese error fix: " 
               << Provider->getModelName() << "\n";
   }
   
-  Provider = Orchestrator.selectProvider(AITaskType::CodeCompletion, Language::English);
+  Provider = Orchestrator.selectProvider(AITaskType::CodeCompletion, AILanguage::English);
   if (Provider) {
     std::cout << "Selected provider for English code completion: " 
               << Provider->getModelName() << "\n";

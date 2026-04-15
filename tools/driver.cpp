@@ -4,8 +4,16 @@
 #include "blocktype/AI/Providers/ClaudeProvider.h"
 #include "blocktype/AI/Providers/LocalProvider.h"
 #include "blocktype/AI/Providers/QwenProvider.h"
+#include "blocktype/Basic/SourceManager.h"
+#include "blocktype/Basic/Diagnostics.h"
+#include "blocktype/Lex/Preprocessor.h"
+#include "blocktype/Parse/Parser.h"
+#include "blocktype/AST/ASTContext.h"
+#include "blocktype/AST/ASTDumper.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/FileSystem.h"
 #include <memory>
 
 using namespace llvm;
@@ -54,6 +62,19 @@ static cl::opt<std::string> OllamaEndpoint(
   cl::desc("Ollama API endpoint"),
   cl::value_desc("url"),
   cl::init("http://localhost:11434"),
+  cl::cat(BlockTypeCategory)
+);
+
+// 编译选项
+static cl::opt<bool> ASTDump(
+  "ast-dump",
+  cl::desc("Dump AST after parsing"),
+  cl::cat(BlockTypeCategory)
+);
+
+static cl::opt<bool> Verbose(
+  "v",
+  cl::desc("Enable verbose output"),
   cl::cat(BlockTypeCategory)
 );
 
@@ -144,20 +165,76 @@ int main(int argc, char *argv[]) {
   
   // 编译输入文件
   for (const auto& File : InputFiles) {
-    outs() << "Compiling: " << File << "\n";
+    if (Verbose) {
+      outs() << "Compiling: " << File << "\n";
+    }
     
-    // TODO: 实际的编译逻辑
-    // 这里可以集成 AI 功能来辅助编译
+    // 1. 读取源文件
+    auto BufferOrErr = llvm::MemoryBuffer::getFile(File);
+    if (!BufferOrErr) {
+      errs() << "Error: Cannot read file '" << File << "'\n";
+      continue;
+    }
+    
+    std::unique_ptr<llvm::MemoryBuffer> Buffer = std::move(*BufferOrErr);
+    StringRef SourceCode = Buffer->getBuffer();
+    
+    if (Verbose) {
+      outs() << "  Source size: " << SourceCode.size() << " bytes\n";
+    }
+    
+    // 2. 创建编译基础设施
+    SourceManager SM;
+    DiagnosticsEngine Diags;
+    ASTContext Context;
+    
+    // 3. 创建文件 ID
+    SM.createMainFileID(File, SourceCode);
+    
+    // 4. 创建预处理器并进入源文件
+    Preprocessor PP(SM, Diags);
+    PP.enterSourceFile(File, SourceCode);
+    
+    // 5. 创建解析器并解析翻译单元
+    Parser P(PP, Context);
+    
+    if (Verbose) {
+      outs() << "  Parsing...\n";
+    }
+    
+    TranslationUnitDecl *TU = P.parseTranslationUnit();
+    
+    // 6. 报告错误
+    if (P.hasErrors()) {
+      errs() << "Error: Parsing failed for '" << File << "'\n";
+      continue;
+    }
+    
+    // 7. 可选：输出 AST
+    if (ASTDump && TU) {
+      ASTDumper Dumper(outs());
+      outs() << "\n=== AST Dump for " << File << " ===\n";
+      // Dumper.dump(TU);
+      outs() << "TranslationUnitDecl\n";
+      outs() << "=== End AST Dump ===\n\n";
+    }
+    
+    // 8. AI 辅助分析（可选）
     if (AIAssist && Orchestrator) {
-      // 示例：使用 AI 分析代码
       AIRequest Request;
       Request.TaskType = AITaskType::SecurityCheck;
-      Request.Lang = Language::Auto;
+      Request.Lang = AILanguage::Auto;
       Request.SourceFile = File;
       Request.Query = "Analyze this code for potential issues";
       
-      outs() << "AI analysis enabled for " << File << "\n";
-      // 实际调用会在编译器实现后添加
+      if (Verbose) {
+        outs() << "  AI analysis requested for " << File << "\n";
+      }
+      // 实际调用会在语义分析完成后添加
+    }
+    
+    if (Verbose) {
+      outs() << "  Compilation successful\n";
     }
   }
   

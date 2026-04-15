@@ -71,7 +71,7 @@ protected:
   AIRequest createRequest(AITaskType Type, const std::string& Query) {
     AIRequest Req;
     Req.TaskType = Type;
-    Req.Lang = Language::English;
+    Req.Lang = AILanguage::English;
     Req.Query = Query;
     Req.Context = "int main() { return 0; }";
     return Req;
@@ -107,7 +107,7 @@ TEST_F(ProviderIntegrationTest, ProviderSelection) {
   Orchestrator.registerProvider(std::make_unique<MockProvider>("model-2"));
   
   // 选择 Provider
-  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, Language::English);
+  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, AILanguage::English);
   
   ASSERT_NE(Provider, nullptr);
   EXPECT_EQ(Provider->getProvider(), AIProvider::Local);
@@ -245,6 +245,6 @@ TEST_F(ProviderIntegrationTest, ErrorHandling) {
   auto Request = createRequest(AITaskType::ErrorFix, "test");
   
   // 应该返回 nullptr
-  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, Language::English);
+  auto Provider = Orchestrator.selectProvider(AITaskType::ErrorFix, AILanguage::English);
   EXPECT_EQ(Provider, nullptr);
 }

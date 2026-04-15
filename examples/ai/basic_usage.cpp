@@ -47,7 +47,7 @@ int main() {
   // 4. 创建请求
   AIRequest Request;
   Request.TaskType = AITaskType::ErrorFix;
-  Request.Lang = Language::English;
+  Request.Lang = AILanguage::English;
   Request.Query = "Explain and fix the error in this code";
   Request.Context = R"(
 int main() {

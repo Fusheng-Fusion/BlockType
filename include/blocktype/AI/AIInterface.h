@@ -29,8 +29,8 @@ enum class AITaskType {
   Translation,        // 中英文翻译
 };
 
-/// 语言类型
-enum class Language {
+/// AI 语言类型
+enum class AILanguage {
   Chinese,
   English,
   Auto,  // 自动检测
@@ -79,7 +79,7 @@ namespace blocktype {
 /// AI 请求
 struct AIRequest {
   AITaskType TaskType;
-  Language Lang;
+  AILanguage Lang;
   std::string Context;        // 上下文代码
   std::string Query;          // 查询内容
   std::string SourceFile;     // 源文件路径
@@ -107,7 +107,7 @@ using StreamCallback = std::function<void(llvm::StringRef Chunk, bool Done)>;
 /// AI 配置
 struct AIConfig {
   AIProvider DefaultProvider = AIProvider::OpenAI;
-  Language DefaultLanguage = Language::Auto;
+  AILanguage DefaultLanguage = AILanguage::Auto;
   bool EnableCache = true;
   unsigned MaxCacheSize = 1000;  // 最大缓存条目数
   unsigned TimeoutMs = 30000;    // 超时时间（毫秒）

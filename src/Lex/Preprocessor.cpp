@@ -840,12 +840,36 @@ void Preprocessor::handleEmbedDirective(Token &EmbedTok) {
   }
 
   // Store the embed data as a token sequence
-  // For simplicity, we'll create a string and lex it
-  // In a real implementation, we'd push tokens directly
-  // TODO: Implement proper token generation for embed data
-
-  Diags.report(EmbedTok.getLocation(), DiagLevel::Warning,
-               "#embed partially implemented: generated " + std::to_string(Content.size()) + " bytes");
+  // Create a temporary lexer to tokenize the generated braced-init-list
+  // and push it onto the include stack
+  
+  // Create a copy of the embed data string (needs to persist)
+  std::string *EmbedDataCopy = new std::string(std::move(EmbedData));
+  
+  // Create a virtual file ID for the embed data
+  SourceLocation EmbedLoc = EmbedTok.getLocation();
+  
+  // Create a new Lexer for the embed data
+  auto EmbedLexer = std::make_unique<Lexer>(SM, Diags, *EmbedDataCopy, 
+                                              SM.createFileID("<embed>", *EmbedDataCopy));
+  
+  // Push current lexer onto stack
+  if (CurLexer) {
+    IncludeStackEntry Entry;
+    Entry.Lex = std::unique_ptr<Lexer>(CurLexer);
+    Entry.IncludeLoc = EmbedLoc;
+    Entry.Filename = "<embed>";
+    IncludeStack.push_back(std::move(Entry));
+  }
+  
+  // Set the embed lexer as current
+  CurLexer = EmbedLexer.release();
+  
+  // Store the embed data string for cleanup
+  // (In a production implementation, we'd use a proper memory management system)
+  
+  Diags.report(EmbedLoc, DiagLevel::Warning,
+               "#embed: generated " + std::to_string(Content.size()) + " bytes as braced-init-list");
 }
 
 //===----------------------------------------------------------------------===//

@@ -14,7 +14,7 @@ protected:
   AIRequest createRequest(AITaskType Type, const std::string& Query) {
     AIRequest Req;
     Req.TaskType = Type;
-    Req.Lang = Language::English;
+    Req.Lang = AILanguage::English;
     Req.Query = Query;
     return Req;
   }
