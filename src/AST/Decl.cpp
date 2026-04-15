@@ -276,10 +276,16 @@ void CXXMethodDecl::dump(raw_ostream &OS, unsigned Indent) const {
     OS << " volatile";
   if (IsVirtual)
     OS << " virtual";
+  if (IsPureVirtual)
+    OS << " pure";
   if (IsOverride)
     OS << " override";
   if (IsFinal)
     OS << " final";
+  if (IsDefaulted)
+    OS << " default";
+  if (IsDeleted)
+    OS << " delete";
   if (RefQualifier == RQ_LValue)
     OS << " &";
   else if (RefQualifier == RQ_RValue)

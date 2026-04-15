@@ -572,16 +572,21 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
     }
   }
 
-  // Parse storage class specifiers (static, mutable)
+  // Parse storage class specifiers (static, mutable) and virtual
   bool IsStatic = false;
   bool IsMutable = false;
+  bool IsVirtual = false;
 
-  while (Tok.is(TokenKind::kw_static) || Tok.is(TokenKind::kw_mutable)) {
+  while (Tok.is(TokenKind::kw_static) || Tok.is(TokenKind::kw_mutable) ||
+         Tok.is(TokenKind::kw_virtual)) {
     if (Tok.is(TokenKind::kw_static)) {
       IsStatic = true;
       consumeToken();
     } else if (Tok.is(TokenKind::kw_mutable)) {
       IsMutable = true;
+      consumeToken();
+    } else if (Tok.is(TokenKind::kw_virtual)) {
+      IsVirtual = true;
       consumeToken();
     }
   }
@@ -657,6 +662,23 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
       RefQual = CXXMethodDecl::RQ_LValue;
     }
 
+    // Parse override and final specifiers
+    // Note: override and final are identifiers with special meaning, not keywords
+    bool IsOverride = false;
+    bool IsFinal = false;
+    while (Tok.is(TokenKind::identifier)) {
+      llvm::StringRef Text = Tok.getText();
+      if (Text == "override") {
+        IsOverride = true;
+        consumeToken();
+      } else if (Text == "final") {
+        IsFinal = true;
+        consumeToken();
+      } else {
+        break;
+      }
+    }
+
     // Parse trailing return type (-> type)
     if (Tok.is(TokenKind::arrow)) {
       consumeToken(); // consume '->'
@@ -702,17 +724,25 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
 
     // Parse function body (if present)
     Stmt *Body = nullptr;
+    bool IsPureVirtual = false;
+    bool IsDefaulted = false;
+    bool IsDeleted = false;
+    
     if (Tok.is(TokenKind::l_brace)) {
       Body = parseCompoundStatement();
     } else if (Tok.is(TokenKind::equal)) {
-      // Parse = default or = delete
       consumeToken();
       if (Tok.is(TokenKind::kw_default)) {
+        IsDefaulted = true;
         consumeToken();
-        // Mark as defaulted
       } else if (Tok.is(TokenKind::kw_delete)) {
+        IsDeleted = true;
         consumeToken();
-        // Mark as deleted
+      } else if (Tok.is(TokenKind::numeric_constant)) {
+        // Check for = 0 (pure virtual)
+        // TODO: Check if the value is actually 0
+        IsPureVirtual = true;
+        consumeToken();
       }
     }
 
@@ -723,7 +753,8 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
 
     // Create CXXMethodDecl
     CXXMethodDecl *Method = Context.create<CXXMethodDecl>(NameLoc, Name, Type, Params, Class, Body,
-                                         IsStatic, IsConst, IsVolatile, false, false, false,
+                                         IsStatic, IsConst, IsVolatile, IsVirtual, IsPureVirtual,
+                                         IsOverride, IsFinal, IsDefaulted, IsDeleted,
                                          RefQual, HasNoexceptSpec, NoexceptValue, NoexceptExpr);
 
     // Add method to current scope

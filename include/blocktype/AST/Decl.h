@@ -475,8 +475,11 @@ private:
   bool IsConst;
   bool IsVolatile;
   bool IsVirtual;
+  bool IsPureVirtual;
   bool IsOverride;
   bool IsFinal;
+  bool IsDefaulted;
+  bool IsDeleted;
   RefQualifierKind RefQualifier;
 
 public:
@@ -484,15 +487,17 @@ public:
                 llvm::ArrayRef<ParmVarDecl *> Params, CXXRecordDecl *Parent,
                 Stmt *Body = nullptr, bool IsStatic = false, bool IsConst = false,
                 bool IsVolatile = false, bool IsVirtual = false, 
-                bool IsOverride = false, bool IsFinal = false,
+                bool IsPureVirtual = false, bool IsOverride = false, bool IsFinal = false,
+                bool IsDefaulted = false, bool IsDeleted = false,
                 RefQualifierKind RefQual = RQ_None,
                 bool HasNoexceptSpec = false, bool NoexceptValue = false,
                 Expr *NoexceptExpr = nullptr)
       : FunctionDecl(Loc, Name, T, Params, Body, false, false,
                      HasNoexceptSpec, NoexceptValue, NoexceptExpr),
         Parent(Parent), IsStatic(IsStatic), IsConst(IsConst), 
-        IsVolatile(IsVolatile), IsVirtual(IsVirtual), 
-        IsOverride(IsOverride), IsFinal(IsFinal), RefQualifier(RefQual) {}
+        IsVolatile(IsVolatile), IsVirtual(IsVirtual), IsPureVirtual(IsPureVirtual),
+        IsOverride(IsOverride), IsFinal(IsFinal), IsDefaulted(IsDefaulted),
+        IsDeleted(IsDeleted), RefQualifier(RefQual) {}
 
   CXXRecordDecl *getParent() const { return Parent; }
 
@@ -500,8 +505,11 @@ public:
   bool isConst() const { return IsConst; }
   bool isVolatile() const { return IsVolatile; }
   bool isVirtual() const { return IsVirtual; }
+  bool isPureVirtual() const { return IsPureVirtual; }
   bool isOverride() const { return IsOverride; }
   bool isFinal() const { return IsFinal; }
+  bool isDefaulted() const { return IsDefaulted; }
+  bool isDeleted() const { return IsDeleted; }
   RefQualifierKind getRefQualifier() const { return RefQualifier; }
   bool hasRefQualifier() const { return RefQualifier != RQ_None; }
 
