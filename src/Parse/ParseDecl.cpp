@@ -1497,84 +1497,60 @@ TemplateArgument Parser::parseTemplateArgument() {
     return Pattern;
   }
 
-  // Try to parse as a type first
+  // Try to parse as a type first using tentative parsing
   // We need to determine if this is a type or an expression
-  // For now, we use a simple heuristic:
-  // - If it starts with a type keyword (int, float, etc.) or
-  //   an identifier followed by '<', it's likely a type
-  // - Otherwise, parse as an expression
+  // Use tentative parsing instead of heuristics
 
-  // Check for type-id (starts with type keywords or identifier)
-  if (Tok.is(TokenKind::kw_void) || Tok.is(TokenKind::kw_bool) ||
-      Tok.is(TokenKind::kw_char) || Tok.is(TokenKind::kw_short) ||
-      Tok.is(TokenKind::kw_int) || Tok.is(TokenKind::kw_long) ||
-      Tok.is(TokenKind::kw_float) || Tok.is(TokenKind::kw_double) ||
-      Tok.is(TokenKind::kw_const) || Tok.is(TokenKind::kw_volatile) ||
-      Tok.is(TokenKind::kw_unsigned) || Tok.is(TokenKind::kw_signed)) {
-    // Parse as type
-    QualType Type = parseType();
+  // Save current state for tentative parsing
+  TentativeParsingAction TPA(*this);
+
+  // Try to parse as type
+  QualType Type = parseType();
+
+  // Check if parsing succeeded and we're at a valid position for template argument
+  // Valid positions: ',', '>', '>>', '...', or end of template argument list
+  if (!Type.isNull() && (Tok.is(TokenKind::comma) ||
+                         Tok.is(TokenKind::greater) ||
+                         Tok.is(TokenKind::greatergreater) ||
+                         Tok.is(TokenKind::ellipsis))) {
+    // Successfully parsed as type
+    TPA.commit();
 
     // Check for pack expansion after type: Type...
     bool IsPackExpansion = false;
-    if (!Type.isNull() && Tok.is(TokenKind::ellipsis)) {
+    if (Tok.is(TokenKind::ellipsis)) {
       consumeToken(); // consume '...'
       IsPackExpansion = true;
     }
 
-    if (!Type.isNull()) {
-      TemplateArgument Arg(Type);
-      if (IsPackExpansion) {
-        Arg.setPackExpansion(true);
-      }
-      return Arg;
+    TemplateArgument Arg(Type);
+    if (IsPackExpansion) {
+      Arg.setPackExpansion(true);
     }
-    return TemplateArgument(QualType());
+    return Arg;
   }
 
-  // Check for identifier (could be a type name or an expression)
-  if (Tok.is(TokenKind::identifier)) {
-    // Look ahead to see if this is a template-id (identifier '<')
-    Token NextTok = PP.peekToken(0);
-    if (NextTok.is(TokenKind::less)) {
-      // This is likely a template-id, parse as type
-      QualType Type = parseType();
+  // Failed to parse as type, backtrack and try as expression
+  TPA.abort();
 
-      // Check for pack expansion after template-id: Template<Args>...
-      bool IsPackExpansion = false;
-      if (!Type.isNull() && Tok.is(TokenKind::ellipsis)) {
-        consumeToken(); // consume '...'
-        IsPackExpansion = true;
-      }
+  // Parse as expression (could be a constant or id-expression)
+  Expr *E = parseExpression();
 
-      if (!Type.isNull()) {
-        TemplateArgument Arg(Type);
-        if (IsPackExpansion) {
-          Arg.setPackExpansion(true);
-        }
-        return Arg;
-      }
-      return TemplateArgument(QualType());
-    }
-
-    // Otherwise, parse as expression (could be a constant or id-expression)
-    Expr *E = parseExpression();
-
-    // Check for pack expansion after expression: expr...
-    bool IsPackExpansion = false;
-    if (E && Tok.is(TokenKind::ellipsis)) {
-      consumeToken(); // consume '...'
-      IsPackExpansion = true;
-    }
-
-    if (E) {
-      TemplateArgument Arg(E);
-      if (IsPackExpansion) {
-        Arg.setPackExpansion(true);
-      }
-      return Arg;
-    }
-    return TemplateArgument(static_cast<Expr *>(nullptr));
+  // Check for pack expansion after expression: expr...
+  bool IsPackExpansion = false;
+  if (E && Tok.is(TokenKind::ellipsis)) {
+    consumeToken(); // consume '...'
+    IsPackExpansion = true;
   }
+
+  if (E) {
+    TemplateArgument Arg(E);
+    if (IsPackExpansion) {
+      Arg.setPackExpansion(true);
+    }
+    return Arg;
+  }
+  return TemplateArgument(static_cast<Expr *>(nullptr));
 
   // Check for literal (definitely an expression)
   if (Tok.is(TokenKind::numeric_constant) ||

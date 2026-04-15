@@ -553,32 +553,47 @@ Stmt *Parser::parseForStatement() {
   }
 
   // Check for range-based for: for (decl : range)
-  // Heuristic: check if we see pattern: auto? identifier : ...
-  // For example: for (auto x : arr) or for (x : arr)
+  // Use tentative parsing to disambiguate between range-based and traditional for
   bool IsRangeBased = false;
 
-  if (Tok.is(TokenKind::kw_auto) && NextTok.is(TokenKind::identifier)) {
-    // Pattern: auto identifier : ...
-    // We need to peek one more token to check for ':'
-    // Since we only have 2-token lookahead, we'll assume it's range-based
-    // and handle errors during actual parsing
-    IsRangeBased = true;
-  } else if (Tok.is(TokenKind::identifier) && NextTok.is(TokenKind::colon)) {
-    // Pattern: identifier : ...
-    IsRangeBased = true;
+  // Use tentative parsing to check if this is a range-based for
+  // Save current state
+  TentativeParsingAction TPA(*this);
+
+  // Try to parse as a range-based for declaration
+  // A range-based for has pattern: type? identifier ':'
+  // Try to parse type (optional)
+  if (Tok.is(TokenKind::kw_auto) || Tok.is(TokenKind::kw_const) ||
+      Tok.is(TokenKind::kw_volatile) || Tok.is(TokenKind::kw_int) ||
+      Tok.is(TokenKind::kw_float) || Tok.is(TokenKind::kw_double) ||
+      Tok.is(TokenKind::kw_char) || Tok.is(TokenKind::kw_bool) ||
+      Tok.is(TokenKind::kw_void) || Tok.is(TokenKind::kw_long) ||
+      Tok.is(TokenKind::kw_short) || Tok.is(TokenKind::kw_signed) ||
+      Tok.is(TokenKind::kw_unsigned) || Tok.is(TokenKind::identifier)) {
+    // Try to parse type
+    QualType Type = parseType();
+
+    // Check for identifier
+    if (Tok.is(TokenKind::identifier)) {
+      consumeToken();
+
+      // Check for ':' - this confirms it's a range-based for
+      if (Tok.is(TokenKind::colon)) {
+        IsRangeBased = true;
+      }
+    }
   }
+
+  // Restore state
+  TPA.abort();
 
   if (IsRangeBased) {
     // Parse range-based for: for (decl : range)
-    // Parse declaration (simplified: just auto/var name)
-    QualType VarType;
-    if (Tok.is(TokenKind::kw_auto)) {
-      consumeToken();
-      // Create auto type
-      VarType = Context.getAutoType();
-    } else {
-      // Parse type
-      VarType = parseType();
+    // Parse full declaration with complete type specifier
+    QualType VarType = parseType();
+    if (VarType.isNull()) {
+      emitError(DiagID::err_expected_type);
+      VarType = Context.getAutoType(); // Recovery
     }
 
     StringRef VarName;

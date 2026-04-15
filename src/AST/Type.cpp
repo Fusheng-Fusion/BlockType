@@ -217,8 +217,17 @@ void FunctionType::dump(llvm::raw_ostream &OS) const {
 //===----------------------------------------------------------------------===//
 
 void RecordType::dump(llvm::raw_ostream &OS) const {
-  // TODO: Print record name once RecordDecl is defined
-  OS << "<record>";
+  // Print record name from RecordDecl
+  if (Decl) {
+    llvm::StringRef Name = Decl->getName();
+    if (!Name.empty()) {
+      OS << Name;
+    } else {
+      OS << "<anonymous record>";
+    }
+  } else {
+    OS << "<record>";
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -226,8 +235,17 @@ void RecordType::dump(llvm::raw_ostream &OS) const {
 //===----------------------------------------------------------------------===//
 
 void EnumType::dump(llvm::raw_ostream &OS) const {
-  // TODO: Print enum name once EnumDecl is defined
-  OS << "<enum>";
+  // Print enum name from EnumDecl
+  if (Decl) {
+    llvm::StringRef Name = Decl->getName();
+    if (!Name.empty()) {
+      OS << Name;
+    } else {
+      OS << "<anonymous enum>";
+    }
+  } else {
+    OS << "<enum>";
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -235,8 +253,17 @@ void EnumType::dump(llvm::raw_ostream &OS) const {
 //===----------------------------------------------------------------------===//
 
 void TypedefType::dump(llvm::raw_ostream &OS) const {
-  // TODO: Print typedef name once TypedefNameDecl is defined
-  OS << "<typedef>";
+  // Print typedef name from TypedefNameDecl
+  if (Decl) {
+    llvm::StringRef Name = Decl->getName();
+    if (!Name.empty()) {
+      OS << Name;
+    } else {
+      OS << "<anonymous typedef>";
+    }
+  } else {
+    OS << "<typedef>";
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -324,13 +351,19 @@ void MemberPointerType::dump(llvm::raw_ostream &OS) const {
 void TemplateTypeParmType::dump(llvm::raw_ostream &OS) const {
   // Print template parameter name or placeholder
   if (Decl) {
-    // TODO: Print actual parameter name from Decl
-    OS << "T" << Index;
+    // Print actual parameter name from Decl
+    llvm::StringRef Name = Decl->getName();
+    if (!Name.empty()) {
+      OS << Name;
+    } else {
+      OS << "T" << Index;
+    }
   } else {
     OS << "T" << Index;
   }
-  if (IsParameterPack)
+  if (IsParameterPack) {
     OS << "...";
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -378,15 +411,36 @@ bool Type::isDependentType() const {
     return MPT->getClassType()->isDependentType() ||
            MPT->getPointeeType()->isDependentType();
   }
-  case TypeClass::TemplateSpecialization:
+  case TypeClass::TemplateSpecialization: {
     // Template specializations are dependent if any template argument is
     // dependent
-    // TODO: Check template arguments
+    auto *TST = cast<TemplateSpecializationType>(this);
+    for (const TemplateArgument &Arg : TST->getTemplateArgs()) {
+      if (Arg.getArgumentType() == TemplateArgument::Type) {
+        if (Arg.getAsType()->isDependentType()) {
+          return true;
+        }
+      }
+      // Template template parameters and non-type template parameters
+      // could also be dependent, but we'll handle those cases later
+    }
     return false;
-  case TypeClass::Decltype:
+  }
+  case TypeClass::Decltype: {
     // decltype(expr) is dependent if expr is type-dependent
-    // TODO: Check expression
+    auto *DT = cast<DecltypeType>(this);
+    if (Expr *E = DT->getExpression()) {
+      // Check if the expression is type-dependent
+      // For now, we'll check if the underlying type is set and dependent
+      QualType Underlying = DT->getUnderlyingType();
+      if (!Underlying.isNull() && Underlying->isDependentType()) {
+        return true;
+      }
+      // TODO: Implement proper expression type-dependence checking
+      // when Expr::isTypeDependent() is available
+    }
     return false;
+  }
   default:
     return false;
   }
