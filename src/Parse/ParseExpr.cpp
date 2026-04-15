@@ -107,6 +107,14 @@ Expr *Parser::parseRHS(Expr *LHS, PrecedenceLevel MinPrec) {
 //===----------------------------------------------------------------------===//
 
 Expr *Parser::parseUnaryExpression() {
+  // Check for C++ new/delete
+  if (Tok.is(TokenKind::kw_new)) {
+    return parseCXXNewExpression();
+  }
+  if (Tok.is(TokenKind::kw_delete)) {
+    return parseCXXDeleteExpression();
+  }
+
   // Check for prefix unary operators
   PrecedenceLevel UnaryPrec = getUnaryOpPrecedence(Tok.getKind());
 
@@ -226,12 +234,21 @@ Expr *Parser::parsePrimaryExpression() {
   case TokenKind::l_paren:
     return parseParenExpression();
 
+  // Lambda expression
+  case TokenKind::l_square:
+    return parseLambdaExpression();
+
   // this
   case TokenKind::kw_this:
-    // TODO: Implement this expression
-    consumeToken();
-    emitError(DiagID::err_not_implemented);
-    return createRecoveryExpr(Tok.getLocation());
+    return parseCXXThisExpr();
+
+  // throw
+  case TokenKind::kw_throw:
+    return parseCXXThrowExpr();
+
+  // requires (C++20)
+  case TokenKind::kw_requires:
+    return parseRequiresExpression();
 
   default:
     if (canStartExpression(Tok.getKind())) {

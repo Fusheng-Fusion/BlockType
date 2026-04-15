@@ -1,6 +1,7 @@
 add_library(blocktype-parse
   OperatorPrecedence.cpp
   ParseExpr.cpp
+  ParseExprCXX.cpp
   Parser.cpp
 )
 

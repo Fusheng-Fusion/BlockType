@@ -26,6 +26,17 @@ namespace blocktype {
 
 class TranslationUnitDecl;
 
+/// LambdaCapture - Represents a lambda capture.
+struct LambdaCapture {
+  enum CaptureKind {
+    ByCopy,  // x
+    ByRef,   // &x
+    Init,    // x = expr
+  };
+  CaptureKind Kind = ByCopy;
+  // TODO: Add captured variable and initializer
+};
+
 /// ParsingContext - Represents the current parsing context.
 enum class ParsingContext {
   Expression,        // Parsing an expression
@@ -206,6 +217,37 @@ public:
 
   /// Parses call arguments.
   llvm::SmallVector<Expr *, 8> parseCallArguments();
+
+  //===--------------------------------------------------------------------===//
+  // C++ expression parsing
+  //===--------------------------------------------------------------------===//
+
+  /// Parses a C++ new expression.
+  Expr *parseCXXNewExpression();
+
+  /// Parses a C++ delete expression.
+  Expr *parseCXXDeleteExpression();
+
+  /// Parses a C++ this expression.
+  Expr *parseCXXThisExpr();
+
+  /// Parses a C++ throw expression.
+  Expr *parseCXXThrowExpr();
+
+  /// Parses a lambda expression.
+  Expr *parseLambdaExpression();
+
+  /// Parses a lambda capture list.
+  llvm::SmallVector<LambdaCapture, 4> parseLambdaCaptureList();
+
+  /// Parses a fold expression (C++17).
+  Expr *parseFoldExpression();
+
+  /// Parses a requires expression (C++20).
+  Expr *parseRequiresExpression();
+
+  /// Parses a C-style cast expression.
+  Expr *parseCStyleCastExpr();
 
 private:
   //===--------------------------------------------------------------------===//
