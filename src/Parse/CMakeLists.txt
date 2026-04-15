@@ -1,2 +1,16 @@
-add_library(blocktype-parse INTERFACE)
-target_link_libraries(blocktype-parse INTERFACE blocktype-lex)
+add_library(blocktype-parse
+  Parser.cpp
+)
+
+target_include_directories(blocktype-parse
+  PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_BINARY_DIR}/include
+)
+
+target_link_libraries(blocktype-parse
+  PUBLIC
+    blocktype-ast
+    blocktype-lex
+    blocktype-basic
+)

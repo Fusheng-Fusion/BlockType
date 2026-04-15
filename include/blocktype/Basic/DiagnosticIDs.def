@@ -109,6 +109,50 @@ DIAG(note_pp_macro_defined_here, Note, \
   "宏在此定义")
 
 //===----------------------------------------------------------------------===//
+// Parser Diagnostics
+//===----------------------------------------------------------------------===//
+
+DIAG(err_expected, Error, \
+  "expected token", \
+  "期望的 token")
+DIAG(err_expected_semi, Error, \
+  "expected ';' at end of statement", \
+  "语句末尾期望 ';'")
+DIAG(err_expected_lbrace, Error, \
+  "expected '{'", \
+  "期望 '{'")
+DIAG(err_expected_rbrace, Error, \
+  "expected '}'", \
+  "期望 '}'")
+DIAG(err_expected_lparen, Error, \
+  "expected '('", \
+  "期望 '('")
+DIAG(err_expected_rparen, Error, \
+  "expected ')'", \
+  "期望 ')'")
+DIAG(err_expected_identifier, Error, \
+  "expected identifier", \
+  "期望标识符")
+DIAG(err_expected_type, Error, \
+  "expected type name", \
+  "期望类型名")
+DIAG(err_expected_expression, Error, \
+  "expected expression", \
+  "期望表达式")
+DIAG(err_expected_statement, Error, \
+  "expected statement", \
+  "期望语句")
+DIAG(err_expected_declaration, Error, \
+  "expected declaration", \
+  "期望声明")
+DIAG(err_unexpected_token, Error, \
+  "unexpected token", \
+  "意外的 token")
+DIAG(err_invalid_operator, Error, \
+  "invalid operator", \
+  "无效的运算符")
+
+//===----------------------------------------------------------------------===//
 // General Diagnostics
 //===----------------------------------------------------------------------===//
 
