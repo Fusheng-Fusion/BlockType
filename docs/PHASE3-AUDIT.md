@@ -199,18 +199,6 @@ return Context.create<CXXMethodDecl>(NameLoc, Name, Type, Params, Class, Body,
 | **TemplateDecl requires-clause** | ✅ 已实现 | Decl.h:853-876 |
 | **类模板部分特化** | ✅ 已实现 | ParseDecl.cpp:392-437 (parseClassDeclaration) |
 
-
-
-
-| **变量模板** | `template<typename T> T value;` | 
-| **别名模板** | `template<typename T> using Ptr = T*;` | 
-| **显式实例化** | `template class Vector<int>;` | 
-| **显式特化** | `template<> class Vector<int> {}` | 
-| **变参模板展开** | 正确处理 `typename... Args` | 
-| **模板参数默认值存储** | 非类型模板参数默认值未存储 | 
-
-
-
 ### 3.2.2 实现说明 (2026-04-16 更新)
 
 **约束表达式 (requires-clause)：**
@@ -265,32 +253,20 @@ return Context.create<CXXMethodDecl>(NameLoc, Name, Type, Params, Class, Body,
   - `Type...`（类型展开）
 - 参数包展开可以出现在类型、表达式和模板实参中
 
-### 3.3 不完善功能 ⚠️
+**模板参数默认值存储：**
+- 非类型模板参数默认值已正确存储（ParseDecl.cpp:1241-1247）
+- 模板模板参数默认值已正确解析和存储（ParseDecl.cpp:1332-1356）
+- 类型模板参数默认值已正确存储（ParseDecl.cpp:1183-1189）
 
-```cpp
-// ParseDecl.cpp:777-782 - 非类型模板参数默认值未存储
-if (Tok.is(TokenKind::equal)) {
-  consumeToken(); // consume '='
-  Expr *DefaultArg = parseExpression();
-  // Note: We don't store the default argument yet in NonTypeTemplateParmDecl
-  // This can be added later if needed  <-- 问题：默认值丢失
-}
+### 3.3 已修复功能 ✅ (2026-04-16 更新)
 
-// ParseDecl.cpp:857-860 - 模板模板参数默认值未解析
-if (Tok.is(TokenKind::equal)) {
-  consumeToken(); // consume '='
-  // Note: We need to parse id-expression here
-  // For now, skip to the next token
-  // TODO: Implement id-expression parsing  <-- 问题：默认值未解析
-}
-```
-
-### 3.3.1 已修复功能 ✅ (2026-04-16 更新)
+所有模板参数默认值存储功能已完整实现：
 
 | 功能 | 状态 | 实现位置 |
 |------|------|----------|
-| **NonTypeTemplateParmDecl 默认值存储** | ✅ 已实现 | Decl.h:848-852, ParseDecl.cpp:1167-1172 |
-| **TemplateTemplateParmDecl 默认值解析** | ✅ 已实现 | Decl.h:878-882, ParseDecl.cpp:1245-1268 |
+| **NonTypeTemplateParmDecl 默认值存储** | ✅ 已实现 | Decl.h:928-942, ParseDecl.cpp:1241-1247 |
+| **TemplateTemplateParmDecl 默认值解析** | ✅ 已实现 | Decl.h:963-977, ParseDecl.cpp:1332-1356 |
+| **TemplateTypeParmDecl 默认值存储** | ✅ 已实现 | Decl.h:888-907, ParseDecl.cpp:1183-1189 |
 
 ### 3.1.1 parseNonTypeTemplateParameter 修复 ✅ (2026-04-16 更新)
 
