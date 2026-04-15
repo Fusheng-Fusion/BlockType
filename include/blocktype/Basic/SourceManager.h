@@ -46,6 +46,7 @@ public:
 /// SourceManager - Manages source files and provides source location services.
 class SourceManager {
   std::vector<std::unique_ptr<FileInfo>> Files;
+  std::map<std::string, unsigned> FilenameToID;  // Map filename to FileID
 
   // D15: Macro expansion location tracking
   struct MacroExpansionInfo {
@@ -74,6 +75,9 @@ public:
 
   /// Returns the file info for a given file ID.
   const FileInfo *getFileInfo(unsigned FileID) const;
+
+  /// Returns the file info for a given filename.
+  const FileInfo *getFileInfo(StringRef Filename) const;
 
   /// Returns the line and column for a source location.
   std::pair<unsigned, unsigned> getLineAndColumn(SourceLocation Loc) const;

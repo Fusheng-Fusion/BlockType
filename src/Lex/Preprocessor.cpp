@@ -633,9 +633,14 @@ void Preprocessor::handleIncludeDirective(Token &IncludeTok, bool IsAngled) {
   }
 
   // Check if this file has been included with #pragma once
-  // We need to get the FileID from the file path
-  // For now, skip this check if we can't determine the FileID
-  // TODO: Implement proper file ID tracking in SourceManager
+  const FileInfo *FI = SM.getFileInfo(FE->getPath());
+  if (FI) {
+    unsigned FileID = FI->getFileID();
+    if (PragmaOnceFiles.count(FileID) > 0) {
+      // File has #pragma once and was already included, skip
+      return;
+    }
+  }
 
   // Read the file content
   auto Buffer = FileMgr->getBuffer(FE->getPath());

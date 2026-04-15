@@ -62,16 +62,18 @@ SourceLocation SourceManager::createMainFileID(StringRef Filename, StringRef Con
   if (!Files.empty()) {
     // Main file already exists, replace it
     Files[0] = std::make_unique<FileInfo>(Filename, Content, 0);
+    FilenameToID[Filename.str()] = 0;
     return SourceLocation(0);
   }
-  
+
   return createFileID(Filename, Content);
 }
 
 SourceLocation SourceManager::createFileID(StringRef Filename, StringRef Content) {
   unsigned FileID = static_cast<unsigned>(Files.size());
   Files.push_back(std::make_unique<FileInfo>(Filename, Content, FileID));
-  
+  FilenameToID[Filename.str()] = FileID;  // Track filename to ID mapping
+
   // Return a location at the start of the file (offset 0)
   return SourceLocation::getFileLoc(FileID, 0);
 }
@@ -88,6 +90,13 @@ const FileInfo *SourceManager::getFileInfo(unsigned FileID) const {
   if (FileID >= Files.size())
     return nullptr;
   return Files[FileID].get();
+}
+
+const FileInfo *SourceManager::getFileInfo(StringRef Filename) const {
+  auto It = FilenameToID.find(Filename.str());
+  if (It == FilenameToID.end())
+    return nullptr;
+  return getFileInfo(It->second);
 }
 
 std::pair<unsigned, unsigned> SourceManager::getLineAndColumn(SourceLocation Loc) const {
