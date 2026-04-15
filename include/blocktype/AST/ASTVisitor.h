@@ -14,12 +14,12 @@
 
 #include "blocktype/AST/ASTNode.h"
 #include "blocktype/AST/Expr.h"
+#include "blocktype/AST/Stmt.h"
 #include "llvm/Support/Casting.h"
 
 namespace blocktype {
 
 // Forward declarations
-class Stmt;
 class Decl;
 
 /// ASTVisitor - CRTP base class for AST visitors.
@@ -58,7 +58,7 @@ public:
     // Dispatch based on node kind
     switch (Node->getKind()) {
     default:
-      // TODO: Handle Stmt and Decl once they are defined
+      // TODO: Handle Decl once it is defined
       derived().visitASTNode(Node);
       break;
 
@@ -70,6 +70,24 @@ public:
 #define ABSTRACT_EXPR(Type, Base) EXPR(Type, Base)
 #define STMT(Type, Base)
 #define ABSTRACT_STMT(Type, Base)
+#define DECL(Type, Base)
+#define ABSTRACT_DECL(Type, Base)
+#include "blocktype/AST/NodeKinds.def"
+#undef EXPR
+#undef ABSTRACT_EXPR
+#undef STMT
+#undef ABSTRACT_STMT
+#undef DECL
+#undef ABSTRACT_DECL
+
+// Statement nodes
+#define EXPR(Type, Base)
+#define ABSTRACT_EXPR(Type, Base)
+#define STMT(Type, Base)                                                       \
+  case ASTNode::Type##Kind:                                                    \
+    derived().visit##Type(cast<Type>(Node));                                   \
+    break;
+#define ABSTRACT_STMT(Type, Base) STMT(Type, Base)
 #define DECL(Type, Base)
 #define ABSTRACT_DECL(Type, Base)
 #include "blocktype/AST/NodeKinds.def"
@@ -103,6 +121,23 @@ protected:
   void visit##Type(Type *Node) { /* No-op for abstract nodes */ }
 #define STMT(Type, Base)
 #define ABSTRACT_STMT(Type, Base)
+#define DECL(Type, Base)
+#define ABSTRACT_DECL(Type, Base)
+#include "blocktype/AST/NodeKinds.def"
+#undef EXPR
+#undef ABSTRACT_EXPR
+#undef STMT
+#undef ABSTRACT_STMT
+#undef DECL
+#undef ABSTRACT_DECL
+
+// Statement nodes
+#define EXPR(Type, Base)
+#define ABSTRACT_EXPR(Type, Base)
+#define STMT(Type, Base)                                                       \
+  void visit##Type(Type *Node) { visit##Base(Node); }
+#define ABSTRACT_STMT(Type, Base)                                              \
+  void visit##Type(Type *Node) { /* No-op for abstract nodes */ }
 #define DECL(Type, Base)
 #define ABSTRACT_DECL(Type, Base)
 #include "blocktype/AST/NodeKinds.def"

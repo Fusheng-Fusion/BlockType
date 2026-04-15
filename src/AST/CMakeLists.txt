@@ -3,6 +3,7 @@
 add_library(blocktype-ast
   ASTContext.cpp
   Expr.cpp
+  Stmt.cpp
 )
 
 target_include_directories(blocktype-ast
