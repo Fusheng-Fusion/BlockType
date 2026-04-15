@@ -46,6 +46,7 @@ QualType Parser::parseType() {
 ///
 /// type-specifier ::= builtin-type
 ///                  | named-type
+///                  | 'decltype' '(' expression ')'
 ///                  | 'const' type-specifier
 ///                  | 'volatile' type-specifier
 ///
@@ -69,55 +70,60 @@ QualType Parser::parseTypeSpecifier() {
     }
   }
   
-  // Parse the base type
-  Result = parseBuiltinType();
-  if (Result.isNull()) {
-    // Try to parse a named type
-    if (Tok.is(TokenKind::identifier)) {
-      // Check for nested-name-specifier (A::B::C)
-      llvm::StringRef Qualifier = parseNestedNameSpecifier();
-      
-      // Parse the final type name
-      if (!Tok.is(TokenKind::identifier)) {
-        emitError(DiagID::err_expected_identifier);
-        return QualType();
-      }
-      
-      llvm::StringRef TypeName = Tok.getText();
-      SourceLocation TypeNameLoc = Tok.getLocation();
-      consumeToken();
-      
-      // Check for template argument list
-      if (Tok.is(TokenKind::less)) {
-        // Parse template arguments
-        Result = parseTemplateSpecializationType(TypeName);
-      } else {
-        // Try to look up the type name in the symbol table
-        bool FoundInScope = false;
-        if (CurrentScope) {
-          if (NamedDecl *D = CurrentScope->lookup(TypeName)) {
-            // Check if this is a type declaration
-            if (auto *TD = llvm::dyn_cast<TypeDecl>(D)) {
-              Result = Context.getTypeDeclType(TD);
-              FoundInScope = true;
+  // Check for decltype type
+  if (Tok.is(TokenKind::kw_decltype)) {
+    Result = parseDecltypeType();
+  } else {
+    // Parse the base type
+    Result = parseBuiltinType();
+    if (Result.isNull()) {
+      // Try to parse a named type
+      if (Tok.is(TokenKind::identifier)) {
+        // Check for nested-name-specifier (A::B::C)
+        llvm::StringRef Qualifier = parseNestedNameSpecifier();
+        
+        // Parse the final type name
+        if (!Tok.is(TokenKind::identifier)) {
+          emitError(DiagID::err_expected_identifier);
+          return QualType();
+        }
+        
+        llvm::StringRef TypeName = Tok.getText();
+        SourceLocation TypeNameLoc = Tok.getLocation();
+        consumeToken();
+        
+        // Check for template argument list
+        if (Tok.is(TokenKind::less)) {
+          // Parse template arguments
+          Result = parseTemplateSpecializationType(TypeName);
+        } else {
+          // Try to look up the type name in the symbol table
+          bool FoundInScope = false;
+          if (CurrentScope) {
+            if (NamedDecl *D = CurrentScope->lookup(TypeName)) {
+              // Check if this is a type declaration
+              if (auto *TD = llvm::dyn_cast<TypeDecl>(D)) {
+                Result = Context.getTypeDeclType(TD);
+                FoundInScope = true;
+              }
             }
+          }
+          
+          // If not found in scope, create an unresolved type
+          if (!FoundInScope) {
+            UnresolvedType *Unresolved = Context.getUnresolvedType(TypeName);
+            Result = QualType(Unresolved, Qualifier::None);
           }
         }
         
-        // If not found in scope, create an unresolved type
-        if (!FoundInScope) {
-          UnresolvedType *Unresolved = Context.getUnresolvedType(TypeName);
-          Result = QualType(Unresolved, Qualifier::None);
+        // If we have a qualifier, create an elaborated type
+        if (!Qualifier.empty() && !Result.isNull()) {
+          ElaboratedType *Elaborated = Context.getElaboratedType(Result.getTypePtr(), Qualifier);
+          Result = QualType(Elaborated, Qualifier::None);
         }
+      } else {
+        return QualType();
       }
-      
-      // If we have a qualifier, create an elaborated type
-      if (!Qualifier.empty() && !Result.isNull()) {
-        ElaboratedType *Elaborated = Context.getElaboratedType(Result.getTypePtr(), Qualifier);
-        Result = QualType(Elaborated, Qualifier::None);
-      }
-    } else {
-      return QualType();
     }
   }
   
@@ -208,10 +214,7 @@ QualType Parser::parseBuiltinType() {
   case TokenKind::kw_auto:
     // Create auto type (will be deduced later)
     consumeToken();
-    {
-      AutoType *AutoTy = Context.getAutoType();
-      return QualType(AutoTy, Qualifier::None);
-    }
+    return Context.getAutoType();
     
   case TokenKind::kw_signed:
     consumeToken();
@@ -285,8 +288,13 @@ QualType Parser::parseBuiltinType() {
 ///
 /// declarator ::= ptr-operator* direct-declarator
 /// ptr-operator ::= '*' cvr-qualifiers?
-///                | '&' 
+///                | '&'
 ///                | '&&'
+///                | nested-name-specifier '*' cvr-qualifiers?  (member pointer)
+/// direct-declarator ::= identifier
+///                     | '(' declarator ')'
+///                     | direct-declarator '[' expr? ']'
+///                     | direct-declarator '(' parameter-list? ')' cvr-qualifiers? ref-qualifier?
 ///
 QualType Parser::parseDeclarator(QualType Base) {
   if (Base.isNull())
@@ -332,6 +340,19 @@ QualType Parser::parseDeclarator(QualType Base) {
       RValueReferenceType *RT = Context.getRValueReferenceType(Base.getTypePtr());
       Base = QualType(RT, Qualifier::None);
       
+    } else {
+      break;
+    }
+  }
+  
+  // Parse direct declarator (arrays, functions)
+  while (true) {
+    if (Tok.is(TokenKind::l_square)) {
+      // Array declarator
+      Base = parseArrayDimension(Base);
+    } else if (Tok.is(TokenKind::l_paren)) {
+      // Function declarator
+      Base = parseFunctionDeclarator(Base);
     } else {
       break;
     }
@@ -463,6 +484,196 @@ llvm::StringRef Parser::parseNestedNameSpecifier() {
       Context.getAllocator().Allocate(Qualifier.size() + 1, alignof(char)));
   std::memcpy(Mem, Qualifier.c_str(), Qualifier.size() + 1);
   return llvm::StringRef(Mem, Qualifier.size());
+}
+
+/// parseDecltypeType - Parse a decltype type.
+///
+/// decltype-type ::= 'decltype' '(' expression ')'
+///
+QualType Parser::parseDecltypeType() {
+  assert(Tok.is(TokenKind::kw_decltype) && "Expected 'decltype'");
+  SourceLocation DecltypeLoc = Tok.getLocation();
+  consumeToken();
+  
+  // Expect '('
+  if (!Tok.is(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return QualType();
+  }
+  consumeToken();
+  
+  // Parse expression
+  Expr *E = parseExpression();
+  if (!E) {
+    // Error recovery
+    skipUntil({TokenKind::r_paren});
+    if (Tok.is(TokenKind::r_paren)) {
+      consumeToken();
+    }
+    return QualType();
+  }
+  
+  // Expect ')'
+  if (!Tok.is(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+    return QualType();
+  }
+  consumeToken();
+  
+  // Create decltype type
+  DecltypeType *DT = Context.getDecltypeType(E);
+  return QualType(DT, Qualifier::None);
+}
+
+/// parseMemberPointerType - Parse a member pointer type.
+///
+/// member-pointer-type ::= type nested-name-specifier '*' cvr-qualifiers?
+///
+QualType Parser::parseMemberPointerType(QualType Base) {
+  if (Base.isNull())
+    return Base;
+  
+  // We expect a nested-name-specifier followed by '*'
+  // This is called when we see something like: int (Class::*) or int Class::*
+  
+  // Parse the class type (nested-name-specifier)
+  llvm::StringRef ClassQualifier = parseNestedNameSpecifier();
+  if (ClassQualifier.empty()) {
+    emitError(DiagID::err_expected);
+    return Base;
+  }
+  
+  // Expect '*'
+  if (!Tok.is(TokenKind::star)) {
+    emitError(DiagID::err_expected);
+    return Base;
+  }
+  consumeToken();
+  
+  // Parse CVR qualifiers for member pointer
+  Qualifier Quals = Qualifier::None;
+  while (true) {
+    if (Tok.is(TokenKind::kw_const)) {
+      Quals = Quals | Qualifier::Const;
+      consumeToken();
+    } else if (Tok.is(TokenKind::kw_volatile)) {
+      Quals = Quals | Qualifier::Volatile;
+      consumeToken();
+    } else if (Tok.is(TokenKind::kw_restrict)) {
+      Quals = Quals | Qualifier::Restrict;
+      consumeToken();
+    } else {
+      break;
+    }
+  }
+  
+  // Create unresolved type for the class
+  UnresolvedType *ClassType = Context.getUnresolvedType(ClassQualifier);
+  
+  // Create member pointer type
+  MemberPointerType *MPT = Context.getMemberPointerType(ClassType, Base.getTypePtr());
+  return QualType(MPT, Quals);
+}
+
+/// parseFunctionDeclarator - Parse a function declarator.
+///
+/// function-declarator ::= '(' parameter-list? ')' cvr-qualifiers? ref-qualifier?
+/// parameter-list ::= parameter (',' parameter)*
+/// ref-qualifier ::= '&' | '&&'
+///
+QualType Parser::parseFunctionDeclarator(QualType ReturnType) {
+  if (ReturnType.isNull())
+    return ReturnType;
+  
+  assert(Tok.is(TokenKind::l_paren) && "Expected '('");
+  consumeToken();
+  
+  // Parse parameter types
+  llvm::SmallVector<const Type *, 8> ParamTypes;
+  bool IsVariadic = false;
+  
+  while (!Tok.is(TokenKind::r_paren) && !Tok.is(TokenKind::eof)) {
+    // Check for variadic '...'
+    if (Tok.is(TokenKind::ellipsis)) {
+      IsVariadic = true;
+      consumeToken();
+      break;
+    }
+    
+    // Parse parameter type
+    QualType ParamType = parseType();
+    if (ParamType.isNull()) {
+      // Error recovery
+      skipUntil({TokenKind::comma, TokenKind::r_paren});
+    } else {
+      ParamTypes.push_back(ParamType.getTypePtr());
+    }
+    
+    // Check for comma
+    if (Tok.is(TokenKind::comma)) {
+      consumeToken();
+    } else if (!Tok.is(TokenKind::r_paren)) {
+      emitError(DiagID::err_expected);
+      break;
+    }
+  }
+  
+  // Expect ')'
+  if (!Tok.is(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+    return ReturnType;
+  }
+  consumeToken();
+  
+  // Parse CVR qualifiers (member function qualifiers)
+  Qualifier Quals = Qualifier::None;
+  while (true) {
+    if (Tok.is(TokenKind::kw_const)) {
+      Quals = Quals | Qualifier::Const;
+      consumeToken();
+    } else if (Tok.is(TokenKind::kw_volatile)) {
+      Quals = Quals | Qualifier::Volatile;
+      consumeToken();
+    } else if (Tok.is(TokenKind::kw_restrict)) {
+      Quals = Quals | Qualifier::Restrict;
+      consumeToken();
+    } else {
+      break;
+    }
+  }
+  
+  // Parse ref-qualifier (member function ref-qualifier)
+  bool IsRefQualified = false;
+  bool IsRValueRef = false;
+  if (Tok.is(TokenKind::amp)) {
+    IsRefQualified = true;
+    IsRValueRef = false;
+    consumeToken();
+  } else if (Tok.is(TokenKind::ampamp)) {
+    IsRefQualified = true;
+    IsRValueRef = true;
+    consumeToken();
+  }
+  
+  // Create function type
+  FunctionType *FT = Context.getFunctionType(ReturnType.getTypePtr(), ParamTypes, IsVariadic);
+  return QualType(FT, Quals);
+}
+
+/// parseTrailingReturnType - Parse a trailing return type.
+///
+/// trailing-return-type ::= '->' type
+///
+QualType Parser::parseTrailingReturnType() {
+  // Expect '->'
+  if (!Tok.is(TokenKind::arrow)) {
+    emitError(DiagID::err_expected);
+    return QualType();
+  }
+  consumeToken();
+  
+  // Parse the return type
+  return parseType();
 }
 
 } // namespace blocktype

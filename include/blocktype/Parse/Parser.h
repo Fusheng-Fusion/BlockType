@@ -56,6 +56,9 @@ class TypedefDecl;
 class CXXConstructorDecl;
 class CXXDestructorDecl;
 class ConceptDecl;
+class AsmDecl;
+class CXXDeductionGuideDecl;
+class AttributeDecl;
 
 /// LambdaCapture - Represents a lambda capture.
 /// ParsingContext - Represents the current parsing context.
@@ -145,6 +148,11 @@ public:
   /// Creates a recovery expression for error recovery.
   Expr *createRecoveryExpr(SourceLocation Loc);
 
+  /// Look up a member in a class type.
+  /// Returns nullptr if the member is not found or if the base type is not a class.
+  ValueDecl *lookupMemberInType(llvm::StringRef MemberName, QualType BaseType,
+                                 SourceLocation MemberLoc);
+
   /// Returns the number of errors encountered.
   unsigned getErrorCount() const { return ErrorCount; }
 
@@ -229,6 +237,12 @@ public:
   /// Parses an initializer list (brace-enclosed list).
   Expr *parseInitializerList();
 
+  /// Parses a designated initializer (C++20).
+  Expr *parseDesignatedInitializer();
+
+  /// Parses an initializer clause (can be expression or designated initializer).
+  Expr *parseInitializerClause();
+
   /// Parses an integer literal.
   Expr *parseIntegerLiteral();
 
@@ -249,6 +263,12 @@ public:
 
   /// Parses an identifier.
   Expr *parseIdentifier();
+
+  /// Parses a qualified name (e.g., std::vector).
+  Expr *parseQualifiedName(SourceLocation StartLoc, llvm::StringRef FirstName);
+
+  /// Parses a template specialization expression (e.g., Integral<T>).
+  Expr *parseTemplateSpecializationExpr(SourceLocation StartLoc, llvm::StringRef TemplateName);
 
   /// Parses a parenthesized expression.
   Expr *parseParenExpression();
@@ -324,6 +344,18 @@ public:
   /// Parses a nested-name-specifier (e.g., A::B::C).
   /// Returns the qualifier string (e.g., "A::B::") or empty string if none.
   llvm::StringRef parseNestedNameSpecifier();
+  
+  /// Parses a decltype type (e.g., decltype(expr)).
+  QualType parseDecltypeType();
+  
+  /// Parses a member pointer type (e.g., int (Class::*)).
+  QualType parseMemberPointerType(QualType Base);
+  
+  /// Parses a function declarator (parameter list).
+  QualType parseFunctionDeclarator(QualType ReturnType);
+  
+  /// Parses a trailing return type (e.g., auto f() -> int).
+  QualType parseTrailingReturnType();
 
   //===--------------------------------------------------------------------===//
   // Declaration parsing
@@ -334,12 +366,14 @@ public:
 
   /// Parses a variable declaration.
   VarDecl *parseVariableDeclaration(QualType Type, llvm::StringRef Name,
-                                    SourceLocation Loc);
+                                    SourceLocation Loc, bool IsStatic = false,
+                                    bool IsConstexpr = false);
 
   /// Parses a function declaration.
   FunctionDecl *parseFunctionDeclaration(QualType ReturnType,
                                          llvm::StringRef Name,
-                                         SourceLocation Loc);
+                                         SourceLocation Loc, bool IsStatic = false,
+                                         bool IsConstexpr = false, bool IsInline = false);
 
   /// Parses a parameter declaration.
   ParmVarDecl *parseParameterDeclaration();
@@ -399,7 +433,8 @@ public:
   Expr *parseConstraintExpression();
 
   /// Parses a concept definition (C++20).
-  ConceptDecl *parseConceptDefinition(SourceLocation Loc);
+  ConceptDecl *parseConceptDefinition(SourceLocation Loc,
+                                       llvm::SmallVector<NamedDecl *, 8> &TemplateParams);
 
   /// Parses a namespace declaration (including namespace alias).
   Decl *parseNamespaceDeclaration();
@@ -454,7 +489,16 @@ public:
 
   /// Parses a linkage specification (extern "C"/"C++").
   LinkageSpecDecl *parseLinkageSpecDeclaration(SourceLocation Loc);
-  
+
+  /// Parses an asm declaration.
+  AsmDecl *parseAsmDeclaration(SourceLocation Loc);
+
+  /// Parses a deduction guide (C++17).
+  CXXDeductionGuideDecl *parseDeductionGuide(SourceLocation Loc);
+
+  /// Parses an attribute specifier (C++11).
+  AttributeDecl *parseAttributeSpecifier(SourceLocation Loc);
+
   /// Parses a constructor declaration.
   CXXConstructorDecl *parseConstructorDeclaration(CXXRecordDecl *Class, SourceLocation Loc);
 
@@ -477,6 +521,9 @@ public:
 
   /// Parses a statement.
   Stmt *parseStatement();
+
+  /// Determines if the current token starts a declaration.
+  bool isDeclarationStatement();
 
   /// Parses a compound statement (block).
   Stmt *parseCompoundStatement();
@@ -549,6 +596,18 @@ public:
 
   /// Parses a C++26 reflexpr expression.
   Expr *parseReflexprExpr();
+
+  /// Parses a C++ static_cast expression.
+  Expr *parseCXXStaticCastExpr();
+
+  /// Parses a C++ dynamic_cast expression.
+  Expr *parseCXXDynamicCastExpr();
+
+  /// Parses a C++ const_cast expression.
+  Expr *parseCXXConstCastExpr();
+
+  /// Parses a C++ reinterpret_cast expression.
+  Expr *parseCXXReinterpretCastExpr();
 
 private:
   //===--------------------------------------------------------------------===//

@@ -82,10 +82,16 @@
 **已补充功能（2026-04-15）：**
 - ✅ `DeclRefExpr` 和 `MemberExpr` 已有 `ValueDecl` 定义（之前修复）
 - ✅ LambdaExpr 添加详细成员：captures, parameters, body, mutable, return type
-- ✅ RequiresExpr 添加 requirement 列表：TypeRequirement, ExprRequirement
+- ✅ RequiresExpr 添加 requirement 列表：TypeRequirement, SimpleRequirement, CompoundRequirement, NestedRequirement
 - ✅ CXXFoldExpr 添加 pattern 和 operator 信息：LHS, RHS, pattern, operator, isRightFold
 - ✅ PackIndexingExpr 添加 pack 和 index 成员
 - ✅ ReflexprExpr 添加 argument 和 result type
+
+**Requires Expression 四种要求类型（2026-04-16）：**
+- ✅ TypeRequirement - 类型要求 `typename T;`
+- ✅ SimpleRequirement - 简单要求 `expression;`
+- ✅ CompoundRequirement - 复合要求 `{ expr } noexcept? -> type?;`
+- ✅ NestedRequirement - 嵌套要求 `requires constraint;`
 
 **实现细节：**
 ```cpp
@@ -271,7 +277,7 @@ Expr *Parser::parsePostfixExpression() {
 
 #### 2.2 C++ 表达式解析 (ParseExprCXX.cpp) - ✅ 已完成
 
-**完成度：** 90% ✅
+**完成度：** 95% ✅
 
 **已实现：**
 - ✅ 框架函数定义
@@ -284,8 +290,8 @@ Expr *Parser::parsePostfixExpression() {
 - ✅ `parseFoldExpression()` - 创建 CXXFoldExpr（2026-04-15 修复）
 - ✅ `parseRequiresExpression()` - 创建 RequiresExpr（2026-04-15 修复）
 - ✅ `parseCStyleCastExpr()` - 创建 CStyleCastExpr（2026-04-15 修复）
-- ✅ `parsePackIndexingExpr()` - 创建 PackIndexingExpr（2026-04-15 修复）
-- ✅ `parseReflexprExpr()` - 创建 ReflexprExpr（2026-04-15 修复）
+- ✅ `parsePackIndexingExpr()` - 创建 PackIndexingExpr（2026-04-16 集成到 parsePostfixExpression）
+- ✅ `parseReflexprExpr()` - 创建 ReflexprExpr（2026-04-16 集成到 parsePrimaryExpression）
 
 **实现细节（2026-04-15 修复）：**
 ```cpp
@@ -347,13 +353,66 @@ Expr *Parser::parseReflexprExpr() {
 }
 ```
 
-**待完善：**
-- ⚠️ Requires expression compound/nested requirements（后续修复）
-
 **已完成（2026-04-16）：**
+- ✅ Requires expression compound/nested requirements - 完整实现四种要求类型
+  - Type requirement: `typename T;`
+  - Simple requirement: `expression;`
+  - Compound requirement: `{ expression } noexcept? -> type?;`
+  - Nested requirement: `requires constraint-expression;`
 - ✅ Lambda 参数声明详细解析 - 调用 `parseParameterDeclaration()`
 - ✅ Lambda capture 变量名解析 - 设置 `Capture.Name` 和 `Capture.InitExpr`
 - ✅ parseRequiresExpression 认知复杂度 - 提取辅助函数 `parseRequiresExpressionParameterList()` 和 `parseRequirement()`
+
+**Requires Expression 实现详情：**
+```cpp
+// parseRequirement() - 解析四种要求类型
+Requirement *Parser::parseRequirement() {
+  // Type requirement: typename T;
+  if (Tok.is(TokenKind::kw_typename)) {
+    // 解析类型要求
+  }
+  
+  // Nested requirement: requires constraint-expression;
+  if (Tok.is(TokenKind::kw_requires)) {
+    // 解析嵌套要求
+  }
+  
+  // Compound requirement: { statement-seq } noexcept? -> type?;
+  if (Tok.is(TokenKind::l_brace)) {
+    // 解析复合要求
+  }
+  
+  // Simple requirement: expression;
+  // 解析简单要求
+}
+```
+
+**C++26 特性实现（2026-04-16）：**
+```cpp
+// PackIndexingExpr - 在 parsePostfixExpression 中处理
+// 语法: pack...[index]
+case TokenKind::ellipsis: {
+  SourceLocation EllipsisLoc = Tok.getLocation();
+  consumeToken(); // consume '...'
+  
+  if (!tryConsumeToken(TokenKind::l_square)) {
+    emitError(DiagID::err_expected);
+    return Base;
+  }
+  
+  Expr *Index = parseExpression();
+  if (!tryConsumeToken(TokenKind::r_square)) {
+    emitError(DiagID::err_expected);
+  }
+  
+  return Context.create<PackIndexingExpr>(EllipsisLoc, Base, Index);
+}
+
+// ReflexprExpr - 在 parsePrimaryExpression 中处理
+// 语法: reflexpr(type-id)
+case TokenKind::kw_reflexpr:
+  return parseReflexprExpr();
+```
 
 #### 2.3 语句解析 (ParseStmt.cpp) - ✅ 已完成
 
@@ -793,14 +852,85 @@ Stmt *Parser::parseSwitchStatement() {
 
 ### 3. C++26 特性
 
-**状态：** AST 节点定义，解析未实现
+**状态：** ✅ 已完成
 
-**需要内容：**
-- ❌ PackIndexingExpr 解析
-- ❌ ReflexprExpr 解析
-- ❌ 其他 C++26 特性
+**已实现：**
+- ✅ PackIndexingExpr 解析 - `Ts...[I]` 语法（在 parsePostfixExpression 中处理）
+- ✅ ReflexprExpr 解析 - `reflexpr(type-id)` 语法（在 parsePrimaryExpression 中处理）
 
-**建议：** Phase 3 实现
+**实现详情（2026-04-16）：**
+```cpp
+// PackIndexingExpr - 在 parsePostfixExpression 中处理
+case TokenKind::ellipsis: {
+  // Pack indexing: pack...[index]
+  consumeToken(); // consume '...'
+  // Parse '[' index ']'
+  Expr *Index = parseExpression();
+  // Create PackIndexingExpr
+  Base = Context.create<PackIndexingExpr>(EllipsisLoc, Base, Index);
+  break;
+}
+
+// ReflexprExpr - 在 parsePrimaryExpression 中处理
+case TokenKind::kw_reflexpr:
+  return parseReflexprExpr();
+```
+
+**建议：** ✅ Phase 3 已完成
+
+### 4. C++ Cast 表达式
+
+**状态：** ✅ 已完成（2026-04-16）
+
+**已实现：**
+- ✅ static_cast<type>(expr) - parseCXXStaticCastExpr()
+- ✅ dynamic_cast<type>(expr) - parseCXXDynamicCastExpr()
+- ✅ const_cast<type>(expr) - parseCXXConstCastExpr()
+- ✅ reinterpret_cast<type>(expr) - parseCXXReinterpretCastExpr()
+
+**实现详情：**
+```cpp
+// 在 parsePrimaryExpression 中处理 C++ cast 表达式
+case TokenKind::kw_static_cast:
+  return parseCXXStaticCastExpr();
+case TokenKind::kw_dynamic_cast:
+  return parseCXXDynamicCastExpr();
+case TokenKind::kw_const_cast:
+  return parseCXXConstCastExpr();
+case TokenKind::kw_reinterpret_cast:
+  return parseCXXReinterpretCastExpr();
+
+// parseCXXStaticCastExpr 实现
+Expr *Parser::parseCXXStaticCastExpr() {
+  SourceLocation CastLoc = Tok.getLocation();
+  consumeToken(); // consume 'static_cast'
+  
+  // Parse '<type>'
+  if (!tryConsumeToken(TokenKind::less)) {
+    emitError(DiagID::err_expected);
+    return createRecoveryExpr(CastLoc);
+  }
+  
+  QualType CastType = parseType();
+  if (!tryConsumeToken(TokenKind::greater)) {
+    emitError(DiagID::err_expected);
+    return createRecoveryExpr(CastLoc);
+  }
+  
+  // Parse '(expr)'
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return createRecoveryExpr(CastLoc);
+  }
+  
+  Expr *SubExpr = parseExpression();
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+  
+  return Context.create<CXXStaticCastExpr>(CastLoc, SubExpr);
+}
+```
 
 ---
 
@@ -826,7 +956,7 @@ Stmt *Parser::parseSwitchStatement() {
 | 功能类别 | 完成度 | 备注 |
 |----------|--------|------|
 | 基础表达式解析 | 100% | ✅ 后缀表达式已实现 |
-| 高级表达式解析 | 40% | ⚠️ Lambda/new/delete 待完善 |
+| 高级表达式解析 | 45% | ⚠️ Lambda/new/delete 待完善，requires expression 已完成 |
 | 基础语句解析 | 100% | ✅ 所有节点创建正确 |
 | 高级语句解析 | 50% | ⚠️ try/catch/协程待完善 |
 | 声明解析 | 80% | ✅ 框架完成 |

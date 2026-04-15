@@ -238,6 +238,26 @@ void InitListExpr::dump(raw_ostream &OS, unsigned Indent) const {
 }
 
 //===----------------------------------------------------------------------===//
+// DesignatedInitExpr
+//===----------------------------------------------------------------------===//
+
+void DesignatedInitExpr::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "DesignatedInitExpr: ";
+  for (const auto &D : Designators) {
+    if (D.isFieldDesignator()) {
+      OS << "." << D.getFieldName();
+    } else if (D.isArrayDesignator()) {
+      OS << "[...]";
+    }
+  }
+  OS << " = \n";
+  if (Init) {
+    Init->dump(OS, Indent + 1);
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // CXXNewExpr
 //===----------------------------------------------------------------------===//
 
@@ -397,6 +417,33 @@ void ExprRequirement::dump(raw_ostream &OS, unsigned Indent) const {
   }
 }
 
+void CompoundRequirement::dump(raw_ostream &OS, unsigned Indent) const {
+  printRequirementIndent(OS, Indent);
+  OS << "CompoundRequirement";
+  if (IsNoexcept) {
+    OS << " noexcept";
+  }
+  if (!ReturnType.isNull()) {
+    OS << " -> ";
+    ReturnType.dump(OS);
+  }
+  OS << "\n";
+  if (Expression != nullptr) {
+    Expression->dump(OS, Indent + 1);
+  }
+  if (Body != nullptr) {
+    Body->dump(OS, Indent + 1);
+  }
+}
+
+void NestedRequirement::dump(raw_ostream &OS, unsigned Indent) const {
+  printRequirementIndent(OS, Indent);
+  OS << "NestedRequirement\n";
+  if (Constraint != nullptr) {
+    Constraint->dump(OS, Indent + 1);
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // RequiresExpr
 //===----------------------------------------------------------------------===//
@@ -488,6 +535,46 @@ void ReflexprExpr::dump(raw_ostream &OS, unsigned Indent) const {
     printIndent(OS, Indent + 1);
     OS << "Argument:\n";
     Argument->dump(OS, Indent + 2);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// TemplateSpecializationExpr
+//===----------------------------------------------------------------------===//
+
+void TemplateSpecializationExpr::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "TemplateSpecializationExpr: " << TemplateName;
+  if (TemplateDecl) {
+    OS << " (resolved)";
+  }
+  OS << "\n";
+
+  if (!TemplateArgs.empty()) {
+    printIndent(OS, Indent + 1);
+    OS << "TemplateArgs:\n";
+    for (const auto &Arg : TemplateArgs) {
+      printIndent(OS, Indent + 2);
+      switch (Arg.getKind()) {
+      case TemplateArgumentKind::Type:
+        OS << "Type: ";
+        Arg.getAsType().dump(OS);
+        OS << "\n";
+        break;
+      case TemplateArgumentKind::NonType:
+        OS << "NonType: ";
+        if (Arg.getAsExpr()) {
+          OS << "<expr>\n";
+          Arg.getAsExpr()->dump(OS, Indent + 3);
+        } else {
+          OS << "<nullptr>\n";
+        }
+        break;
+      case TemplateArgumentKind::Template:
+        OS << "Template: <template>\n";
+        break;
+      }
+    }
   }
 }
 

@@ -10,6 +10,7 @@ add_executable(blocktype-parse-test
   ParserTest.cpp
   StatementTest.cpp
   ErrorRecoveryTest.cpp
+  DeclarationTest.cpp
 )
 
 target_include_directories(blocktype-parse-test PUBLIC

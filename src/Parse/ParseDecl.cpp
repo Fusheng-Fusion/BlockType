@@ -88,8 +88,18 @@ Decl *Parser::parseDeclaration() {
   }
 
   // Check for namespace declaration
-  if (Tok.is(TokenKind::kw_namespace) || Tok.is(TokenKind::kw_inline)) {
+  // Note: 'inline' can be a namespace specifier (inline namespace) or a function specifier
+  // We need to look ahead to distinguish between them
+  if (Tok.is(TokenKind::kw_namespace)) {
     return parseNamespaceDeclaration();
+  }
+  if (Tok.is(TokenKind::kw_inline)) {
+    // Look ahead to see if this is an inline namespace
+    Token NextTok = peekToken();
+    if (NextTok.is(TokenKind::kw_namespace)) {
+      return parseNamespaceDeclaration();
+    }
+    // Otherwise, it's a function specifier, fall through
   }
 
   // Check for using declaration, directive, or type alias
@@ -102,8 +112,62 @@ Decl *Parser::parseDeclaration() {
       // Could be type alias (using X = ...) or using declaration (using A::B)
       // For type alias, the pattern is: using identifier = type
       // For using declaration, the pattern is: using [typename] A::B
-      // We need to look for '=' after the identifier
-      return parseTypeAliasDeclaration(Tok.getLocation());
+      // We need to look for '=' or '::' after the identifier
+      // Look ahead two tokens to check for '=' or '::'
+      SourceLocation UsingLoc = Tok.getLocation();
+      consumeToken(); // consume 'using'
+      
+      // Check for 'typename' keyword (optional)
+      if (Tok.is(TokenKind::kw_typename)) {
+        consumeToken(); // consume 'typename'
+      }
+      
+      // Parse the first identifier
+      if (!Tok.is(TokenKind::identifier)) {
+        emitError(DiagID::err_expected_identifier);
+        return nullptr;
+      }
+      
+      llvm::StringRef FirstName = Tok.getText();
+      consumeToken();
+      
+      // Check if this is a type alias (using X = ...)
+      if (Tok.is(TokenKind::equal)) {
+        // This is a type alias
+        consumeToken(); // consume '='
+        QualType TargetType = parseType();
+        if (TargetType.isNull()) {
+          emitError(DiagID::err_expected_type);
+          return nullptr;
+        }
+        
+        if (!tryConsumeToken(TokenKind::semicolon)) {
+          emitError(DiagID::err_expected_semi);
+        }
+        
+        return Context.create<TypeAliasDecl>(UsingLoc, FirstName, TargetType);
+      } else if (Tok.is(TokenKind::coloncolon)) {
+        // This is a using declaration (using A::B)
+        // Put back the tokens and parse as using declaration
+        // For simplicity, just create a UsingDecl
+        // Parse the rest of the qualified name
+        while (Tok.is(TokenKind::coloncolon)) {
+          consumeToken(); // consume '::'
+          if (Tok.is(TokenKind::identifier)) {
+            consumeToken(); // consume identifier
+          }
+        }
+        
+        if (!tryConsumeToken(TokenKind::semicolon)) {
+          emitError(DiagID::err_expected_semi);
+        }
+        
+        return Context.create<UsingDecl>(UsingLoc, "", FirstName, true);
+      } else {
+        // Unknown using declaration
+        emitError(DiagID::err_expected);
+        return nullptr;
+      }
     } else {
       return parseUsingDeclaration();
     }
@@ -171,6 +235,24 @@ Decl *Parser::parseDeclaration() {
     return parseStaticAssertDeclaration(Loc);
   }
 
+  // Check for asm declaration
+  if (Tok.is(TokenKind::kw_asm)) {
+    SourceLocation Loc = Tok.getLocation();
+    consumeToken();
+    return parseAsmDeclaration(Loc);
+  }
+
+  // Check for attribute specifier (C++11)
+  if (Tok.is(TokenKind::l_square)) {
+    // Look ahead to see if this is an attribute specifier [[...]]
+    Token NextTok = peekToken();
+    if (NextTok.is(TokenKind::l_square)) {
+      SourceLocation Loc = Tok.getLocation();
+      return parseAttributeSpecifier(Loc);
+    }
+    // Otherwise, it's an array declarator, fall through
+  }
+
   // Check for extern linkage specification
   if (Tok.is(TokenKind::kw_extern)) {
     // Look ahead to see if this is extern "C" or extern "C++"
@@ -181,6 +263,25 @@ Decl *Parser::parseDeclaration() {
       return parseLinkageSpecDeclaration(Loc);
     }
     // Otherwise, it's a regular extern declaration, fall through
+  }
+
+  // Parse storage class specifiers and function specifiers
+  bool IsStatic = false;
+  bool IsConstexpr = false;
+  bool IsInline = false;
+  
+  while (Tok.is(TokenKind::kw_static) || Tok.is(TokenKind::kw_constexpr) ||
+         Tok.is(TokenKind::kw_inline)) {
+    if (Tok.is(TokenKind::kw_static)) {
+      IsStatic = true;
+      consumeToken();
+    } else if (Tok.is(TokenKind::kw_constexpr)) {
+      IsConstexpr = true;
+      consumeToken();
+    } else if (Tok.is(TokenKind::kw_inline)) {
+      IsInline = true;
+      consumeToken();
+    }
   }
 
   // Parse declaration specifiers (type)
@@ -218,19 +319,19 @@ Decl *Parser::parseDeclaration() {
     // For now, treat it as a variable declaration
     // Check if this is a function definition
     if (Tok.is(TokenKind::l_paren)) {
-      return parseFunctionDeclaration(Type, MemberName, MemberLoc);
+      return parseFunctionDeclaration(Type, MemberName, MemberLoc, IsStatic, IsConstexpr, IsInline);
     }
     
-    return parseVariableDeclaration(Type, MemberName, MemberLoc);
+    return parseVariableDeclaration(Type, MemberName, MemberLoc, IsStatic, IsConstexpr);
   }
 
   // Check if this is a function declaration
   if (Tok.is(TokenKind::l_paren)) {
-    return parseFunctionDeclaration(Type, Name, NameLoc);
+    return parseFunctionDeclaration(Type, Name, NameLoc, IsStatic, IsConstexpr, IsInline);
   }
 
   // Otherwise, it's a variable declaration
-  return parseVariableDeclaration(Type, Name, NameLoc);
+  return parseVariableDeclaration(Type, Name, NameLoc, IsStatic, IsConstexpr);
 }
 
 /// parseVariableDeclaration - Parse a variable declaration.
@@ -242,7 +343,8 @@ Decl *Parser::parseDeclaration() {
 ///               | braced-init-list
 ///
 VarDecl *Parser::parseVariableDeclaration(QualType Type, llvm::StringRef Name,
-                                          SourceLocation Loc) {
+                                          SourceLocation Loc, bool IsStatic,
+                                          bool IsConstexpr) {
   // Parse initializer if present
   Expr *Init = nullptr;
   
@@ -250,7 +352,7 @@ VarDecl *Parser::parseVariableDeclaration(QualType Type, llvm::StringRef Name,
     consumeToken();
     Init = parseExpression();
   } else if (Tok.is(TokenKind::l_paren)) {
-    // Direct initialization
+    // Direct initialization: int x(10);
     consumeToken();
     llvm::SmallVector<Expr *, 4> Args;
     while (!Tok.is(TokenKind::r_paren)) {
@@ -262,15 +364,15 @@ VarDecl *Parser::parseVariableDeclaration(QualType Type, llvm::StringRef Name,
       consumeToken();
     }
     expectAndConsume(TokenKind::r_paren, "expected ')' after initializer");
-    // TODO: Create a proper initialization expression
-    // For now, use the first argument if there's only one
-    if (Args.size() == 1)
-      Init = Args[0];
+
+    // Create CXXConstructExpr for direct initialization
+    Init = Context.create<CXXConstructExpr>(Loc, Args);
   } else if (Tok.is(TokenKind::l_brace)) {
-    // Brace initialization
-    // TODO: Implement brace initialization
-    emitError(DiagID::err_expected);
-    return nullptr;
+    // Brace initialization: int x{10}; or int x = {10};
+    Init = parseInitializerList();
+    if (!Init) {
+      return nullptr;
+    }
   }
   
   // Expect semicolon
@@ -294,7 +396,8 @@ VarDecl *Parser::parseVariableDeclaration(QualType Type, llvm::StringRef Name,
 ///
 FunctionDecl *Parser::parseFunctionDeclaration(QualType ReturnType,
                                                llvm::StringRef Name,
-                                               SourceLocation Loc) {
+                                               SourceLocation Loc, bool IsStatic,
+                                               bool IsConstexpr, bool IsInline) {
   // Parse parameter list
   llvm::SmallVector<ParmVarDecl *, 8> Params;
   
@@ -337,13 +440,13 @@ FunctionDecl *Parser::parseFunctionDeclaration(QualType ReturnType,
   for (auto *Param : Params) {
     ParamTypes.push_back(Param->getType().getTypePtr());
   }
-  
-  // TODO: Create a proper FunctionType
-  // For now, use the return type as the function type
-  // This should be replaced with proper function type creation
-  
-  // Create FunctionDecl
-  return Context.create<FunctionDecl>(Loc, Name, ReturnType, Params, Body);
+
+  // Create proper FunctionType
+  QualType FuncType = Context.getFunctionType(ReturnType.getTypePtr(),
+                                               ParamTypes, false);
+
+  // Create FunctionDecl with proper function type
+  return Context.create<FunctionDecl>(Loc, Name, FuncType, Params, Body);
 }
 
 /// parseParameterDeclaration - Parse a parameter declaration.
@@ -852,8 +955,19 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
         consumeToken();
       } else if (Tok.is(TokenKind::numeric_constant)) {
         // Check for = 0 (pure virtual)
-        // TODO: Check if the value is actually 0
-        IsPureVirtual = true;
+        StringRef NumText = Tok.getText();
+        // Check if the value is actually 0
+        // Remove suffix if present
+        while (!NumText.empty() && (NumText.back() == 'u' || NumText.back() == 'U' ||
+                                     NumText.back() == 'l' || NumText.back() == 'L')) {
+          NumText = NumText.drop_back(1);
+        }
+        // Check if it's 0 (in any base)
+        bool IsZero = NumText == "0" || NumText == "0x0" || NumText == "0X0" ||
+                      NumText == "0b0" || NumText == "0B0";
+        if (IsZero) {
+          IsPureVirtual = true;
+        }
         consumeToken();
       }
     }
@@ -1070,12 +1184,11 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
 
   // Check for concept definition (C++20)
   if (Tok.is(TokenKind::kw_concept)) {
-    ConceptDecl *Concept = parseConceptDefinition(TemplateLoc);
+    ConceptDecl *Concept = parseConceptDefinition(TemplateLoc, Params);
     if (!Concept) {
       return nullptr;
     }
-    // Return the concept's template (or the concept itself)
-    // For now, we need to return a TemplateDecl, so we return the concept's template
+    // Return the concept's template
     return Concept->getTemplate();
   }
 
@@ -1286,11 +1399,12 @@ TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
   // type-constraint ::= 'requires' constraint-expression
   if (Tok.is(TokenKind::kw_requires)) {
     consumeToken(); // consume 'requires'
-    // TODO: Parse constraint-expression
-    // For now, we skip until we find 'class' or 'typename'
-    while (!Tok.is(TokenKind::kw_class) && !Tok.is(TokenKind::kw_typename) &&
-           !Tok.is(TokenKind::eof)) {
-      consumeToken();
+    // Parse constraint expression
+    Expr *Constraint = parseConstraintExpression();
+    if (Constraint) {
+      // Store the constraint in the parameter
+      // Note: TemplateTemplateParmDecl should have a constraint field
+      // For now, we just parse and discard
     }
   }
 
@@ -1343,11 +1457,19 @@ TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
       SourceLocation TemplateNameLoc = Tok.getLocation();
       consumeToken();
       
-      // TODO: Look up the template in the symbol table
-      // For now, we create a placeholder TemplateDecl
-      // This should be replaced with proper template lookup
-      TemplateDecl *DefaultTemplate = Context.create<TemplateDecl>(
-          TemplateNameLoc, TemplateName, nullptr);
+      // Look up the template in the symbol table
+      TemplateDecl *DefaultTemplate = nullptr;
+      if (CurrentScope) {
+        if (NamedDecl *Found = CurrentScope->lookup(TemplateName)) {
+          DefaultTemplate = llvm::dyn_cast<TemplateDecl>(Found);
+        }
+      }
+      
+      // If not found, create a placeholder TemplateDecl
+      if (!DefaultTemplate) {
+        DefaultTemplate = Context.create<TemplateDecl>(
+            TemplateNameLoc, TemplateName, nullptr);
+      }
       
       Param->setDefaultArgument(DefaultTemplate);
     } else {
@@ -1873,6 +1995,8 @@ NamespaceAliasDecl *Parser::parseNamespaceAlias() {
 /// parseModuleDeclaration - Parse a module declaration.
 ///
 /// module-declaration ::= 'export'? 'module' module-name module-partition? attribute-specifier-seq? ';'
+///                      | 'module' ';'                                    // global module fragment
+///                      | 'module' ':' 'private' attribute-specifier-seq? ';' // private module fragment
 /// module-name ::= identifier ('.' identifier)*
 /// module-partition ::= ':' identifier
 ModuleDecl *Parser::parseModuleDeclaration() {
@@ -1892,8 +2016,68 @@ ModuleDecl *Parser::parseModuleDeclaration() {
   SourceLocation ModuleLoc = Tok.getLocation();
   consumeToken(); // consume 'module'
 
+  // Check for global module fragment: module;
+  // This appears at the beginning of a module unit, before any declarations
+  if (Tok.is(TokenKind::semicolon)) {
+    consumeToken(); // consume ';'
+    // Create a ModuleDecl for global module fragment
+    return Context.create<ModuleDecl>(ModuleLoc, "", IsExported, "", false, true, false);
+  }
+
+  // Check for private module fragment: module :private;
+  if (Tok.is(TokenKind::colon)) {
+    consumeToken(); // consume ':'
+
+    // Expect 'private' keyword
+    if (!Tok.is(TokenKind::kw_private)) {
+      emitError(DiagID::err_expected);
+      return nullptr;
+    }
+    consumeToken(); // consume 'private'
+
+    // Parse optional attributes
+    while (Tok.is(TokenKind::l_square)) {
+      consumeToken(); // consume '['
+      if (!Tok.is(TokenKind::l_square)) {
+        emitError(DiagID::err_expected);
+        skipUntil({TokenKind::r_square});
+        if (Tok.is(TokenKind::r_square)) {
+          consumeToken();
+        }
+        continue;
+      }
+      consumeToken(); // consume second '['
+
+      while (!Tok.is(TokenKind::r_square) && !Tok.is(TokenKind::eof)) {
+        consumeToken();
+      }
+
+      if (!Tok.is(TokenKind::r_square)) {
+        emitError(DiagID::err_expected);
+        break;
+      }
+      consumeToken(); // consume first ']'
+
+      if (!Tok.is(TokenKind::r_square)) {
+        emitError(DiagID::err_expected);
+        break;
+      }
+      consumeToken(); // consume second ']'
+    }
+
+    // Expect ';'
+    if (!Tok.is(TokenKind::semicolon)) {
+      emitError(DiagID::err_expected_semi);
+      return nullptr;
+    }
+    consumeToken(); // consume ';'
+
+    // Create a ModuleDecl for private module fragment
+    return Context.create<ModuleDecl>(ModuleLoc, "", IsExported, "", false, false, true);
+  }
+
   // Parse module name
-  llvm::StringRef ModuleName = parseModuleName();
+  llvm::StringRef FullModuleName = parseModuleName();
 
   // Parse module partition (optional)
   llvm::StringRef PartitionName;
@@ -1903,7 +2087,63 @@ ModuleDecl *Parser::parseModuleDeclaration() {
     PartitionName = parseModulePartition();
   }
 
-  // TODO: Parse attribute-specifier-seq (optional)
+  // Parse attribute-specifier-seq (optional)
+  // Attributes are specified using [[...]] syntax
+  while (Tok.is(TokenKind::l_square)) {
+    // Parse attribute specifier
+    consumeToken(); // consume '['
+
+    if (!Tok.is(TokenKind::l_square)) {
+      emitError(DiagID::err_expected);
+      // Error recovery: skip to ']'
+      skipUntil({TokenKind::r_square});
+      if (Tok.is(TokenKind::r_square)) {
+        consumeToken();
+      }
+      continue;
+    }
+
+    consumeToken(); // consume second '['
+
+    // Parse attribute list
+    while (!Tok.is(TokenKind::r_square) && !Tok.is(TokenKind::eof)) {
+      // Parse attribute name
+      if (Tok.is(TokenKind::identifier)) {
+        std::string AttrName = Tok.getText().str();
+        consumeToken();
+        
+        // Parse optional attribute argument clause
+        if (Tok.is(TokenKind::l_paren)) {
+          consumeToken(); // consume '('
+          while (!Tok.is(TokenKind::r_paren) && !Tok.is(TokenKind::eof)) {
+            AttrName += Tok.getText().str();
+            consumeToken();
+          }
+          if (Tok.is(TokenKind::r_paren)) {
+            AttrName += ")";
+            consumeToken(); // consume ')'
+          }
+        }
+        
+        // Store the attribute (will be added to ModuleDecl later)
+        // For now, we just skip it
+      } else {
+        consumeToken();
+      }
+    }
+
+    if (!Tok.is(TokenKind::r_square)) {
+      emitError(DiagID::err_expected);
+      break;
+    }
+    consumeToken(); // consume first ']'
+
+    if (!Tok.is(TokenKind::r_square)) {
+      emitError(DiagID::err_expected);
+      break;
+    }
+    consumeToken(); // consume second ']'
+  }
 
   // Expect ';'
   if (!Tok.is(TokenKind::semicolon)) {
@@ -1913,12 +2153,17 @@ ModuleDecl *Parser::parseModuleDeclaration() {
 
   consumeToken(); // consume ';'
 
-  return Context.create<ModuleDecl>(ModuleLoc, ModuleName, IsExported, PartitionName, IsModulePartition);
+  // Create ModuleDecl with full module name
+  ModuleDecl *MD = Context.create<ModuleDecl>(ModuleLoc, FullModuleName, IsExported, PartitionName, IsModulePartition);
+  
+  return MD;
 }
 
 /// parseImportDeclaration - Parse an import declaration.
 ///
 /// module-import ::= 'export'? 'import' module-name module-partition? ';'
+///                 | 'export'? 'import' header-name ';'
+/// header-name ::= '<' header-name-tokens '>' | '"' header-name-tokens '"'
 ImportDecl *Parser::parseImportDeclaration() {
   // Check for 'export' keyword (optional)
   bool IsExported = false;
@@ -1935,6 +2180,50 @@ ImportDecl *Parser::parseImportDeclaration() {
 
   SourceLocation ImportLoc = Tok.getLocation();
   consumeToken(); // consume 'import'
+
+  // Check for header import: import <header> or import "header"
+  llvm::StringRef HeaderName;
+  bool IsHeaderImport = false;
+
+  if (Tok.is(TokenKind::less)) {
+    // System header import: import <iostream>
+    IsHeaderImport = true;
+    consumeToken(); // consume '<'
+
+    // Parse header name (until '>')
+    std::string Header;
+    while (!Tok.is(TokenKind::greater) && !Tok.is(TokenKind::eof)) {
+      Header += Tok.getText().str();
+      consumeToken();
+    }
+
+    if (!Tok.is(TokenKind::greater)) {
+      emitError(DiagID::err_expected);
+      return nullptr;
+    }
+    consumeToken(); // consume '>'
+
+    // Store header name properly
+    HeaderName = Context.saveString(Header);
+
+  } else if (Tok.is(TokenKind::string_literal)) {
+    // User header import: import "header.h"
+    IsHeaderImport = true;
+    HeaderName = Tok.getText();
+    consumeToken(); // consume string literal
+  }
+
+  if (IsHeaderImport) {
+    // Expect ';'
+    if (!Tok.is(TokenKind::semicolon)) {
+      emitError(DiagID::err_expected_semi);
+      return nullptr;
+    }
+    consumeToken(); // consume ';'
+
+    // Create ImportDecl for header import
+    return Context.create<ImportDecl>(ImportLoc, "", IsExported, "", HeaderName, true);
+  }
 
   // Parse module name
   llvm::StringRef ModuleName = parseModuleName();
@@ -1992,10 +2281,24 @@ llvm::StringRef Parser::parseModuleName() {
   consumeToken();
 
   // Handle dotted module names (e.g., std.core)
-  // For now, we only support simple identifiers
-  // TODO: Support dotted module names
+  // Build the full module name by concatenating identifiers with dots
+  std::string FullName = ModuleName.str();
+  while (Tok.is(TokenKind::period)) {
+    consumeToken(); // consume '.'
 
-  return ModuleName;
+    if (!Tok.is(TokenKind::identifier)) {
+      emitError(DiagID::err_expected_identifier);
+      break;
+    }
+
+    FullName += ".";
+    FullName += Tok.getText().str();
+    consumeToken();
+  }
+
+  // Return the full module name (stored in the ASTContext)
+  // Copy the full name to ASTContext for storage
+  return Context.saveString(FullName);
 }
 
 /// parseModulePartition - Parse a module partition.
@@ -2398,6 +2701,205 @@ LinkageSpecDecl *Parser::parseLinkageSpecDeclaration(SourceLocation Loc) {
 }
 
 //===----------------------------------------------------------------------===//
+// Asm Declaration Parsing
+//===----------------------------------------------------------------------===//
+
+/// parseAsmDeclaration - Parse an asm declaration.
+///
+/// asm-declaration ::= 'asm' '(' string-literal ')' ';'
+AsmDecl *Parser::parseAsmDeclaration(SourceLocation Loc) {
+  // Expect '('
+  if (!Tok.is(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return nullptr;
+  }
+
+  consumeToken(); // consume '('
+
+  // Parse assembly string
+  if (!Tok.is(TokenKind::string_literal)) {
+    emitError(DiagID::err_expected_string_literal);
+    return nullptr;
+  }
+
+  llvm::StringRef AsmString = Tok.getText();
+  consumeToken();
+
+  // Expect ')'
+  if (!Tok.is(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+    return nullptr;
+  }
+
+  consumeToken(); // consume ')'
+
+  // Expect semicolon
+  if (!Tok.is(TokenKind::semicolon)) {
+    emitError(DiagID::err_expected_semi);
+    return nullptr;
+  }
+  consumeToken();
+
+  // Create AsmDecl
+  return Context.create<AsmDecl>(Loc, AsmString);
+}
+
+//===----------------------------------------------------------------------===//
+// Deduction Guide Parsing (C++17)
+//===----------------------------------------------------------------------===//
+
+/// parseDeductionGuide - Parse a deduction guide declaration.
+///
+/// deduction-guide ::= 'explicit'? template-name '(' parameter-declaration-clause ')' '->' template-id ';'
+CXXDeductionGuideDecl *Parser::parseDeductionGuide(SourceLocation Loc) {
+  // Check for explicit specifier
+  bool IsExplicit = false;
+  if (Tok.is(TokenKind::kw_explicit)) {
+    IsExplicit = true;
+    consumeToken();
+  }
+
+  // Parse template name (class name)
+  if (!Tok.is(TokenKind::identifier)) {
+    emitError(DiagID::err_expected_identifier);
+    return nullptr;
+  }
+
+  llvm::StringRef TemplateName = Tok.getText();
+  SourceLocation NameLoc = Tok.getLocation();
+  consumeToken();
+
+  // Parse '(' parameter-list ')'
+  if (!Tok.is(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return nullptr;
+  }
+
+  consumeToken(); // consume '('
+
+  // Parse parameters (simplified - just parse types)
+  llvm::SmallVector<ParmVarDecl *, 8> Params;
+  if (!Tok.is(TokenKind::r_paren)) {
+    do {
+      ParmVarDecl *Param = parseParameterDeclaration();
+      if (!Param) {
+        emitError(DiagID::err_expected_type);
+        skipUntil({TokenKind::r_paren, TokenKind::semicolon});
+        break;
+      }
+      Params.push_back(Param);
+
+      if (Tok.is(TokenKind::comma)) {
+        consumeToken();
+      } else {
+        break;
+      }
+    } while (true);
+  }
+
+  if (!Tok.is(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+    return nullptr;
+  }
+
+  consumeToken(); // consume ')'
+
+  // Expect '->'
+  if (!Tok.is(TokenKind::arrow)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume '->'
+
+  // Parse template-id (simplified - just parse the type)
+  QualType ReturnType = parseType();
+
+  // Expect semicolon
+  if (!Tok.is(TokenKind::semicolon)) {
+    emitError(DiagID::err_expected_semi);
+    return nullptr;
+  }
+  consumeToken();
+
+  // Create CXXDeductionGuideDecl
+  return Context.create<CXXDeductionGuideDecl>(NameLoc, TemplateName, ReturnType,
+                                                Params, IsExplicit);
+}
+
+//===----------------------------------------------------------------------===//
+// Attribute Specifier Parsing (C++11)
+//===----------------------------------------------------------------------===//
+
+/// parseAttributeSpecifier - Parse an attribute specifier.
+///
+/// attribute-specifier ::= '[[' attribute-list ']]'
+/// attribute-list ::= attribute (',' attribute)*
+/// attribute ::= identifier ('(' argument-clause? ')')?
+AttributeDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
+  // Expect '[['
+  if (!Tok.is(TokenKind::l_square)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume '['
+
+  if (!Tok.is(TokenKind::l_square)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume '['
+
+  // Parse attribute name
+  if (!Tok.is(TokenKind::identifier)) {
+    emitError(DiagID::err_expected_identifier);
+    return nullptr;
+  }
+
+  llvm::StringRef AttrName = Tok.getText();
+  consumeToken();
+
+  // Parse optional attribute argument
+  llvm::StringRef AttrValue;
+  if (Tok.is(TokenKind::l_paren)) {
+    consumeToken(); // consume '('
+
+    // Parse argument (simplified - just parse string literal)
+    if (Tok.is(TokenKind::string_literal)) {
+      AttrValue = Tok.getText();
+      consumeToken();
+    }
+
+    if (!Tok.is(TokenKind::r_paren)) {
+      emitError(DiagID::err_expected_rparen);
+      return nullptr;
+    }
+
+    consumeToken(); // consume ')'
+  }
+
+  // Expect ']]'
+  if (!Tok.is(TokenKind::r_square)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume ']'
+
+  if (!Tok.is(TokenKind::r_square)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume ']'
+
+  // Create AttributeDecl
+  return Context.create<AttributeDecl>(Loc, AttrName, AttrValue);
+}
+
+//===----------------------------------------------------------------------===//
 // Constructor and Destructor Parsing
 //===----------------------------------------------------------------------===//
 
@@ -2640,9 +3142,24 @@ FriendDecl *Parser::parseFriendDeclaration(CXXRecordDecl *Class) {
     SourceLocation TypeNameLoc = Tok.getLocation();
     consumeToken();
 
-    // Create a forward declaration for the friend class
-    // For now, create a simple FriendDecl with the type name
-    QualType FriendType; // TODO: Look up or create the type
+    // Look up or create the friend type
+    QualType FriendType;
+    if (CurrentScope) {
+      if (NamedDecl *Found = CurrentScope->lookup(TypeName)) {
+        if (auto *TD = llvm::dyn_cast<TypeDecl>(Found)) {
+          FriendType = Context.getTypeDeclType(TD);
+        }
+      }
+    }
+    
+    // If not found, create a forward declaration
+    if (FriendType.isNull()) {
+      // Create a forward declaration for the friend class
+      RecordDecl *ForwardDecl = Context.create<RecordDecl>(
+          TypeNameLoc, TypeName, TagDecl::TK_struct);
+      FriendType = Context.getTypeDeclType(ForwardDecl);
+    }
+    
     FriendDecl *FD = Context.create<FriendDecl>(FriendLoc, nullptr, FriendType, true);
 
     // Expect semicolon
@@ -2745,33 +3262,9 @@ Expr *Parser::parseConstraintExpression() {
 
 /// parseConceptDefinition - Parse a concept definition (C++20).
 ///
-/// concept-definition ::= 'template' '<' template-parameter-list '>' 'concept' identifier '=' constraint-expression ';'
-ConceptDecl *Parser::parseConceptDefinition(SourceLocation Loc) {
-  // Expect 'template' keyword
-  if (!Tok.is(TokenKind::kw_template)) {
-    emitError(DiagID::err_expected);
-    return nullptr;
-  }
-
-  SourceLocation TemplateLoc = Tok.getLocation();
-  consumeToken(); // consume 'template'
-
-  // Parse template parameter list
-  if (!Tok.is(TokenKind::less)) {
-    emitError(DiagID::err_expected);
-    return nullptr;
-  }
-  consumeToken(); // consume '<'
-
-  llvm::SmallVector<NamedDecl *, 8> Params;
-  parseTemplateParameters(Params);
-
-  if (!Tok.is(TokenKind::greater)) {
-    emitError(DiagID::err_expected);
-    return nullptr;
-  }
-  consumeToken(); // consume '>'
-
+/// concept-definition ::= 'concept' identifier '=' constraint-expression ';'
+ConceptDecl *Parser::parseConceptDefinition(SourceLocation Loc,
+                                            llvm::SmallVector<NamedDecl *, 8> &TemplateParams) {
   // Expect 'concept' keyword
   if (!Tok.is(TokenKind::kw_concept)) {
     emitError(DiagID::err_expected);
@@ -2811,8 +3304,8 @@ ConceptDecl *Parser::parseConceptDefinition(SourceLocation Loc) {
   consumeToken(); // consume ';'
 
   // Create TemplateDecl for the concept
-  TemplateDecl *Template = Context.create<TemplateDecl>(TemplateLoc, ConceptName, nullptr);
-  for (auto *Param : Params) {
+  TemplateDecl *Template = Context.create<TemplateDecl>(Loc, ConceptName, nullptr);
+  for (auto *Param : TemplateParams) {
     Template->addTemplateParameter(Param);
   }
 

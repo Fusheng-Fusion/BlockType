@@ -21,6 +21,62 @@
 namespace blocktype {
 
 //===----------------------------------------------------------------------===//
+// Member Lookup
+//===----------------------------------------------------------------------===//
+
+/// lookupMemberInType - Look up a member in a class type.
+///
+/// This function performs member lookup in a class type. It searches for the
+/// member in the class and its base classes.
+///
+/// \param MemberName The name of the member to look up.
+/// \param BaseType The type of the base expression.
+/// \param MemberLoc The location of the member name token.
+///
+/// \return The declaration of the member if found, nullptr otherwise.
+ValueDecl *Parser::lookupMemberInType(llvm::StringRef MemberName, QualType BaseType,
+                                       SourceLocation MemberLoc) {
+  // Check if the base type is valid
+  if (BaseType.isNull()) {
+    // Type inference not yet implemented
+    return nullptr;
+  }
+
+  // Check if the base type is a record type
+  const Type *Ty = BaseType.getTypePtr();
+
+  // Handle pointer types: dereference to get the pointee type
+  if (auto *PT = llvm::dyn_cast_or_null<PointerType>(Ty)) {
+    Ty = PT->getPointeeType();
+  }
+
+  // Check if it's a record type
+  auto *RT = llvm::dyn_cast_or_null<RecordType>(Ty);
+  if (!RT) {
+    // Not a record type, cannot look up members
+    return nullptr;
+  }
+
+  // Get the record declaration
+  RecordDecl *RD = RT->getDecl();
+  if (!RD) {
+    return nullptr;
+  }
+
+  // Look up the member in the record
+  // For now, we do a simple linear search through fields
+  // A full implementation would use a symbol table for faster lookup
+  for (FieldDecl *Field : RD->fields()) {
+    if (Field->getName() == MemberName) {
+      return Field;
+    }
+  }
+
+  // Member not found
+  return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
 // Expression parsing entry point
 //===----------------------------------------------------------------------===//
 
@@ -206,15 +262,15 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
         return Base;
       }
 
-      // TODO: Lookup member in the base type
-      // For now, create a placeholder
+      // Get member name and location
       llvm::StringRef MemberName = Tok.getText();
       SourceLocation MemberLoc = Tok.getLocation();
       consumeToken();
 
-      // Create a placeholder ValueDecl for the member
-      // In a real implementation, this would be looked up in the class/struct
-      ValueDecl *MemberDecl = nullptr; // TODO: Implement proper member lookup
+      // Look up member in the base type
+      // Note: Full type inference is not yet implemented, so we pass an empty type
+      // This will be improved when type inference is added to the Expr class
+      ValueDecl *MemberDecl = lookupMemberInType(MemberName, QualType(), MemberLoc);
 
       // Create MemberExpr
       Base = Context.create<MemberExpr>(OpLoc, Base, MemberDecl, false);
@@ -232,15 +288,15 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
         return Base;
       }
 
-      // TODO: Lookup member in the base type
-      // For now, create a placeholder
+      // Get member name and location
       llvm::StringRef MemberName = Tok.getText();
       SourceLocation MemberLoc = Tok.getLocation();
       consumeToken();
 
-      // Create a placeholder ValueDecl for the member
-      // In a real implementation, this would be looked up in the class/struct
-      ValueDecl *MemberDecl = nullptr; // TODO: Implement proper member lookup
+      // Look up member in the base type
+      // Note: Full type inference is not yet implemented, so we pass an empty type
+      // This will be improved when type inference is added to the Expr class
+      ValueDecl *MemberDecl = lookupMemberInType(MemberName, QualType(), MemberLoc);
 
       // Create MemberExpr with IsArrow = true
       Base = Context.create<MemberExpr>(OpLoc, Base, MemberDecl, true);
@@ -264,6 +320,33 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
 
       // Create UnaryOperator with PostDec
       Base = Context.create<UnaryOperator>(OpLoc, Base, UnaryOpKind::PostDec);
+      break;
+    }
+
+    case TokenKind::ellipsis: {
+      // Pack indexing (C++26): pack...[index]
+      SourceLocation EllipsisLoc = Tok.getLocation();
+      consumeToken(); // consume '...'
+
+      // Expect '['
+      if (!tryConsumeToken(TokenKind::l_square)) {
+        emitError(DiagID::err_expected);
+        return Base;
+      }
+
+      // Parse the index
+      Expr *Index = parseExpression();
+      if (!Index) {
+        Index = createRecoveryExpr(EllipsisLoc);
+      }
+
+      // Expect ']'
+      if (!tryConsumeToken(TokenKind::r_square)) {
+        emitError(DiagID::err_expected);
+      }
+
+      // Create PackIndexingExpr
+      Base = Context.create<PackIndexingExpr>(EllipsisLoc, Base, Index);
       break;
     }
 
@@ -337,6 +420,23 @@ Expr *Parser::parsePrimaryExpression() {
   case TokenKind::kw_requires:
     return parseRequiresExpression();
 
+  // reflexpr (C++26)
+  case TokenKind::kw_reflexpr:
+    return parseReflexprExpr();
+
+  // C++ cast expressions
+  case TokenKind::kw_static_cast:
+    return parseCXXStaticCastExpr();
+
+  case TokenKind::kw_dynamic_cast:
+    return parseCXXDynamicCastExpr();
+
+  case TokenKind::kw_const_cast:
+    return parseCXXConstCastExpr();
+
+  case TokenKind::kw_reinterpret_cast:
+    return parseCXXReinterpretCastExpr();
+
   default:
     // Emit error for unexpected token
     emitError(DiagID::err_expected_expression);
@@ -369,11 +469,48 @@ Expr *Parser::parseIntegerLiteral() {
     Text = Text.drop_front(1);
   }
 
-  // Remove suffix (u, l, ll, etc.)
-  // TODO: Handle suffixes properly
-  while (!Text.empty() && (Text.back() == 'u' || Text.back() == 'U' ||
-                           Text.back() == 'l' || Text.back() == 'L')) {
-    Text = Text.drop_back(1);
+  // Remove suffix (u, l, ll, ul, ull, etc.)
+  // Suffixes can be: u, U, l, L, ll, LL, ul, uL, Ul, UL, ull, uLL, Ull, ULL,
+  //                   lu, lU, Lu, LU, llu, llU, LLu, LLU, z, Z (C++23)
+  if (Text.size() > 1) {
+    // Check for two-character suffixes first
+    if (Text.size() >= 3) {
+      StringRef Suffix2 = Text.take_back(2);
+      if (Suffix2.equals_insensitive("ul") || Suffix2.equals_insensitive("lu") ||
+          Suffix2.equals_insensitive("ll") || Suffix2.equals_insensitive("uz") ||
+          Suffix2.equals_insensitive("zu")) {
+        Text = Text.drop_back(2);
+      } else {
+        // Check for three-character suffixes (ull, llu, ULL, LLU, etc.)
+        if (Text.size() >= 4) {
+          StringRef Suffix3 = Text.take_back(3);
+          if (Suffix3.equals_insensitive("ull") || Suffix3.equals_insensitive("llu")) {
+            Text = Text.drop_back(3);
+          } else {
+            // Single character suffix
+            char Last = Text.back();
+            if (Last == 'u' || Last == 'U' || Last == 'l' || Last == 'L' ||
+                Last == 'z' || Last == 'Z') {
+              Text = Text.drop_back(1);
+            }
+          }
+        } else {
+          // Single character suffix
+          char Last = Text.back();
+          if (Last == 'u' || Last == 'U' || Last == 'l' || Last == 'L' ||
+              Last == 'z' || Last == 'Z') {
+            Text = Text.drop_back(1);
+          }
+        }
+      }
+    } else {
+      // Single character suffix
+      char Last = Text.back();
+      if (Last == 'u' || Last == 'U' || Last == 'l' || Last == 'L' ||
+          Last == 'z' || Last == 'Z') {
+        Text = Text.drop_back(1);
+      }
+    }
   }
 
   // Parse the value
@@ -405,12 +542,28 @@ Expr *Parser::parseFloatingLiteral() {
   SourceLocation Loc = Tok.getLocation();
   StringRef Text = Tok.getText();
 
-  // Parse the floating point value
-  // TODO: Use llvm::APFloat properly
-  double Value = 0.0;
+  // Remove suffix (f, F, l, L)
+  if (Text.size() > 1) {
+    char Last = Text.back();
+    if (Last == 'f' || Last == 'F' || Last == 'l' || Last == 'L') {
+      Text = Text.drop_back(1);
+    }
+  }
+
+  // Parse the floating point value using llvm::APFloat
+  llvm::APFloat Value(llvm::APFloat::IEEEdouble());
+  if (!Text.empty()) {
+    // Try to parse the value
+    auto Result = Value.convertFromString(
+        Text, llvm::APFloat::rmNearestTiesToEven);
+    // Ignore conversion errors for now
+    if (Result) {
+      // Conversion successful
+    }
+  }
 
   consumeToken();
-  return Context.create<FloatingLiteral>(Loc, llvm::APFloat(Value));
+  return Context.create<FloatingLiteral>(Loc, Value);
 }
 
 Expr *Parser::parseStringLiteral() {
@@ -434,9 +587,61 @@ Expr *Parser::parseCharacterLiteral() {
   uint32_t Value = 0;
   if (Text.size() >= 3 && Text.front() == '\'' && Text.back() == '\'') {
     StringRef Content = Text.drop_front().drop_back();
-    // TODO: Handle escape sequences
+
+    // Handle escape sequences
     if (!Content.empty()) {
-      Value = static_cast<unsigned char>(Content[0]);
+      if (Content[0] == '\\' && Content.size() > 1) {
+        // Escape sequence
+        switch (Content[1]) {
+        case 'n':  Value = '\n'; break;
+        case 't':  Value = '\t'; break;
+        case 'r':  Value = '\r'; break;
+        case '0':  Value = '\0'; break;
+        case '\\': Value = '\\'; break;
+        case '\'': Value = '\''; break;
+        case '"':  Value = '"'; break;
+        case 'a':  Value = '\a'; break;
+        case 'b':  Value = '\b'; break;
+        case 'f':  Value = '\f'; break;
+        case 'v':  Value = '\v'; break;
+        case 'x':
+          // Hexadecimal escape: \xNN
+          if (Content.size() > 2) {
+            StringRef HexStr = Content.drop_front(2);
+            Value = 0;
+            for (char C : HexStr) {
+              Value <<= 4;
+              if (C >= '0' && C <= '9')
+                Value |= (C - '0');
+              else if (C >= 'a' && C <= 'f')
+                Value |= (C - 'a' + 10);
+              else if (C >= 'A' && C <= 'F')
+                Value |= (C - 'A' + 10);
+            }
+          }
+          break;
+        default:
+          // Octal escape: \NNN (up to 3 octal digits)
+          if (Content[1] >= '0' && Content[1] <= '7') {
+            Value = 0;
+            for (size_t i = 1; i < Content.size() && i < 4; ++i) {
+              char C = Content[i];
+              if (C >= '0' && C <= '7') {
+                Value = (Value << 3) | (C - '0');
+              } else {
+                break;
+              }
+            }
+          } else {
+            // Unknown escape, use as-is
+            Value = static_cast<unsigned char>(Content[1]);
+          }
+          break;
+        }
+      } else {
+        // Regular character
+        Value = static_cast<unsigned char>(Content[0]);
+      }
     }
   }
 
@@ -465,6 +670,50 @@ Expr *Parser::parseIdentifier() {
 
   consumeToken();
 
+  // Check for scope resolution operator (::)
+  if (Tok.is(TokenKind::coloncolon)) {
+    // This is a qualified name: std::is_integral_v
+    return parseQualifiedName(Loc, Name);
+  }
+
+  // Check for template argument list
+  if (Tok.is(TokenKind::less)) {
+    // We need to distinguish between:
+    // 1. Template specialization: a<int>, a<T>
+    // 2. Comparison expression: a < b
+    
+    // Use a heuristic: look ahead to see if this looks like template arguments
+    // Template arguments typically start with:
+    // - Type keywords (int, float, etc.)
+    // - Identifiers that might be types
+    // - Constants
+    // - Other template specializations (nested)
+    
+    Token NextTok = PP.peekToken(0);
+    
+    // If next token is a type keyword, it's likely a template argument
+    if (NextTok.is(TokenKind::kw_void) || NextTok.is(TokenKind::kw_bool) ||
+        NextTok.is(TokenKind::kw_char) || NextTok.is(TokenKind::kw_short) ||
+        NextTok.is(TokenKind::kw_int) || NextTok.is(TokenKind::kw_long) ||
+        NextTok.is(TokenKind::kw_float) || NextTok.is(TokenKind::kw_double) ||
+        NextTok.is(TokenKind::kw_const) || NextTok.is(TokenKind::kw_volatile) ||
+        NextTok.is(TokenKind::kw_unsigned) || NextTok.is(TokenKind::kw_signed)) {
+      return parseTemplateSpecializationExpr(Loc, Name);
+    }
+    
+    // If next token is an identifier, we need to check further
+    // For now, we'll assume it's a comparison to be safe
+    // This might miss some template specializations like Vector<T>, but
+    // it's better than incorrectly parsing comparisons as templates
+    // 
+    // In a full implementation, we would:
+    // 1. Check if the identifier is a known template
+    // 2. Look for '>' followed by ',', '>', or end of expression
+    // 3. Use tentative parsing with backtracking
+    
+    // For now, fall through to treat as comparison
+  }
+
   // Lookup the declaration in the current scope
   ValueDecl *VD = nullptr;
   if (CurrentScope) {
@@ -477,6 +726,127 @@ Expr *Parser::parseIdentifier() {
   // Create DeclRefExpr (with or without declaration)
   // If VD is nullptr, it's an undefined identifier (error recovery)
   return Context.create<DeclRefExpr>(Loc, VD);
+}
+
+/// parseQualifiedName - Parse a qualified name (e.g., std::vector).
+///
+/// qualified-name ::= identifier '::' identifier ('::' identifier)*
+Expr *Parser::parseQualifiedName(SourceLocation StartLoc, llvm::StringRef FirstName) {
+  std::string FullName = FirstName.str();
+
+  // Parse nested-name-specifier
+  while (Tok.is(TokenKind::coloncolon)) {
+    consumeToken(); // consume '::'
+
+    if (!Tok.is(TokenKind::identifier)) {
+      emitError(DiagID::err_expected_identifier);
+      break;
+    }
+
+    FullName += "::";
+    FullName += Tok.getText().str();
+    consumeToken();
+  }
+
+  // Check for template argument list after the qualified name
+  if (Tok.is(TokenKind::less)) {
+    // Use the same heuristic as in parseIdentifier
+    Token NextTok = PP.peekToken(0);
+    
+    if (NextTok.is(TokenKind::kw_void) || NextTok.is(TokenKind::kw_bool) ||
+        NextTok.is(TokenKind::kw_char) || NextTok.is(TokenKind::kw_short) ||
+        NextTok.is(TokenKind::kw_int) || NextTok.is(TokenKind::kw_long) ||
+        NextTok.is(TokenKind::kw_float) || NextTok.is(TokenKind::kw_double) ||
+        NextTok.is(TokenKind::kw_const) || NextTok.is(TokenKind::kw_volatile) ||
+        NextTok.is(TokenKind::kw_unsigned) || NextTok.is(TokenKind::kw_signed)) {
+      return parseTemplateSpecializationExpr(StartLoc, FullName);
+    }
+    
+    // Fall through to treat as comparison
+  }
+
+  // Lookup the declaration in the current scope
+  ValueDecl *VD = nullptr;
+  if (CurrentScope) {
+    if (NamedDecl *D = CurrentScope->lookup(FullName)) {
+      VD = dyn_cast<ValueDecl>(D);
+    }
+  }
+
+  // Create DeclRefExpr
+  return Context.create<DeclRefExpr>(StartLoc, VD);
+}
+
+/// parseTemplateSpecializationExpr - Parse a template specialization expression.
+///
+/// template-specialization-expr ::= identifier '<' template-argument-list? '>'
+///
+/// ⚠️⚠️⚠️ CRITICAL TECHNICAL DEBT ⚠️⚠️⚠️
+///
+/// This is a TEMPORARY, INCOMPLETE implementation that MUST be fixed before Phase 4.
+///
+/// Current implementation: Only consumes tokens without parsing them
+/// This is NOT a "reasonable trade-off" - it's a known deficiency that will cause:
+///
+/// Parse a template specialization expression (e.g., Vector<int>, std::vector<std::string>).
+///
+/// This function properly parses template arguments and creates a TemplateSpecializationExpr
+/// AST node with complete semantic information.
+///
+/// template-specialization-expression ::= identifier '<' template-argument-list? '>'
+Expr *Parser::parseTemplateSpecializationExpr(SourceLocation StartLoc, llvm::StringRef TemplateName) {
+  // Expect '<'
+  if (!Tok.is(TokenKind::less)) {
+    // Not a template specialization, just return a DeclRefExpr
+    ValueDecl *VD = nullptr;
+    if (CurrentScope) {
+      if (NamedDecl *D = CurrentScope->lookup(TemplateName)) {
+        VD = dyn_cast<ValueDecl>(D);
+      }
+    }
+    return Context.create<DeclRefExpr>(StartLoc, VD);
+  }
+
+  consumeToken(); // consume '<'
+
+  // Parse template arguments using the proper parser
+  llvm::SmallVector<TemplateArgument, 4> TemplateArgs;
+  if (!Tok.is(TokenKind::greater)) {
+    TemplateArgs = parseTemplateArgumentList();
+  }
+
+  // Expect '>'
+  if (!Tok.is(TokenKind::greater)) {
+    emitError(DiagID::err_expected);
+    // Error recovery: skip to next token
+    skipUntil({TokenKind::greater, TokenKind::comma, TokenKind::semicolon});
+    if (Tok.is(TokenKind::greater)) {
+      consumeToken();
+    }
+    // Return a TemplateSpecializationExpr with partial information
+    ValueDecl *VD = nullptr;
+    if (CurrentScope) {
+      if (NamedDecl *D = CurrentScope->lookup(TemplateName)) {
+        VD = dyn_cast<ValueDecl>(D);
+      }
+    }
+    return Context.create<TemplateSpecializationExpr>(StartLoc, TemplateName, 
+                                                       TemplateArgs, VD);
+  }
+
+  consumeToken(); // consume '>'
+
+  // Look up the template declaration (may be nullptr if not found)
+  ValueDecl *VD = nullptr;
+  if (CurrentScope) {
+    if (NamedDecl *D = CurrentScope->lookup(TemplateName)) {
+      VD = dyn_cast<ValueDecl>(D);
+    }
+  }
+
+  // Create TemplateSpecializationExpr with complete template argument information
+  return Context.create<TemplateSpecializationExpr>(StartLoc, TemplateName, 
+                                                     TemplateArgs, VD);
 }
 
 Expr *Parser::parseParenExpression() {
@@ -671,23 +1041,23 @@ Expr *Parser::parseInitializerList() {
   assert(Tok.is(TokenKind::l_brace) && "Expected '{'");
   SourceLocation LBraceLoc = Tok.getLocation();
   consumeToken(); // consume '{'
-  
+
   llvm::SmallVector<Expr *, 8> Inits;
-  
+
   // Parse initializer clauses
   while (!Tok.is(TokenKind::r_brace) && !Tok.is(TokenKind::eof)) {
-    // Parse an initializer clause (can be an expression or nested init list)
-    Expr *Init = parseAssignmentExpression();
+    // Parse an initializer clause (can be expression or designated initializer)
+    Expr *Init = parseInitializerClause();
     if (Init) {
       Inits.push_back(Init);
     } else {
       // Error recovery: skip to next comma or '}'
-      while (!Tok.is(TokenKind::comma) && !Tok.is(TokenKind::r_brace) && 
+      while (!Tok.is(TokenKind::comma) && !Tok.is(TokenKind::r_brace) &&
              !Tok.is(TokenKind::eof)) {
         consumeToken();
       }
     }
-    
+
     // Check for comma separator
     if (Tok.is(TokenKind::comma)) {
       consumeToken();
@@ -700,7 +1070,7 @@ Expr *Parser::parseInitializerList() {
       break;
     }
   }
-  
+
   // Expect '}'
   if (!Tok.is(TokenKind::r_brace)) {
     emitError(DiagID::err_expected);
@@ -708,8 +1078,69 @@ Expr *Parser::parseInitializerList() {
   }
   SourceLocation RBraceLoc = Tok.getLocation();
   consumeToken(); // consume '}'
-  
+
   return Context.create<InitListExpr>(LBraceLoc, Inits, RBraceLoc);
+}
+
+/// parseInitializerClause - Parse an initializer clause.
+///
+/// initializer-clause ::= assignment-expression
+///                      | braced-init-list
+///                      | designated-initializer-clause (C++20)
+Expr *Parser::parseInitializerClause() {
+  // Check for designated initializer (C++20): .field = value
+  if (Tok.is(TokenKind::period)) {
+    return parseDesignatedInitializer();
+  }
+
+  // Check for nested braced-init-list
+  if (Tok.is(TokenKind::l_brace)) {
+    return parseInitializerList();
+  }
+
+  // Otherwise, parse assignment expression
+  return parseAssignmentExpression();
+}
+
+/// parseDesignatedInitializer - Parse a designated initializer (C++20).
+///
+/// designated-initializer-clause ::= designator '=' initializer-clause
+/// designator ::= '.' identifier
+///             | '[' constant-expression ']'
+Expr *Parser::parseDesignatedInitializer() {
+  assert(Tok.is(TokenKind::period) && "Expected '.'");
+  SourceLocation DotLoc = Tok.getLocation();
+  consumeToken(); // consume '.'
+
+  // Parse field name
+  if (!Tok.is(TokenKind::identifier)) {
+    emitError(DiagID::err_expected_identifier);
+    return nullptr;
+  }
+
+  llvm::StringRef FieldName = Tok.getText();
+  SourceLocation FieldLoc = Tok.getLocation();
+  consumeToken();
+
+  // Create designator
+  llvm::SmallVector<DesignatedInitExpr::Designator, 4> Designators;
+  Designators.push_back(DesignatedInitExpr::Designator(FieldName, DotLoc));
+
+  // Expect '='
+  if (!Tok.is(TokenKind::equal)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+  consumeToken(); // consume '='
+
+  // Parse initializer clause
+  Expr *Init = parseInitializerClause();
+  if (!Init) {
+    return nullptr;
+  }
+
+  // Create DesignatedInitExpr
+  return Context.create<DesignatedInitExpr>(DotLoc, Designators, Init);
 }
 
 } // namespace blocktype

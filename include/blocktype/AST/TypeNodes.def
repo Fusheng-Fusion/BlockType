@@ -34,7 +34,10 @@ TYPE(LValueReference, Reference)
 TYPE(RValueReference, Reference)
 
 // Array types
-TYPE(ConstantArray, Type)
+ABSTRACT_TYPE(Array, Type)
+TYPE(ConstantArray, Array)
+TYPE(IncompleteArray, Array)  // int[] - incomplete array type
+TYPE(VariableArray, Array)    // int[n] - variable length array (VLA)
 
 // Function types
 TYPE(Function, Type)
@@ -51,6 +54,12 @@ TYPE(Elaborated, Type)
 
 // Template specialization (Vector<int>)
 TYPE(TemplateSpecialization, Type)
+
+// Template type parameter (T in template<typename T>)
+TYPE(TemplateTypeParm, Type)
+
+// Dependent type (depends on template parameter)
+TYPE(Dependent, Type)
 
 // Auto type (C++11)
 TYPE(Auto, Type)

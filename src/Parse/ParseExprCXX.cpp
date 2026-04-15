@@ -62,14 +62,15 @@ Expr *Parser::parseCXXNewExpression() {
     if (!Tok.is(TokenKind::r_paren)) {
       // Parse initializer arguments
       auto Args = parseCallArguments();
-      // TODO: Create proper initializer expression
+      // Create CXXConstructExpr for direct initialization
+      Initializer = Context.create<CXXConstructExpr>(NewLoc, Args);
     }
     if (!tryConsumeToken(TokenKind::r_paren)) {
       emitError(DiagID::err_expected_rparen);
     }
   } else if (Tok.is(TokenKind::l_brace)) {
     // Brace initialization
-    // TODO: Implement brace initialization
+    Initializer = parseInitializerList();
   }
 
   // Create CXXNewExpr
@@ -347,13 +348,63 @@ Requirement *Parser::parseRequirement() {
     }
     return new TypeRequirement(TypeReq, Tok.getLocation());
   }
-  
+
+  // Nested requirement: requires constraint-expression
+  if (Tok.is(TokenKind::kw_requires)) {
+    SourceLocation RequiresLoc = Tok.getLocation();
+    consumeToken();
+    Expr *Constraint = parseExpression();
+    if (!tryConsumeToken(TokenKind::semicolon)) {
+      emitError(DiagID::err_expected);
+    }
+    return new NestedRequirement(Constraint, RequiresLoc);
+  }
+
+  // Compound requirement: { statement-seq } noexcept? return-type-requirement?
+  if (Tok.is(TokenKind::l_brace)) {
+    SourceLocation LBraceLoc = Tok.getLocation();
+    consumeToken();
+
+    // Parse expression/statement sequence
+    Expr *Expression = nullptr;
+    Stmt *Body = nullptr;
+
+    // For now, parse as expression
+    if (Tok.isNot(TokenKind::r_brace)) {
+      Expression = parseExpression();
+    }
+
+    if (!tryConsumeToken(TokenKind::r_brace)) {
+      emitError(DiagID::err_expected_rbrace);
+    }
+
+    // Check for noexcept
+    bool IsNoexcept = false;
+    if (Tok.is(TokenKind::kw_noexcept)) {
+      IsNoexcept = true;
+      consumeToken();
+    }
+
+    // Check for return type requirement: -> type
+    QualType ReturnType;
+    if (Tok.is(TokenKind::arrow)) {
+      consumeToken();
+      ReturnType = parseType();
+    }
+
+    if (!tryConsumeToken(TokenKind::semicolon)) {
+      emitError(DiagID::err_expected);
+    }
+
+    return new CompoundRequirement(Expression, Body, IsNoexcept, ReturnType, LBraceLoc);
+  }
+
   // Simple requirement: expression;
   Expr *ExprReq = parseExpression();
   if (ExprReq == nullptr) {
     return nullptr;
   }
-  
+
   if (!tryConsumeToken(TokenKind::semicolon)) {
     // Skip to semicolon or brace
     while (Tok.isNot(TokenKind::semicolon) && Tok.isNot(TokenKind::r_brace) &&
@@ -364,7 +415,7 @@ Requirement *Parser::parseRequirement() {
       consumeToken();
     }
   }
-  
+
   return new ExprRequirement(ExprReq, false, Tok.getLocation());
 }
 
@@ -428,6 +479,182 @@ Expr *Parser::parseCStyleCastExpr() {
   }
 
   return Context.create<CStyleCastExpr>(LParenLoc, SubExpr);
+}
+
+//===----------------------------------------------------------------------===//
+// C++ cast expression parsing
+//===----------------------------------------------------------------------===//
+
+Expr *Parser::parseCXXStaticCastExpr() {
+  SourceLocation CastLoc = Tok.getLocation();
+  consumeToken(); // consume 'static_cast'
+
+  // Parse '<'
+  if (!tryConsumeToken(TokenKind::less)) {
+    emitError(DiagID::err_expected);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse type
+  QualType CastType = parseType();
+  if (CastType.isNull()) {
+    emitError(DiagID::err_expected_type);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse '>'
+  if (!tryConsumeToken(TokenKind::greater)) {
+    emitError(DiagID::err_expected);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse '('
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse the sub-expression
+  Expr *SubExpr = parseExpression();
+  if (SubExpr == nullptr) {
+    SubExpr = createRecoveryExpr(CastLoc);
+  }
+
+  // Parse ')'
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+
+  return Context.create<CXXStaticCastExpr>(CastLoc, SubExpr);
+}
+
+Expr *Parser::parseCXXDynamicCastExpr() {
+  SourceLocation CastLoc = Tok.getLocation();
+  consumeToken(); // consume 'dynamic_cast'
+
+  // Parse '<'
+  if (!tryConsumeToken(TokenKind::less)) {
+    emitError(DiagID::err_expected);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse type
+  QualType CastType = parseType();
+  if (CastType.isNull()) {
+    emitError(DiagID::err_expected_type);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse '>'
+  if (!tryConsumeToken(TokenKind::greater)) {
+    emitError(DiagID::err_expected);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse '('
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse the sub-expression
+  Expr *SubExpr = parseExpression();
+  if (SubExpr == nullptr) {
+    SubExpr = createRecoveryExpr(CastLoc);
+  }
+
+  // Parse ')'
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+
+  return Context.create<CXXDynamicCastExpr>(CastLoc, SubExpr);
+}
+
+Expr *Parser::parseCXXConstCastExpr() {
+  SourceLocation CastLoc = Tok.getLocation();
+  consumeToken(); // consume 'const_cast'
+
+  // Parse '<'
+  if (!tryConsumeToken(TokenKind::less)) {
+    emitError(DiagID::err_expected);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse type
+  QualType CastType = parseType();
+  if (CastType.isNull()) {
+    emitError(DiagID::err_expected_type);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse '>'
+  if (!tryConsumeToken(TokenKind::greater)) {
+    emitError(DiagID::err_expected);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse '('
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse the sub-expression
+  Expr *SubExpr = parseExpression();
+  if (SubExpr == nullptr) {
+    SubExpr = createRecoveryExpr(CastLoc);
+  }
+
+  // Parse ')'
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+
+  return Context.create<CXXConstCastExpr>(CastLoc, SubExpr);
+}
+
+Expr *Parser::parseCXXReinterpretCastExpr() {
+  SourceLocation CastLoc = Tok.getLocation();
+  consumeToken(); // consume 'reinterpret_cast'
+
+  // Parse '<'
+  if (!tryConsumeToken(TokenKind::less)) {
+    emitError(DiagID::err_expected);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse type
+  QualType CastType = parseType();
+  if (CastType.isNull()) {
+    emitError(DiagID::err_expected_type);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse '>'
+  if (!tryConsumeToken(TokenKind::greater)) {
+    emitError(DiagID::err_expected);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse '('
+  if (!tryConsumeToken(TokenKind::l_paren)) {
+    emitError(DiagID::err_expected_lparen);
+    return createRecoveryExpr(CastLoc);
+  }
+
+  // Parse the sub-expression
+  Expr *SubExpr = parseExpression();
+  if (SubExpr == nullptr) {
+    SubExpr = createRecoveryExpr(CastLoc);
+  }
+
+  // Parse ')'
+  if (!tryConsumeToken(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+  }
+
+  return Context.create<CXXReinterpretCastExpr>(CastLoc, SubExpr);
 }
 
 //===----------------------------------------------------------------------===//

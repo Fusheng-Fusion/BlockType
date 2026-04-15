@@ -13,6 +13,10 @@
 
 namespace blocktype {
 
+using llvm::cast;
+using llvm::dyn_cast;
+using llvm::isa;
+
 //===----------------------------------------------------------------------===//
 // TemplateArgument Implementation
 //===----------------------------------------------------------------------===//
@@ -150,9 +154,33 @@ void ReferenceType::dump(llvm::raw_ostream &OS) const {
 //===----------------------------------------------------------------------===//
 
 void ArrayType::dump(llvm::raw_ostream &OS) const {
+  // Base dump - should not be called directly
   if (ElementType)
     ElementType->dump(OS);
   OS << "[]";
+}
+
+void ConstantArrayType::dump(llvm::raw_ostream &OS) const {
+  if (ElementType)
+    ElementType->dump(OS);
+  OS << "[" << SizeValue << "]";
+}
+
+void IncompleteArrayType::dump(llvm::raw_ostream &OS) const {
+  if (ElementType)
+    ElementType->dump(OS);
+  OS << "[]";
+}
+
+void VariableArrayType::dump(llvm::raw_ostream &OS) const {
+  if (ElementType)
+    ElementType->dump(OS);
+  OS << "[";
+  if (SizeExpr)
+    SizeExpr->dump(OS);
+  else
+    OS << "<vla>";
+  OS << "]";
 }
 
 //===----------------------------------------------------------------------===//
@@ -285,8 +313,79 @@ void MemberPointerType::dump(llvm::raw_ostream &OS) const {
 }
 
 //===----------------------------------------------------------------------===//
+// TemplateTypeParmType Implementation
+//===----------------------------------------------------------------------===//
+
+void TemplateTypeParmType::dump(llvm::raw_ostream &OS) const {
+  // Print template parameter name or placeholder
+  if (Decl) {
+    // TODO: Print actual parameter name from Decl
+    OS << "T" << Index;
+  } else {
+    OS << "T" << Index;
+  }
+  if (IsParameterPack)
+    OS << "...";
+}
+
+//===----------------------------------------------------------------------===//
+// DependentType Implementation
+//===----------------------------------------------------------------------===//
+
+void DependentType::dump(llvm::raw_ostream &OS) const {
+  if (BaseType)
+    BaseType->dump(OS);
+  if (!Name.empty())
+    OS << "::" << Name;
+  else
+    OS << "::<dependent>";
+}
+
+//===----------------------------------------------------------------------===//
 // Type Implementation
 //===----------------------------------------------------------------------===//
+
+bool Type::isDependentType() const {
+  switch (getTypeClass()) {
+  case TypeClass::TemplateTypeParm:
+  case TypeClass::Dependent:
+    return true;
+  case TypeClass::Pointer:
+    return cast<PointerType>(this)->getPointeeType()->isDependentType();
+  case TypeClass::LValueReference:
+  case TypeClass::RValueReference:
+    return cast<ReferenceType>(this)->getReferencedType()->isDependentType();
+  case TypeClass::ConstantArray:
+  case TypeClass::IncompleteArray:
+  case TypeClass::VariableArray:
+    return cast<ArrayType>(this)->getElementType()->isDependentType();
+  case TypeClass::Function:
+    // Check return type and parameter types
+    if (cast<FunctionType>(this)->getReturnType()->isDependentType())
+      return true;
+    for (const Type *Param : cast<FunctionType>(this)->getParamTypes()) {
+      if (Param->isDependentType())
+        return true;
+    }
+    return false;
+  case TypeClass::MemberPointer: {
+    auto *MPT = cast<MemberPointerType>(this);
+    return MPT->getClassType()->isDependentType() ||
+           MPT->getPointeeType()->isDependentType();
+  }
+  case TypeClass::TemplateSpecialization:
+    // Template specializations are dependent if any template argument is
+    // dependent
+    // TODO: Check template arguments
+    return false;
+  case TypeClass::Decltype:
+    // decltype(expr) is dependent if expr is type-dependent
+    // TODO: Check expression
+    return false;
+  default:
+    return false;
+  }
+}
 
 void Type::dump() const {
   dump(llvm::errs());

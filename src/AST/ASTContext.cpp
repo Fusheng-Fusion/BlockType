@@ -9,6 +9,7 @@
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/Type.h"
 #include "blocktype/AST/Decl.h"
+#include "llvm/ADT/APInt.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -64,10 +65,55 @@ RValueReferenceType *ASTContext::getRValueReferenceType(const Type *Referenced) 
 }
 
 ArrayType *ASTContext::getArrayType(const Type *Element, Expr *Size) {
-  // Create new array type (no deduplication for simplicity)
-  void *Mem = Allocator.Allocate(sizeof(ArrayType), alignof(ArrayType));
-  ArrayType *AT = new (Mem) ArrayType(Element, Size);
+  // For backward compatibility, create a constant array type
+  // This method is kept for compatibility with existing code
+  if (Size) {
+    // Try to evaluate the size expression
+    // For now, create an incomplete array type
+    return getIncompleteArrayType(Element);
+  }
+  return getIncompleteArrayType(Element);
+}
+
+ConstantArrayType *ASTContext::getConstantArrayType(const Type *Element,
+                                                     Expr *SizeExpr,
+                                                     llvm::APInt Size) {
+  void *Mem = Allocator.Allocate(sizeof(ConstantArrayType),
+                                   alignof(ConstantArrayType));
+  auto *AT = new (Mem) ConstantArrayType(Element, SizeExpr, Size);
   return AT;
+}
+
+IncompleteArrayType *ASTContext::getIncompleteArrayType(const Type *Element) {
+  void *Mem = Allocator.Allocate(sizeof(IncompleteArrayType),
+                                   alignof(IncompleteArrayType));
+  auto *AT = new (Mem) IncompleteArrayType(Element);
+  return AT;
+}
+
+VariableArrayType *ASTContext::getVariableArrayType(const Type *Element,
+                                                     Expr *SizeExpr) {
+  void *Mem = Allocator.Allocate(sizeof(VariableArrayType),
+                                   alignof(VariableArrayType));
+  auto *AT = new (Mem) VariableArrayType(Element, SizeExpr);
+  return AT;
+}
+
+TemplateTypeParmType *ASTContext::getTemplateTypeParmType(TemplateTypeParmDecl *Decl,
+                                                           unsigned Index,
+                                                           unsigned Depth,
+                                                           bool IsPack) {
+  void *Mem = Allocator.Allocate(sizeof(TemplateTypeParmType),
+                                   alignof(TemplateTypeParmType));
+  auto *TPT = new (Mem) TemplateTypeParmType(Decl, Index, Depth, IsPack);
+  return TPT;
+}
+
+DependentType *ASTContext::getDependentType(const Type *BaseType,
+                                             llvm::StringRef Name) {
+  void *Mem = Allocator.Allocate(sizeof(DependentType), alignof(DependentType));
+  auto *DT = new (Mem) DependentType(BaseType, saveString(Name));
+  return DT;
 }
 
 UnresolvedType *ASTContext::getUnresolvedType(llvm::StringRef Name) {
@@ -75,13 +121,6 @@ UnresolvedType *ASTContext::getUnresolvedType(llvm::StringRef Name) {
   void *Mem = Allocator.Allocate(sizeof(UnresolvedType), alignof(UnresolvedType));
   auto *Unresolved = new (Mem) UnresolvedType(Name);
   return Unresolved;
-}
-
-AutoType *ASTContext::getAutoType() {
-  // Create new auto type
-  void *Mem = Allocator.Allocate(sizeof(AutoType), alignof(AutoType));
-  auto *Auto = new (Mem) AutoType();
-  return Auto;
 }
 
 TemplateSpecializationType *ASTContext::getTemplateSpecializationType(llvm::StringRef Name) {
@@ -96,6 +135,29 @@ ElaboratedType *ASTContext::getElaboratedType(const Type *NamedType, llvm::Strin
   void *Mem = Allocator.Allocate(sizeof(ElaboratedType), alignof(ElaboratedType));
   auto *Elaborated = new (Mem) ElaboratedType(NamedType, Qualifier);
   return Elaborated;
+}
+
+DecltypeType *ASTContext::getDecltypeType(Expr *E, QualType Underlying) {
+  // Create new decltype type
+  void *Mem = Allocator.Allocate(sizeof(DecltypeType), alignof(DecltypeType));
+  auto *Decltype = new (Mem) DecltypeType(E, Underlying);
+  return Decltype;
+}
+
+MemberPointerType *ASTContext::getMemberPointerType(const Type *ClassType, const Type *PointeeType) {
+  // Create new member pointer type
+  void *Mem = Allocator.Allocate(sizeof(MemberPointerType), alignof(MemberPointerType));
+  auto *MemberPtr = new (Mem) MemberPointerType(ClassType, PointeeType);
+  return MemberPtr;
+}
+
+FunctionType *ASTContext::getFunctionType(const Type *ReturnType,
+                                          llvm::ArrayRef<const Type *> ParamTypes,
+                                          bool IsVariadic) {
+  // Create new function type
+  void *Mem = Allocator.Allocate(sizeof(FunctionType), alignof(FunctionType));
+  auto *Func = new (Mem) FunctionType(ReturnType, ParamTypes, IsVariadic);
+  return Func;
 }
 
 QualType ASTContext::getTypeDeclType(const TypeDecl *D) {
@@ -120,9 +182,16 @@ QualType ASTContext::getTypeDeclType(const TypeDecl *D) {
     auto *TT = new (Mem) TypedefType(const_cast<TypedefNameDecl*>(TND));
     return QualType(TT, Qualifier::None);
   }
-  
+
   // For other TypeDecls (e.g., TemplateTypeParmDecl), create an unresolved type
   return QualType(getUnresolvedType(D->getName()), Qualifier::None);
+}
+
+QualType ASTContext::getAutoType() {
+  // Create AutoType
+  void *Mem = Allocator.Allocate(sizeof(AutoType), alignof(AutoType));
+  auto *AT = new (Mem) AutoType();
+  return QualType(AT, Qualifier::None);
 }
 
 ASTContext::~ASTContext() {

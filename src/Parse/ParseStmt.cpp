@@ -18,6 +18,65 @@
 namespace blocktype {
 
 //===----------------------------------------------------------------------===//
+// Declaration Detection
+//===----------------------------------------------------------------------===//
+
+/// isDeclarationStatement - Determine if the current token starts a declaration.
+///
+/// This function checks if the current token could be the start of a declaration.
+/// Declaration keywords include: class, struct, union, enum, namespace, template,
+/// typedef, using, static_assert, extern, and type names.
+bool Parser::isDeclarationStatement() {
+  // Check for declaration keywords
+  switch (Tok.getKind()) {
+  case TokenKind::kw_class:
+  case TokenKind::kw_struct:
+  case TokenKind::kw_union:
+  case TokenKind::kw_enum:
+  case TokenKind::kw_namespace:
+  case TokenKind::kw_template:
+  case TokenKind::kw_typedef:
+  case TokenKind::kw_using:
+  case TokenKind::kw_static_assert:
+  case TokenKind::kw_extern:
+  case TokenKind::kw_inline:
+  case TokenKind::kw_constexpr:
+  case TokenKind::kw_consteval:
+  case TokenKind::kw_constinit:
+    return true;
+
+  // Check for type names (built-in types)
+  case TokenKind::kw_void:
+  case TokenKind::kw_bool:
+  case TokenKind::kw_char:
+  case TokenKind::kw_wchar_t:
+  case TokenKind::kw_char8_t:
+  case TokenKind::kw_char16_t:
+  case TokenKind::kw_char32_t:
+  case TokenKind::kw_int:
+  case TokenKind::kw_short:
+  case TokenKind::kw_long:
+  case TokenKind::kw_signed:
+  case TokenKind::kw_unsigned:
+  case TokenKind::kw_float:
+  case TokenKind::kw_double:
+  case TokenKind::kw_auto:
+    return true;
+
+  // Check for identifier (could be a user-defined type)
+  case TokenKind::identifier:
+    // Look ahead to see if this is a type followed by an identifier
+    // For example: "MyType x;" or "MyType* p;"
+    // This is a simplified check - a full implementation would need
+    // to look up the identifier in the symbol table
+    return false; // For now, treat identifiers as expressions
+
+  default:
+    return false;
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // Statement parsing entry point
 //===----------------------------------------------------------------------===//
 
@@ -102,9 +161,12 @@ Stmt *Parser::parseStatement() {
 
   default:
     // Check for declaration statement
-    // TODO: Implement isDeclarationStatement()
-    // For now, treat as expression statement
-    Result = parseExpressionStatement();
+    if (isDeclarationStatement()) {
+      Result = parseDeclarationStatement();
+    } else {
+      // Treat as expression statement
+      Result = parseExpressionStatement();
+    }
     break;
   }
 
@@ -512,7 +574,11 @@ Stmt *Parser::parseForStatement() {
     QualType VarType;
     if (Tok.is(TokenKind::kw_auto)) {
       consumeToken();
-      // TODO: Create auto type
+      // Create auto type
+      VarType = Context.getAutoType();
+    } else {
+      // Parse type
+      VarType = parseType();
     }
 
     StringRef VarName;
@@ -545,20 +611,27 @@ Stmt *Parser::parseForStatement() {
       Body = Context.create<NullStmt>(ForLoc);
     }
 
-    // Create CXXForRangeStmt (simplified)
-    return Context.create<CXXForRangeStmt>(ForLoc, nullptr, Range, Body);
+    // Create range variable declaration
+    VarDecl *RangeVar = Context.create<VarDecl>(VarLoc, VarName, VarType, nullptr);
+
+    // Create CXXForRangeStmt
+    return Context.create<CXXForRangeStmt>(ForLoc, RangeVar, Range, Body);
   }
 
   // Parse traditional for loop
   // Parse init (expression statement or declaration)
   Stmt *Init = nullptr;
   if (!Tok.is(TokenKind::semicolon)) {
-    // TODO: Check if it's a declaration
-    // For now, treat as expression statement
-    SourceLocation InitLoc = Tok.getLocation();
-    Expr *InitExpr = parseExpression();
-    if (InitExpr) {
-      Init = Context.create<ExprStmt>(InitLoc, InitExpr);
+    // Check if it's a declaration
+    if (isDeclarationStatement()) {
+      Init = parseDeclarationStatement();
+    } else {
+      // Parse as expression statement
+      SourceLocation InitLoc = Tok.getLocation();
+      Expr *InitExpr = parseExpression();
+      if (InitExpr) {
+        Init = Context.create<ExprStmt>(InitLoc, InitExpr);
+      }
     }
   }
   if (!tryConsumeToken(TokenKind::semicolon)) {
@@ -607,7 +680,15 @@ Stmt *Parser::parseCXXForRangeStatement() {
   }
 
   // Parse range declaration
-  // TODO: Parse declaration properly
+  QualType VarType;
+  if (Tok.is(TokenKind::kw_auto)) {
+    consumeToken();
+    VarType = Context.getAutoType();
+  } else {
+    // Parse type
+    VarType = parseType();
+  }
+
   if (!Tok.is(TokenKind::identifier)) {
     emitError(DiagID::err_expected_identifier);
     skipUntil({TokenKind::r_paren});
@@ -615,6 +696,8 @@ Stmt *Parser::parseCXXForRangeStatement() {
     return Context.create<NullStmt>(ForLoc);
   }
 
+  SourceLocation VarLoc = Tok.getLocation();
+  StringRef VarName = Tok.getText();
   consumeToken(); // consume variable name
 
   // Expect ':'
@@ -641,8 +724,11 @@ Stmt *Parser::parseCXXForRangeStatement() {
     Body = Context.create<NullStmt>(ForLoc);
   }
 
-  // TODO: Create CXXForRangeStmt
-  return Body;
+  // Create range variable declaration
+  VarDecl *RangeVar = Context.create<VarDecl>(VarLoc, VarName, VarType, nullptr);
+
+  // Create CXXForRangeStmt
+  return Context.create<CXXForRangeStmt>(ForLoc, RangeVar, Range, Body);
 }
 
 } // namespace blocktype

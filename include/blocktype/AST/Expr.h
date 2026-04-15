@@ -248,6 +248,45 @@ public:
   }
 };
 
+/// TemplateSpecializationExpr - Template specialization expression (e.g., Integral<T>).
+///
+/// This represents a template-id with explicit template arguments,
+/// such as `std::vector<int>` or `MyTemplate<T, 42>`.
+class TemplateSpecializationExpr : public Expr {
+  llvm::StringRef TemplateName;
+  llvm::SmallVector<TemplateArgument, 4> TemplateArgs;
+  ValueDecl *TemplateDecl;  // The template declaration (may be nullptr if not found)
+
+public:
+  TemplateSpecializationExpr(SourceLocation Loc, llvm::StringRef TemplateName,
+                              llvm::ArrayRef<TemplateArgument> Args,
+                              ValueDecl *TD = nullptr)
+      : Expr(Loc), TemplateName(TemplateName), 
+        TemplateArgs(Args.begin(), Args.end()), TemplateDecl(TD) {}
+
+  llvm::StringRef getTemplateName() const { return TemplateName; }
+  
+  llvm::ArrayRef<TemplateArgument> getTemplateArgs() const { return TemplateArgs; }
+  
+  unsigned getNumTemplateArgs() const { return TemplateArgs.size(); }
+  
+  const TemplateArgument &getTemplateArg(unsigned Idx) const { 
+    return TemplateArgs[Idx]; 
+  }
+  
+  ValueDecl *getTemplateDecl() const { return TemplateDecl; }
+
+  NodeKind getKind() const override { 
+    return NodeKind::TemplateSpecializationExprKind; 
+  }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::TemplateSpecializationExprKind;
+  }
+};
+
 /// MemberExpr - Member access expression (x.member or p->member).
 class MemberExpr : public Expr {
   Expr *Base;
@@ -475,6 +514,63 @@ public:
 
   static bool classof(const ASTNode *N) {
     return N->getKind() == NodeKind::InitListExprKind;
+  }
+};
+
+/// DesignatedInitExpr - Represents a designated initializer (C++20).
+/// Example: Point p = {.x = 1, .y = 2};
+class DesignatedInitExpr : public Expr {
+public:
+  /// Designator - Represents a single designator.
+  class Designator {
+  public:
+    enum DesignatorKind {
+      FieldDesignator, // .field_name
+      ArrayDesignator  // [index]
+    };
+
+  private:
+    DesignatorKind Kind;
+    llvm::StringRef FieldName; // For field designator
+    Expr *IndexExpr;           // For array designator
+    SourceLocation Loc;
+
+  public:
+    Designator(llvm::StringRef FieldName, SourceLocation Loc)
+        : Kind(FieldDesignator), FieldName(FieldName), IndexExpr(nullptr),
+          Loc(Loc) {}
+
+    Designator(Expr *IndexExpr, SourceLocation Loc)
+        : Kind(ArrayDesignator), IndexExpr(IndexExpr), Loc(Loc) {}
+
+    DesignatorKind getKind() const { return Kind; }
+    bool isFieldDesignator() const { return Kind == FieldDesignator; }
+    bool isArrayDesignator() const { return Kind == ArrayDesignator; }
+
+    llvm::StringRef getFieldName() const { return FieldName; }
+    Expr *getIndexExpr() const { return IndexExpr; }
+    SourceLocation getLocation() const { return Loc; }
+  };
+
+private:
+  llvm::SmallVector<Designator, 4> Designators;
+  Expr *Init; // The initializer expression
+
+public:
+  DesignatedInitExpr(SourceLocation Loc, llvm::ArrayRef<Designator> Desigs,
+                     Expr *Init)
+      : Expr(Loc), Designators(Desigs.begin(), Desigs.end()), Init(Init) {}
+
+  llvm::ArrayRef<Designator> getDesignators() const { return Designators; }
+  unsigned getNumDesignators() const { return Designators.size(); }
+  Expr *getInit() const { return Init; }
+
+  NodeKind getKind() const override { return NodeKind::DesignatedInitExprKind; }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::DesignatedInitExprKind;
   }
 };
 
@@ -758,15 +854,52 @@ public:
 class ExprRequirement : public Requirement {
   class Expr *Expression;
   bool IsNoexcept = false;
-  
+
 public:
   ExprRequirement(class Expr *E, bool Noexcept, SourceLocation Loc)
       : Requirement(RequirementKind::SimpleExpr, Loc), Expression(E),
         IsNoexcept(Noexcept) {}
-  
+
   class Expr *getExpression() const { return Expression; }
   bool isNoexcept() const { return IsNoexcept; }
-  
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+};
+
+/// CompoundRequirement - Requires clause compound requirement.
+/// Example: { expression } noexcept? return-type-requirement?
+class CompoundRequirement : public Requirement {
+  class Expr *Expression;
+  class Stmt *Body;             // Compound statement body
+  bool IsNoexcept = false;
+  QualType ReturnType;          // Optional return type requirement
+
+public:
+  CompoundRequirement(class Expr *E, class Stmt *Body, bool Noexcept,
+                      QualType RetType, SourceLocation Loc)
+      : Requirement(RequirementKind::Compound, Loc), Expression(E),
+        Body(Body), IsNoexcept(Noexcept), ReturnType(RetType) {}
+
+  class Expr *getExpression() const { return Expression; }
+  class Stmt *getBody() const { return Body; }
+  bool isNoexcept() const { return IsNoexcept; }
+  QualType getReturnType() const { return ReturnType; }
+  bool hasReturnTypeRequirement() const { return !ReturnType.isNull(); }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+};
+
+/// NestedRequirement - Requires clause nested requirement.
+/// Example: requires constraint-expression
+class NestedRequirement : public Requirement {
+  class Expr *Constraint;  // The constraint expression
+
+public:
+  NestedRequirement(class Expr *Constraint, SourceLocation Loc)
+      : Requirement(RequirementKind::Nested, Loc), Constraint(Constraint) {}
+
+  class Expr *getConstraint() const { return Constraint; }
+
   void dump(raw_ostream &OS, unsigned Indent = 0) const override;
 };
 

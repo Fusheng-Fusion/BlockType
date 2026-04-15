@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
@@ -84,6 +85,7 @@ enum class BuiltinKind {
 /// Type - Base class for all types.
 class Type {
   TypeClass Kind;
+  const Type *CanonicalType = nullptr; // Canonical type for type comparison
 
 protected:
   Type(TypeClass K) : Kind(K) {}
@@ -105,8 +107,17 @@ public:
   bool isVoidType() const;
   bool isBooleanType() const;
 
+  /// isDependentType - Returns true if this type depends on a template parameter.
+  bool isDependentType() const;
+
   /// getCanonicalType - Returns the canonical type.
-  const Type *getCanonicalType() const { return this; }
+  /// The canonical type is the unique representative of an equivalence class.
+  const Type *getCanonicalType() const {
+    return CanonicalType ? CanonicalType : this;
+  }
+
+  /// setCanonicalType - Sets the canonical type.
+  void setCanonicalType(const Type *CT) { CanonicalType = CT; }
 
   /// dump - Debug dump.
   void dump() const;
@@ -216,22 +227,77 @@ public:
 // ArrayType - Array types
 //===----------------------------------------------------------------------===//
 
-/// ArrayType - Represents array types.
+/// ArrayType - Abstract base class for array types.
 class ArrayType : public Type {
+protected:
   const Type *ElementType;
-  Expr *Size;
+
+  ArrayType(TypeClass TC, const Type *Elem)
+      : Type(TC), ElementType(Elem) {}
 
 public:
-  ArrayType(const Type *ElementType, Expr *Size)
-      : Type(TypeClass::ConstantArray), ElementType(ElementType), Size(Size) {}
-
   const Type *getElementType() const { return ElementType; }
+
+  void dump(llvm::raw_ostream &OS) const;
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == TypeClass::ConstantArray ||
+           T->getTypeClass() == TypeClass::IncompleteArray ||
+           T->getTypeClass() == TypeClass::VariableArray;
+  }
+};
+
+/// ConstantArrayType - Represents constant array types with known size.
+/// Example: int[10], char[256]
+class ConstantArrayType : public ArrayType {
+  Expr *Size;
+  llvm::APInt SizeValue; // Cached size value
+
+public:
+  ConstantArrayType(const Type *Elem, Expr *SizeExpr, llvm::APInt SizeVal)
+      : ArrayType(TypeClass::ConstantArray, Elem), Size(SizeExpr), SizeValue(SizeVal) {}
+
   Expr *getSizeExpr() const { return Size; }
+  const llvm::APInt &getSize() const { return SizeValue; }
 
   void dump(llvm::raw_ostream &OS) const;
 
   static bool classof(const Type *T) {
     return T->getTypeClass() == TypeClass::ConstantArray;
+  }
+};
+
+/// IncompleteArrayType - Represents incomplete array types without size.
+/// Example: int[], char[]
+/// Used in function parameter declarations and forward declarations.
+class IncompleteArrayType : public ArrayType {
+public:
+  IncompleteArrayType(const Type *Elem)
+      : ArrayType(TypeClass::IncompleteArray, Elem) {}
+
+  void dump(llvm::raw_ostream &OS) const;
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == TypeClass::IncompleteArray;
+  }
+};
+
+/// VariableArrayType - Represents variable length arrays (VLA).
+/// Example: int[n], char[size]
+/// Note: VLAs are a C99 feature, not standard C++, but supported by some compilers.
+class VariableArrayType : public ArrayType {
+  Expr *SizeExpr;
+
+public:
+  VariableArrayType(const Type *Elem, Expr *Size)
+      : ArrayType(TypeClass::VariableArray, Elem), SizeExpr(Size) {}
+
+  Expr *getSizeExpr() const { return SizeExpr; }
+
+  void dump(llvm::raw_ostream &OS) const;
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == TypeClass::VariableArray;
   }
 };
 
@@ -390,6 +456,67 @@ public:
 
   static bool classof(const Type *T) {
     return T->getTypeClass() == TypeClass::MemberPointer;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// TemplateTypeParmType - Template type parameter
+//===----------------------------------------------------------------------===//
+
+// Forward declaration
+class TemplateTypeParmDecl;
+
+/// TemplateTypeParmType - Represents a template type parameter.
+/// Example: T in template<typename T>
+/// This type is used to represent template parameters before they are
+/// substituted with actual types.
+class TemplateTypeParmType : public Type {
+  TemplateTypeParmDecl *Decl;
+  unsigned Index;       // Index in template parameter list
+  unsigned Depth;       // Depth of template parameter (for nested templates)
+  bool IsParameterPack; // Whether this is a parameter pack (T...)
+
+public:
+  TemplateTypeParmType(TemplateTypeParmDecl *D, unsigned Idx, unsigned Depth,
+                       bool IsPack = false)
+      : Type(TypeClass::TemplateTypeParm), Decl(D), Index(Idx), Depth(Depth),
+        IsParameterPack(IsPack) {}
+
+  TemplateTypeParmDecl *getDecl() const { return Decl; }
+  unsigned getIndex() const { return Index; }
+  unsigned getDepth() const { return Depth; }
+  bool isParameterPack() const { return IsParameterPack; }
+
+  void dump(llvm::raw_ostream &OS) const;
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == TypeClass::TemplateTypeParm;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// DependentType - Dependent type
+//===----------------------------------------------------------------------===//
+
+/// DependentType - Represents a type that depends on template parameters.
+/// Example: T::iterator, typename T::value_type, T*
+/// A dependent type cannot be resolved until template arguments are provided.
+class DependentType : public Type {
+  const Type *BaseType;
+  llvm::StringRef Name; // Name of the dependent member (for T::name)
+
+public:
+  /// Construct a dependent type for T::name
+  DependentType(const Type *Base, llvm::StringRef N)
+      : Type(TypeClass::Dependent), BaseType(Base), Name(N) {}
+
+  const Type *getBaseType() const { return BaseType; }
+  llvm::StringRef getName() const { return Name; }
+
+  void dump(llvm::raw_ostream &OS) const;
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == TypeClass::Dependent;
   }
 };
 
@@ -627,7 +754,9 @@ inline bool Type::isReferenceType() const {
 }
 
 inline bool Type::isArrayType() const {
-  return getTypeClass() == TypeClass::ConstantArray;
+  return getTypeClass() == TypeClass::ConstantArray ||
+         getTypeClass() == TypeClass::IncompleteArray ||
+         getTypeClass() == TypeClass::VariableArray;
 }
 
 inline bool Type::isFunctionType() const {

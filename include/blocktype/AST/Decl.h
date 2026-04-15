@@ -991,24 +991,41 @@ public:
 
 /// ModuleDecl - Module declaration.
 /// Example: export module mylib; or module mylib:detail;
+/// Also supports global module fragment: module;
+/// And private module fragment: module :private;
 class ModuleDecl : public NamedDecl {
   llvm::StringRef ModuleName;
+  llvm::StringRef FullModuleName; // Full dotted module name (e.g., "std.core")
   llvm::StringRef PartitionName;
+  llvm::SmallVector<llvm::StringRef, 4> Attributes; // Module attributes
   bool IsExported;
   bool IsModulePartition;
+  bool IsGlobalModuleFragment;  // module; (global module fragment)
+  bool IsPrivateModuleFragment; // module :private; (private module fragment)
 
 public:
   ModuleDecl(SourceLocation Loc, llvm::StringRef ModuleName,
              bool IsExported = false, llvm::StringRef PartitionName = "",
-             bool IsModulePartition = false)
+             bool IsModulePartition = false,
+             bool IsGlobalModuleFragment = false,
+             bool IsPrivateModuleFragment = false)
       : NamedDecl(Loc, ModuleName), ModuleName(ModuleName),
-        PartitionName(PartitionName), IsExported(IsExported),
-        IsModulePartition(IsModulePartition) {}
+        FullModuleName(ModuleName), PartitionName(PartitionName),
+        IsExported(IsExported), IsModulePartition(IsModulePartition),
+        IsGlobalModuleFragment(IsGlobalModuleFragment),
+        IsPrivateModuleFragment(IsPrivateModuleFragment) {}
 
   llvm::StringRef getModuleName() const { return ModuleName; }
+  llvm::StringRef getFullModuleName() const { return FullModuleName; }
   llvm::StringRef getPartitionName() const { return PartitionName; }
+  llvm::ArrayRef<llvm::StringRef> getAttributes() const { return Attributes; }
   bool isExported() const { return IsExported; }
   bool isModulePartition() const { return IsModulePartition; }
+  bool isGlobalModuleFragment() const { return IsGlobalModuleFragment; }
+  bool isPrivateModuleFragment() const { return IsPrivateModuleFragment; }
+
+  void setFullModuleName(llvm::StringRef Name) { FullModuleName = Name; }
+  void addAttribute(llvm::StringRef Attr) { Attributes.push_back(Attr); }
 
   NodeKind getKind() const override { return NodeKind::ModuleDeclKind; }
 
@@ -1028,17 +1045,25 @@ public:
 class ImportDecl : public NamedDecl {
   llvm::StringRef ModuleName;
   llvm::StringRef PartitionName;
+  llvm::StringRef HeaderName; // Header name for header imports (e.g., "header.h")
   bool IsExported;
+  bool IsHeaderImport; // True if importing a header (import "header.h")
 
 public:
   ImportDecl(SourceLocation Loc, llvm::StringRef ModuleName,
-             bool IsExported = false, llvm::StringRef PartitionName = "")
+             bool IsExported = false, llvm::StringRef PartitionName = "",
+             llvm::StringRef HeaderName = "", bool IsHeaderImport = false)
       : NamedDecl(Loc, ModuleName), ModuleName(ModuleName),
-        PartitionName(PartitionName), IsExported(IsExported) {}
+        PartitionName(PartitionName), HeaderName(HeaderName),
+        IsExported(IsExported), IsHeaderImport(IsHeaderImport) {}
 
   llvm::StringRef getModuleName() const { return ModuleName; }
   llvm::StringRef getPartitionName() const { return PartitionName; }
+  llvm::StringRef getHeaderName() const { return HeaderName; }
   bool isExported() const { return IsExported; }
+  bool isHeaderImport() const { return IsHeaderImport; }
+
+  void setHeaderName(llvm::StringRef Name) { HeaderName = Name; }
 
   NodeKind getKind() const override { return NodeKind::ImportDeclKind; }
 
@@ -1214,6 +1239,86 @@ public:
 
   static bool classof(const ASTNode *N) {
     return N->getKind() == NodeKind::ConceptDeclKind;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// AsmDecl - Asm declaration (C++98)
+//===----------------------------------------------------------------------===//
+
+/// AsmDecl - Asm declaration (inline assembly).
+/// Example: asm("nop");
+class AsmDecl : public Decl {
+  llvm::StringRef AsmString; // The assembly string
+
+public:
+  AsmDecl(SourceLocation Loc, llvm::StringRef Asm)
+      : Decl(Loc), AsmString(Asm) {}
+
+  llvm::StringRef getAsmString() const { return AsmString; }
+
+  NodeKind getKind() const override { return NodeKind::AsmDeclKind; }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::AsmDeclKind;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// CXXDeductionGuideDecl - Deduction guide (C++17)
+//===----------------------------------------------------------------------===//
+
+/// CXXDeductionGuideDecl - Deduction guide declaration (C++17).
+/// Example: template<typename T> Vector(T) -> Vector<T>;
+class CXXDeductionGuideDecl : public FunctionDecl {
+  bool IsExplicit; // Whether this is an explicit deduction guide
+
+public:
+  CXXDeductionGuideDecl(SourceLocation Loc, llvm::StringRef Name,
+                        QualType Type, llvm::ArrayRef<ParmVarDecl *> Params,
+                        bool IsExplicit = false)
+      : FunctionDecl(Loc, Name, Type, Params), IsExplicit(IsExplicit) {}
+
+  bool isExplicit() const { return IsExplicit; }
+
+  NodeKind getKind() const override {
+    return NodeKind::CXXDeductionGuideDeclKind;
+  }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::CXXDeductionGuideDeclKind;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// AttributeDecl - Attribute specifier (C++11)
+//===----------------------------------------------------------------------===//
+
+/// AttributeDecl - Attribute specifier declaration.
+/// Example: [[nodiscard]], [[deprecated("reason")]]
+class AttributeDecl : public Decl {
+  llvm::StringRef AttributeName; // The attribute name
+  llvm::StringRef AttributeValue; // Optional attribute value (e.g., "reason")
+
+public:
+  AttributeDecl(SourceLocation Loc, llvm::StringRef Name,
+                llvm::StringRef Value = "")
+      : Decl(Loc), AttributeName(Name), AttributeValue(Value) {}
+
+  llvm::StringRef getAttributeName() const { return AttributeName; }
+  llvm::StringRef getAttributeValue() const { return AttributeValue; }
+  bool hasValue() const { return !AttributeValue.empty(); }
+
+  NodeKind getKind() const override { return NodeKind::AttributeDeclKind; }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::AttributeDeclKind;
   }
 };
 

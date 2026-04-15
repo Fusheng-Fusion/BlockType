@@ -544,9 +544,15 @@ void ModuleDecl::dump(raw_ostream &OS, unsigned Indent) const {
   OS << "ModuleDecl ";
   if (IsExported)
     OS << "export ";
-  OS << ModuleName;
-  if (!PartitionName.empty())
-    OS << ":" << PartitionName;
+  if (IsGlobalModuleFragment) {
+    OS << "(global module fragment)";
+  } else if (IsPrivateModuleFragment) {
+    OS << "(private module fragment)";
+  } else {
+    OS << ModuleName;
+    if (!PartitionName.empty())
+      OS << ":" << PartitionName;
+  }
   OS << "\n";
 }
 
@@ -669,6 +675,45 @@ void ConceptDecl::dump(raw_ostream &OS, unsigned Indent) const {
       Param->dump(OS, Indent + 4);
     }
   }
+}
+
+//===----------------------------------------------------------------------===//
+// AsmDecl
+//===----------------------------------------------------------------------===//
+
+void AsmDecl::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "AsmDecl \"" << AsmString << "\"\n";
+}
+
+//===----------------------------------------------------------------------===//
+// CXXDeductionGuideDecl
+//===----------------------------------------------------------------------===//
+
+void CXXDeductionGuideDecl::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "CXXDeductionGuideDecl " << getName();
+  if (IsExplicit) {
+    OS << " explicit";
+  }
+  OS << "\n";
+  printIndent(OS, Indent + 2);
+  OS << "Type: ";
+  getType().dump(OS);
+  OS << "\n";
+}
+
+//===----------------------------------------------------------------------===//
+// AttributeDecl
+//===----------------------------------------------------------------------===//
+
+void AttributeDecl::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "AttributeDecl [[" << AttributeName;
+  if (hasValue()) {
+    OS << "(\"" << AttributeValue << "\")";
+  }
+  OS << "]]\n";
 }
 
 } // namespace blocktype

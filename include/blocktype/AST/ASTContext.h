@@ -16,6 +16,7 @@
 #include "blocktype/AST/Type.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Allocator.h"
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -104,6 +105,22 @@ public:
   /// Returns the allocator for AST nodes.
   llvm::BumpPtrAllocator &getAllocator() { return Allocator; }
   
+  /// Saves a string in the ASTContext's memory pool.
+  /// Returns a StringRef that points to the saved copy.
+  llvm::StringRef saveString(llvm::StringRef Str) {
+    // Allocate memory for the string (including null terminator)
+    size_t Size = Str.size() + 1;
+    void *Mem = Allocator.Allocate(Size, 1);
+    
+    // Copy the string
+    char *Buf = static_cast<char *>(Mem);
+    std::memcpy(Buf, Str.data(), Str.size());
+    Buf[Str.size()] = '\0'; // Null terminator
+    
+    // Return StringRef to the saved copy
+    return llvm::StringRef(Buf, Str.size());
+  }
+  
   //===--------------------------------------------------------------------===//
   // Type creation
   //===--------------------------------------------------------------------===//
@@ -122,21 +139,50 @@ public:
   
   /// Gets or creates an array type.
   ArrayType *getArrayType(const Type *Element, Expr *Size);
+
+  /// Gets or creates a constant array type with known size.
+  ConstantArrayType *getConstantArrayType(const Type *Element, Expr *SizeExpr,
+                                          llvm::APInt Size);
+
+  /// Gets or creates an incomplete array type (int[]).
+  IncompleteArrayType *getIncompleteArrayType(const Type *Element);
+
+  /// Gets or creates a variable length array type.
+  VariableArrayType *getVariableArrayType(const Type *Element, Expr *SizeExpr);
+
+  /// Gets or creates a template type parameter type.
+  TemplateTypeParmType *getTemplateTypeParmType(class TemplateTypeParmDecl *Decl,
+                                                unsigned Index, unsigned Depth,
+                                                bool IsPack = false);
+
+  /// Gets or creates a dependent type.
+  DependentType *getDependentType(const Type *BaseType, llvm::StringRef Name);
   
   /// Gets or creates an unresolved type.
   UnresolvedType *getUnresolvedType(llvm::StringRef Name);
-  
-  /// Gets or creates an auto type.
-  AutoType *getAutoType();
-  
+
   /// Gets or creates a template specialization type.
   TemplateSpecializationType *getTemplateSpecializationType(llvm::StringRef Name);
   
   /// Gets or creates an elaborated type.
   ElaboratedType *getElaboratedType(const Type *NamedType, llvm::StringRef Qualifier);
   
+  /// Gets or creates a decltype type.
+  DecltypeType *getDecltypeType(Expr *E, QualType Underlying = QualType());
+  
+  /// Gets or creates a member pointer type.
+  MemberPointerType *getMemberPointerType(const Type *ClassType, const Type *PointeeType);
+  
+  /// Gets or creates a function type.
+  FunctionType *getFunctionType(const Type *ReturnType,
+                                llvm::ArrayRef<const Type *> ParamTypes,
+                                bool IsVariadic = false);
+  
   /// Gets the type for a type declaration.
   QualType getTypeDeclType(const TypeDecl *D);
+
+  /// Get or create an AutoType.
+  QualType getAutoType();
 
 private:
   /// Destroys all nodes in reverse order of creation.
