@@ -25,10 +25,43 @@
 |------|------|------|------|
 | `parseClassDeclaration()` | ParseDecl.cpp | 302-340 | ✅ 完整 |
 | `parseClassBody()` | ParseDecl.cpp | 393-406 | ✅ 完整 |
-| `parseClassMember()` | ParseDecl.cpp | 413-510 | ⚠️ 部分 |
-| `parseAccessSpecifier()` | ParseDecl.cpp | 515-542 | ✅ 完整 |
-| `parseBaseClause()` | ParseDecl.cpp | 547-566 | ✅ 完整 |
-| `parseBaseSpecifier()` | ParseDecl.cpp | 573-603 | ✅ 完整 |
+| `parseClassMember()` | ParseDecl.cpp | 531-912 | ✅ 完整 |
+| `parseAccessSpecifier()` | ParseDecl.cpp | 914-948 | ✅ 完整 |
+| `parseBaseClause()` | ParseDecl.cpp | 953-972 | ✅ 完整 |
+| `parseBaseSpecifier()` | ParseDecl.cpp | 977-1007 | ✅ 完整 |
+
+### 1.1.1 parseClassMember 完整实现说明 ✅ (2026-04-16 更新)
+
+`parseClassMember()` 已完整实现以下功能：
+
+**访问控制：**
+- public/protected/private 访问说明符解析
+- 正确更新当前访问级别
+
+**声明类型：**
+- 友元声明（friend class/function）
+- 嵌套类/结构体/联合体定义
+- using 声明和继承构造函数（using Base::Base）
+- 构造函数和析构函数
+
+**成员类型：**
+- 静态成员（static）
+- mutable 成员
+- 虚函数（virtual）
+- 纯虚函数（= 0）
+- 默认函数（= default）
+- 删除函数（= delete）
+
+**成员函数特性：**
+- cv-qualifiers（const, volatile）
+- ref-qualifiers（&, &&）
+- override 和 final 说明符
+- 尾置返回类型（-> type）
+- noexcept 说明（noexcept, noexcept(true), noexcept(expr)）
+
+**数据成员特性：**
+- 位域（: width）
+- 类内初始化器（= value）
 
 ### 1.2 缺失功能 ❌
 
@@ -96,33 +129,39 @@ return Context.create<CXXMethodDecl>(NameLoc, Name, Type, Params, Class, Body,
 
 | 功能 | 文件 | 行号 | 状态 |
 |------|------|------|------|
-| `parseStructDeclaration()` | ParseDecl.cpp | 345-388 | ⚠️ 部分 |
+| `parseStructDeclaration()` | ParseDecl.cpp | 457-502 | ✅ 完整 |
 
-### 2.2 缺失功能 ❌
+### 2.1.1 parseStructDeclaration 完整实现说明 ✅ (2026-04-16 更新)
 
-| 功能 | 描述 | 优先级 | 复杂度 |
-|------|------|--------|--------|
-| **默认访问控制** | struct 默认为 public，当前实现不完整 | 🟡 中 | 低 |
-| **结构体继承** | struct 可以继承自 struct/class | 🟡 中 | 低 |
+`parseStructDeclaration()` 已完整实现以下功能：
 
-### 2.2.1 已实现功能 ✅ (2026-04-16 更新)
+**基本特性：**
+- 结构体名称解析（可选）
+- 默认访问控制（public）
+- 结构体继承（支持 base clause）
+- 结构体成员解析（使用 parseClassBody）
+
+**实现细节：**
+- 正确创建 CXXRecordDecl 并设置 TagKind 为 TK_struct
+- 正确传递 Class 参数给 parseClassBody，确保成员访问控制正确
+- 支持结构体前向声明
+- 支持匿名结构体
+
+### 2.2 已实现功能 ✅ (2026-04-16 更新)
+
+所有结构体声明解析功能已完整实现：
 
 | 功能 | 状态 | 实现位置 |
 |------|------|----------|
 | **默认访问控制** | ✅ 已实现 | Decl.h:424 (CXXRecordDecl 构造函数) |
-| **结构体继承** | ✅ 已实现 | ParseDecl.cpp:464-470 |
+| **结构体继承** | ✅ 已实现 | ParseDecl.cpp:476-482 |
+| **成员访问控制** | ✅ 已实现 | ParseDecl.cpp:493 (parseClassBody) |
 
-### 2.3 问题说明
+### 2.3 已修复问题 ✅ (2026-04-16 更新)
 
-```cpp
-// ParseDecl.cpp:369 - struct 成员解析使用 nullptr
-Decl *Member = parseClassMember(nullptr); // 应该使用 RecordDecl*
-// 问题：无法正确设置成员的访问控制
-```
-
-### 2.3.1 已修复问题 ✅ (2026-04-16 更新)
-
-- `parseStructDeclaration()` 现在返回 `CXXRecordDecl*` 并正确传递给 `parseClassBody()`
+**问题：struct 成员解析使用 nullptr**
+- 原问题：`parseClassMember(nullptr)` 无法正确设置成员的访问控制
+- 已修复：`parseStructDeclaration()` 现在正确传递 `CXXRecordDecl*` 给 `parseClassBody()`
 - `parseUnionDeclaration()` 同样已修复
 - 访问控制现在正确设置（struct/union 默认 public，class 默认 private）
 
@@ -159,6 +198,18 @@ Decl *Member = parseClassMember(nullptr); // 应该使用 RecordDecl*
 | **ConceptDecl AST节点** | ✅ 已实现 | Decl.h:1187-1216 |
 | **TemplateDecl requires-clause** | ✅ 已实现 | Decl.h:853-876 |
 | **类模板部分特化** | ✅ 已实现 | ParseDecl.cpp:392-437 (parseClassDeclaration) |
+
+
+
+
+| **变量模板** | `template<typename T> T value;` | 
+| **别名模板** | `template<typename T> using Ptr = T*;` | 
+| **显式实例化** | `template class Vector<int>;` | 
+| **显式特化** | `template<> class Vector<int> {}` | 
+| **变参模板展开** | 正确处理 `typename... Args` | 
+| **模板参数默认值存储** | 非类型模板参数默认值未存储 | 
+
+
 
 ### 3.2.2 实现说明 (2026-04-16 更新)
 
