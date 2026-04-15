@@ -20,6 +20,9 @@ add_subdirectory(Lex)
 # AST 单元测试
 add_subdirectory(AST)
 
+# Parse 单元测试
+add_subdirectory(Parse)
+
 # D19: Performance tests
 add_executable(PerformanceTest
   PerformanceTest.cpp

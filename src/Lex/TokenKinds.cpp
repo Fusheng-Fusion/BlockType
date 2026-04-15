@@ -177,41 +177,8 @@ bool isComparisonOperator(TokenKind Kind) {
   }
 }
 
-bool isBinaryOperator(TokenKind Kind) {
-  switch (Kind) {
-  case TokenKind::plus:
-  case TokenKind::minus:
-  case TokenKind::star:
-  case TokenKind::slash:
-  case TokenKind::percent:
-  case TokenKind::caret:
-  case TokenKind::amp:
-  case TokenKind::pipe:
-  case TokenKind::lessless:
-  case TokenKind::greatergreater:
-  case TokenKind::ampamp:
-  case TokenKind::pipepipe:
-    return true;
-  default:
-    return false;
-  }
-}
-
-bool isUnaryOperator(TokenKind Kind) {
-  switch (Kind) {
-  case TokenKind::plus:
-  case TokenKind::minus:
-  case TokenKind::exclaim:
-  case TokenKind::tilde:
-  case TokenKind::star:    // dereference
-  case TokenKind::amp:     // address-of
-  case TokenKind::plusplus:
-  case TokenKind::minusminus:
-    return true;
-  default:
-    return false;
-  }
-}
+// Note: isBinaryOperator and isUnaryOperator are implemented in
+// src/Parse/OperatorPrecedence.cpp to avoid duplicate definitions.
 
 bool isChineseKeyword(TokenKind Kind) {
   switch (Kind) {
