@@ -156,42 +156,100 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       Base = parseCallExpression(Base);
       break;
 
-    case TokenKind::l_square:
-      // Array subscript
-      // TODO: Implement array subscript
+    case TokenKind::l_square: {
+      // Array subscript: base[index]
+      SourceLocation LLoc = Tok.getLocation();
       consumeToken();
-      emitError(DiagID::err_not_implemented);
-      skipUntil({TokenKind::r_square});
-      tryConsumeToken(TokenKind::r_square);
-      break;
 
-    case TokenKind::period:
-      // Member access
-      // TODO: Implement member access
-      consumeToken();
-      emitError(DiagID::err_not_implemented);
-      break;
+      // Parse index expression
+      Expr *Index = parseExpression();
+      if (!Index) {
+        Index = createRecoveryExpr(LLoc);
+      }
 
-    case TokenKind::arrow:
-      // Pointer member access
-      // TODO: Implement pointer member access
-      consumeToken();
-      emitError(DiagID::err_not_implemented);
-      break;
+      // Expect ']'
+      if (!tryConsumeToken(TokenKind::r_square)) {
+        emitError(DiagID::err_expected);
+        skipUntil({TokenKind::r_square});
+        tryConsumeToken(TokenKind::r_square);
+      }
 
-    case TokenKind::plusplus:
-      // Postfix increment
-      // TODO: Implement postfix increment
-      consumeToken();
-      emitError(DiagID::err_not_implemented);
+      // Create ArraySubscriptExpr
+      Base = Context.create<ArraySubscriptExpr>(LLoc, Base, Index);
       break;
+    }
 
-    case TokenKind::minusminus:
-      // Postfix decrement
-      // TODO: Implement postfix decrement
+    case TokenKind::period: {
+      // Member access: base.member
+      SourceLocation OpLoc = Tok.getLocation();
       consumeToken();
-      emitError(DiagID::err_not_implemented);
+
+      // Expect member name
+      if (!Tok.is(TokenKind::identifier)) {
+        emitError(DiagID::err_expected_identifier);
+        return Base;
+      }
+
+      // TODO: Lookup member in the base type
+      // For now, create a placeholder
+      llvm::StringRef MemberName = Tok.getText();
+      SourceLocation MemberLoc = Tok.getLocation();
+      consumeToken();
+
+      // Create a placeholder ValueDecl for the member
+      // In a real implementation, this would be looked up in the class/struct
+      ValueDecl *MemberDecl = nullptr; // TODO: Implement proper member lookup
+
+      // Create MemberExpr
+      Base = Context.create<MemberExpr>(OpLoc, Base, MemberDecl, false);
       break;
+    }
+
+    case TokenKind::arrow: {
+      // Pointer member access: base->member
+      SourceLocation OpLoc = Tok.getLocation();
+      consumeToken();
+
+      // Expect member name
+      if (!Tok.is(TokenKind::identifier)) {
+        emitError(DiagID::err_expected_identifier);
+        return Base;
+      }
+
+      // TODO: Lookup member in the base type
+      // For now, create a placeholder
+      llvm::StringRef MemberName = Tok.getText();
+      SourceLocation MemberLoc = Tok.getLocation();
+      consumeToken();
+
+      // Create a placeholder ValueDecl for the member
+      // In a real implementation, this would be looked up in the class/struct
+      ValueDecl *MemberDecl = nullptr; // TODO: Implement proper member lookup
+
+      // Create MemberExpr with IsArrow = true
+      Base = Context.create<MemberExpr>(OpLoc, Base, MemberDecl, true);
+      break;
+    }
+
+    case TokenKind::plusplus: {
+      // Postfix increment: expr++
+      SourceLocation OpLoc = Tok.getLocation();
+      consumeToken();
+
+      // Create UnaryOperator with PostInc
+      Base = Context.create<UnaryOperator>(OpLoc, Base, UnaryOpKind::PostInc);
+      break;
+    }
+
+    case TokenKind::minusminus: {
+      // Postfix decrement: expr--
+      SourceLocation OpLoc = Tok.getLocation();
+      consumeToken();
+
+      // Create UnaryOperator with PostDec
+      Base = Context.create<UnaryOperator>(OpLoc, Base, UnaryOpKind::PostDec);
+      break;
+    }
 
     default:
       return Base;

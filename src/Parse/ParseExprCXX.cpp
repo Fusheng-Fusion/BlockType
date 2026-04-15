@@ -11,7 +11,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/Parse/Parser.h"
+#include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
+#include "blocktype/AST/Type.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace blocktype {
@@ -37,15 +39,12 @@ Expr *Parser::parseCXXNewExpression() {
     }
   }
 
-  // Parse type-id (simplified - just consume tokens for now)
-  // TODO: Implement proper type parsing
-  SourceLocation TypeLoc = Tok.getLocation();
-  if (!Tok.is(TokenKind::identifier)) {
+  // Parse type
+  QualType Type = parseType();
+  if (Type.isNull()) {
     emitError(DiagID::err_expected_type);
     return createRecoveryExpr(NewLoc);
   }
-
-  consumeToken(); // consume type name
 
   // Check for array new: new T[n]
   Expr *ArraySize = nullptr;
@@ -62,17 +61,20 @@ Expr *Parser::parseCXXNewExpression() {
   if (Tok.is(TokenKind::l_paren)) {
     consumeToken();
     if (!Tok.is(TokenKind::r_paren)) {
+      // Parse initializer arguments
       auto Args = parseCallArguments();
-      // Create call expression as initializer
-      // TODO: Create proper CXXNewExpr with initializer
+      // TODO: Create proper initializer expression
     }
     if (!tryConsumeToken(TokenKind::r_paren)) {
       emitError(DiagID::err_expected_rparen);
     }
+  } else if (Tok.is(TokenKind::l_brace)) {
+    // Brace initialization
+    // TODO: Implement brace initialization
   }
 
-  // TODO: Create proper CXXNewExpr
-  return createRecoveryExpr(NewLoc);
+  // Create CXXNewExpr
+  return Context.create<CXXNewExpr>(NewLoc, ArraySize, Initializer);
 }
 
 Expr *Parser::parseCXXDeleteExpression() {
@@ -95,8 +97,8 @@ Expr *Parser::parseCXXDeleteExpression() {
     Argument = createRecoveryExpr(DeleteLoc);
   }
 
-  // TODO: Create proper CXXDeleteExpr
-  return createRecoveryExpr(DeleteLoc);
+  // Create CXXDeleteExpr
+  return Context.create<CXXDeleteExpr>(DeleteLoc, Argument, IsArrayDelete);
 }
 
 //===----------------------------------------------------------------------===//

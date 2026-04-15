@@ -40,6 +40,9 @@ EXPR(CXXNullPtrLiteral, Expr)
 EXPR(DeclRefExpr, Expr)
 EXPR(MemberExpr, Expr)
 
+// Subscript
+EXPR(ArraySubscriptExpr, Expr)
+
 // Operators
 EXPR(BinaryOperator, Expr)
 EXPR(UnaryOperator, Expr)

@@ -104,6 +104,19 @@ void MemberExpr::dump(raw_ostream &OS, unsigned Indent) const {
 }
 
 //===----------------------------------------------------------------------===//
+// ArraySubscriptExpr
+//===----------------------------------------------------------------------===//
+
+void ArraySubscriptExpr::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "ArraySubscriptExpr\n";
+  if (Base)
+    Base->dump(OS, Indent + 1);
+  if (Index)
+    Index->dump(OS, Indent + 1);
+}
+
+//===----------------------------------------------------------------------===//
 // BinaryOperator
 //===----------------------------------------------------------------------===//
 

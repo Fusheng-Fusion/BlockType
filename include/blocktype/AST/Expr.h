@@ -269,6 +269,27 @@ public:
   }
 };
 
+/// ArraySubscriptExpr - Array subscript expression (base[index]).
+class ArraySubscriptExpr : public Expr {
+  Expr *Base;
+  Expr *Index;
+
+public:
+  ArraySubscriptExpr(SourceLocation Loc, Expr *Base, Expr *Index)
+      : Expr(Loc), Base(Base), Index(Index) {}
+
+  Expr *getBase() const { return Base; }
+  Expr *getIndex() const { return Index; }
+
+  NodeKind getKind() const override { return NodeKind::ArraySubscriptExprKind; }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::ArraySubscriptExprKind;
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // Operator Expressions
 //===----------------------------------------------------------------------===//
