@@ -355,6 +355,18 @@ public:
   /// Parses a template template parameter.
   TemplateTemplateParmDecl *parseTemplateTemplateParameter();
 
+  /// Parses a namespace declaration.
+  NamespaceDecl *parseNamespaceDeclaration();
+
+  /// Parses a namespace body.
+  void parseNamespaceBody(NamespaceDecl *NS);
+
+  /// Parses a using declaration.
+  UsingDecl *parseUsingDeclaration();
+
+  /// Parses a using directive.
+  UsingDirectiveDecl *parseUsingDirective();
+
   //===--------------------------------------------------------------------===//
   // Statement parsing
   //===--------------------------------------------------------------------===//
