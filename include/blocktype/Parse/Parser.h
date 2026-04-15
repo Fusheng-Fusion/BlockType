@@ -34,6 +34,10 @@ class Decl;
 class RecordDecl;
 class CXXRecordDecl;
 class AccessSpecDecl;
+class TemplateDecl;
+class TemplateTypeParmDecl;
+class NonTypeTemplateParmDecl;
+class TemplateTemplateParmDecl;
 
 /// LambdaCapture - Represents a lambda capture.
 /// ParsingContext - Represents the current parsing context.
@@ -332,6 +336,24 @@ public:
 
   /// Parses a base specifier.
   void parseBaseSpecifier(CXXRecordDecl *Class);
+
+  /// Parses a template declaration.
+  TemplateDecl *parseTemplateDeclaration();
+
+  /// Parses template parameters.
+  void parseTemplateParameters(llvm::SmallVector<NamedDecl *, 8> &Params);
+
+  /// Parses a template parameter.
+  NamedDecl *parseTemplateParameter();
+
+  /// Parses a template type parameter.
+  TemplateTypeParmDecl *parseTemplateTypeParameter();
+
+  /// Parses a non-type template parameter.
+  NonTypeTemplateParmDecl *parseNonTypeTemplateParameter();
+
+  /// Parses a template template parameter.
+  TemplateTemplateParmDecl *parseTemplateTemplateParameter();
 
   //===--------------------------------------------------------------------===//
   // Statement parsing

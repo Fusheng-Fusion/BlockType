@@ -59,6 +59,11 @@ Stmt *Parser::parseDeclarationStatement() {
 /// simple-declaration ::= decl-specifier-seq init-declarator-list? ';'
 ///
 Decl *Parser::parseDeclaration() {
+  // Check for template declaration
+  if (Tok.is(TokenKind::kw_template)) {
+    return parseTemplateDeclaration();
+  }
+
   // Check for class declaration
   if (Tok.is(TokenKind::kw_class)) {
     SourceLocation ClassLoc = Tok.getLocation();
@@ -556,6 +561,266 @@ void Parser::parseBaseSpecifier(CXXRecordDecl *Class) {
   }
 
   Class->addBase(CXXRecordDecl::BaseSpecifier(BaseType, Tok.getLocation(), IsVirtual, false, Access));
+}
+
+//===----------------------------------------------------------------------===//
+// Template Declaration Parsing
+//===----------------------------------------------------------------------===//
+
+/// parseTemplateDeclaration - Parse a template declaration.
+///
+/// template-declaration ::= 'template' '<' template-parameter-list '>' declaration
+TemplateDecl *Parser::parseTemplateDeclaration() {
+  // Expect 'template' keyword
+  if (!Tok.is(TokenKind::kw_template)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  SourceLocation TemplateLoc = Tok.getLocation();
+  consumeToken(); // consume 'template'
+
+  // Expect '<'
+  if (!Tok.is(TokenKind::less)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume '<'
+
+  // Parse template parameters
+  llvm::SmallVector<NamedDecl *, 8> Params;
+  parseTemplateParameters(Params);
+
+  // Expect '>'
+  if (!Tok.is(TokenKind::greater)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume '>'
+
+  // Parse the templated declaration
+  Decl *TemplatedDecl = parseDeclaration();
+  if (!TemplatedDecl) {
+    return nullptr;
+  }
+
+  // Create TemplateDecl
+  TemplateDecl *Template = Context.create<TemplateDecl>(TemplateLoc, "", TemplatedDecl);
+
+  // Add template parameters
+  for (auto *Param : Params) {
+    Template->addTemplateParameter(Param);
+  }
+
+  return Template;
+}
+
+/// parseTemplateParameters - Parse template parameter list.
+///
+/// template-parameter-list ::= template-parameter (',' template-parameter)*
+void Parser::parseTemplateParameters(llvm::SmallVector<NamedDecl *, 8> &Params) {
+  while (!Tok.is(TokenKind::greater) && !Tok.is(TokenKind::eof)) {
+    NamedDecl *Param = parseTemplateParameter();
+    if (Param) {
+      Params.push_back(Param);
+    } else {
+      // Error recovery: skip to ',' or '>'
+      skipUntil({TokenKind::comma, TokenKind::greater});
+    }
+
+    // Check for comma
+    if (Tok.is(TokenKind::comma)) {
+      consumeToken();
+    } else {
+      break;
+    }
+  }
+}
+
+/// parseTemplateParameter - Parse a template parameter.
+///
+/// template-parameter ::= type-parameter | parameter-declaration
+NamedDecl *Parser::parseTemplateParameter() {
+  // Check for type parameter (typename, class)
+  if (Tok.is(TokenKind::kw_typename) || Tok.is(TokenKind::kw_class)) {
+    return parseTemplateTypeParameter();
+  }
+
+  // Check for template template parameter
+  if (Tok.is(TokenKind::kw_template)) {
+    return parseTemplateTemplateParameter();
+  }
+
+  // Otherwise, it's a non-type template parameter
+  return parseNonTypeTemplateParameter();
+}
+
+/// parseTemplateTypeParameter - Parse a template type parameter.
+///
+/// type-parameter ::= 'typename' identifier? ('=' type-id)?
+///                  | 'typename' '...' identifier?
+///                  | 'class' identifier? ('=' type-id)?
+///                  | 'class' '...' identifier?
+TemplateTypeParmDecl *Parser::parseTemplateTypeParameter() {
+  bool IsTypename = Tok.is(TokenKind::kw_typename);
+  consumeToken(); // consume 'typename' or 'class'
+
+  // Check for parameter pack
+  bool IsParameterPack = false;
+  if (Tok.is(TokenKind::ellipsis)) {
+    IsParameterPack = true;
+    consumeToken(); // consume '...'
+  }
+
+  // Parse identifier (optional)
+  llvm::StringRef Name;
+  SourceLocation NameLoc;
+
+  if (Tok.is(TokenKind::identifier)) {
+    Name = Tok.getText();
+    NameLoc = Tok.getLocation();
+    consumeToken();
+  }
+
+  // Create TemplateTypeParmDecl
+  // Use 0 for depth and index (will be set correctly later)
+  TemplateTypeParmDecl *Param = Context.create<TemplateTypeParmDecl>(
+      NameLoc, Name, 0, 0, IsParameterPack, IsTypename);
+
+  // Parse default argument (optional)
+  if (Tok.is(TokenKind::equal)) {
+    consumeToken(); // consume '='
+    QualType DefaultType = parseType();
+    if (!DefaultType.isNull()) {
+      Param->setDefaultArgument(DefaultType);
+    }
+  }
+
+  return Param;
+}
+
+/// parseNonTypeTemplateParameter - Parse a non-type template parameter.
+///
+/// parameter-declaration ::= decl-specifier-seq declarator ('=' assignment-expression)?
+NonTypeTemplateParmDecl *Parser::parseNonTypeTemplateParameter() {
+  // Parse type
+  QualType Type = parseType();
+  if (Type.isNull()) {
+    emitError(DiagID::err_expected_type);
+    return nullptr;
+  }
+
+  // Check for parameter pack
+  bool IsParameterPack = false;
+  if (Tok.is(TokenKind::ellipsis)) {
+    IsParameterPack = true;
+    consumeToken(); // consume '...'
+  }
+
+  // Parse identifier
+  if (!Tok.is(TokenKind::identifier)) {
+    emitError(DiagID::err_expected_identifier);
+    return nullptr;
+  }
+
+  llvm::StringRef Name = Tok.getText();
+  SourceLocation NameLoc = Tok.getLocation();
+  consumeToken();
+
+  // Create NonTypeTemplateParmDecl
+  // Use 0 for depth and index (will be set correctly later)
+  NonTypeTemplateParmDecl *Param = Context.create<NonTypeTemplateParmDecl>(
+      NameLoc, Name, Type, 0, 0, IsParameterPack);
+
+  // Parse default argument (optional)
+  if (Tok.is(TokenKind::equal)) {
+    consumeToken(); // consume '='
+    Expr *DefaultArg = parseExpression();
+    // Note: We don't store the default argument yet in NonTypeTemplateParmDecl
+    // This can be added later if needed
+  }
+
+  return Param;
+}
+
+/// parseTemplateTemplateParameter - Parse a template template parameter.
+///
+/// template-template-parameter ::= 'template' '<' template-parameter-list '>' 'class' identifier? ('=' id-expression)?
+TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
+  // Expect 'template'
+  if (!Tok.is(TokenKind::kw_template)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume 'template'
+
+  // Expect '<'
+  if (!Tok.is(TokenKind::less)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume '<'
+
+  // Parse template parameters
+  llvm::SmallVector<NamedDecl *, 8> Params;
+  parseTemplateParameters(Params);
+
+  // Expect '>'
+  if (!Tok.is(TokenKind::greater)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume '>'
+
+  // Expect 'class' or 'typename'
+  if (!Tok.is(TokenKind::kw_class) && !Tok.is(TokenKind::kw_typename)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume 'class' or 'typename'
+
+  // Check for parameter pack
+  bool IsParameterPack = false;
+  if (Tok.is(TokenKind::ellipsis)) {
+    IsParameterPack = true;
+    consumeToken(); // consume '...'
+  }
+
+  // Parse identifier (optional)
+  llvm::StringRef Name;
+  SourceLocation NameLoc;
+
+  if (Tok.is(TokenKind::identifier)) {
+    Name = Tok.getText();
+    NameLoc = Tok.getLocation();
+    consumeToken();
+  }
+
+  // Create TemplateTemplateParmDecl
+  // Use 0 for depth and index (will be set correctly later)
+  TemplateTemplateParmDecl *Param = Context.create<TemplateTemplateParmDecl>(
+      NameLoc, Name, 0, 0, IsParameterPack);
+
+  // Add template parameters
+  for (auto *P : Params) {
+    Param->addTemplateParameter(P);
+  }
+
+  // Parse default argument (optional)
+  if (Tok.is(TokenKind::equal)) {
+    consumeToken(); // consume '='
+    // Note: We need to parse id-expression here
+    // For now, skip to the next token
+    // TODO: Implement id-expression parsing
+  }
+
+  return Param;
 }
 
 } // namespace blocktype
