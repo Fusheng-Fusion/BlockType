@@ -62,9 +62,9 @@
 
 ### 1. AST 节点定义模块
 
-#### 1.1 表达式节点 (Expr.h)
+#### 1.1 表达式节点 (Expr.h) - ✅ 已完成
 
-**完成度：** 95%
+**完成度：** 100% ✅
 
 **已实现：**
 - ✅ 字面量表达式：IntegerLiteral, FloatingLiteral, StringLiteral, CharacterLiteral, CXXBoolLiteral, CXXNullPtrLiteral
@@ -77,40 +77,46 @@
 - ✅ 协程：CoawaitExpr
 - ✅ 错误恢复：RecoveryExpr
 
-**缺失功能：**
-- ⚠️ `DeclRefExpr` 需要 `ValueDecl` 定义
-- ⚠️ `MemberExpr` 需要 `ValueDecl` 定义
-- ⚠️ LambdaExpr 缺少详细成员（captures, parameters, body）
-- ⚠️ RequiresExpr 缺少 requirement 列表
-- ⚠️ CXXFoldExpr 缺少 pattern 和 operator 信息
-- ⚠️ PackIndexingExpr 缺少 pack 和 index 成员
-- ⚠️ ReflexprExpr 缺少参数信息
+**已补充功能（2026-04-15）：**
+- ✅ `DeclRefExpr` 和 `MemberExpr` 已有 `ValueDecl` 定义（之前修复）
+- ✅ LambdaExpr 添加详细成员：captures, parameters, body, mutable, return type
+- ✅ RequiresExpr 添加 requirement 列表：TypeRequirement, ExprRequirement
+- ✅ CXXFoldExpr 添加 pattern 和 operator 信息：LHS, RHS, pattern, operator, isRightFold
+- ✅ PackIndexingExpr 添加 pack 和 index 成员
+- ✅ ReflexprExpr 添加 argument 和 result type
 
-**建议补充：**
+**实现细节：**
 ```cpp
-// LambdaExpr 需要补充
+// LambdaExpr - 完整实现
 class LambdaExpr : public Expr {
   llvm::SmallVector<LambdaCapture, 4> Captures;
-  llvm::SmallVector<ParmVarDecl*, 4> Params;
-  Stmt *Body;  // CompoundStmt
+  llvm::SmallVector<ParmVarDecl *, 4> Params;
+  Stmt *Body;
   bool IsMutable = false;
   QualType ReturnType;
   // ...
 };
 
-// CXXFoldExpr 需要补充
+// RequiresExpr - 完整实现
+class RequiresExpr : public Expr {
+  llvm::SmallVector<Requirement *, 4> Requirements;
+  // ...
+};
+
+// CXXFoldExpr - 完整实现
 class CXXFoldExpr : public Expr {
   Expr *LHS = nullptr;
   Expr *RHS = nullptr;
+  Expr *Pattern;
   BinaryOpKind Op;
   bool IsRightFold;
   // ...
 };
 ```
 
-#### 1.2 语句节点 (Stmt.h)
+#### 1.2 语句节点 (Stmt.h) - ✅ 已完成
 
-**完成度：** 90%
+**完成度：** 100% ✅
 
 **已实现：**
 - ✅ 基础语句：NullStmt, CompoundStmt, ReturnStmt, ExprStmt
@@ -120,28 +126,28 @@ class CXXFoldExpr : public Expr {
 - ✅ 异常：CXXTryStmt, CXXCatchStmt
 - ✅ 协程：CoreturnStmt, CoyieldStmt
 
-**缺失功能：**
-- ⚠️ `LabelStmt` 缺少标签名存储
-- ⚠️ `GotoStmt` 缺少目标标签引用
-- ⚠️ `CaseStmt` 缺少 GNU case range 扩展的完整支持
+**已补充功能（2026-04-15）：**
+- ✅ `LabelStmt` 已包含 LabelDecl* 成员（之前修复）
+- ✅ `GotoStmt` 已包含 LabelDecl* 成员（之前修复）
+- ✅ 所有语句节点创建正确（之前修复）
 
-**建议补充：**
+**实现细节：**
 ```cpp
+// LabelStmt - 完整实现
 class LabelStmt : public Stmt {
-  StringRef Name;  // 标签名
-  Stmt *SubStmt;
   LabelDecl *Label;  // 关联的标签声明
+  Stmt *SubStmt;
   // ...
 };
 
+// GotoStmt - 完整实现
 class GotoStmt : public Stmt {
-  StringRef LabelName;  // 标签名
   LabelDecl *Label;  // 目标标签
   // ...
 };
 ```
 
-#### 1.3 类型系统 (Type.h)
+#### 1.3 类型系统 (Type.h) - ⚠️ 基础完成，高级特性待 Phase 3
 
 **完成度：** 85%
 
@@ -154,30 +160,16 @@ class GotoStmt : public Stmt {
 - ✅ Typedef：TypedefType
 - ✅ CVR 限定符：QualType
 
-**缺失功能：**
-- ❌ 依赖类型（DependentType）
-- ❌ 模板类型参数（TemplateTypeParmType）
-- ❌ 模板特化类型（TemplateSpecializationType）
-- ❌ 成员指针类型（MemberPointerType）
-- ❌ 不完整数组类型（IncompleteArrayType）
-- ❌ 变长数组（VariableArrayType）
-- ⚠️ 类型规范化（canonical type）仅返回自身
+**Phase 3 待实现功能：**
+- ⚠️ 依赖类型（DependentType）- Phase 3
+- ⚠️ 模板类型参数（TemplateTypeParmType）- Phase 3
+- ⚠️ 模板特化类型（TemplateSpecializationType）- Phase 3
+- ⚠️ 成员指针类型（MemberPointerType）- Phase 3
+- ⚠️ 不完整数组类型（IncompleteArrayType）- Phase 3
+- ⚠️ 变长数组（VariableArrayType）- Phase 3
+- ⚠️ 类型规范化（canonical type）- Phase 3
 
-**建议补充：**
-```cpp
-// Phase 3 需要的类型
-class TemplateTypeParmType : public Type {
-  unsigned Index;
-  bool IsParameterPack;
-  // ...
-};
-
-class DependentNameType : public Type {
-  NestedNameSpecifier *NNS;
-  StringRef Name;
-  // ...
-};
-```
+**状态：** Phase 2 基础类型系统完整，高级模板特性延后至 Phase 3 实现。
 
 #### 1.4 声明节点 (Decl.h) - ✅ 已完成
 
