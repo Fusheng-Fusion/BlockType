@@ -308,6 +308,21 @@ public:
   /// Parses a C++11 range-based for statement.
   Stmt *parseCXXForRangeStatement();
 
+  /// Parses a C++ try statement.
+  Stmt *parseCXXTryStatement();
+
+  /// Parses a C++ catch clause.
+  Stmt *parseCXXCatchClause();
+
+  /// Parses a C++20 co_return statement.
+  Stmt *parseCoreturnStatement();
+
+  /// Parses a C++20 co_yield statement.
+  Stmt *parseCoyieldStatement();
+
+  /// Parses a C++20 co_await expression.
+  Expr *parseCoawaitExpression();
+
 private:
   //===--------------------------------------------------------------------===//
   // Internal helpers

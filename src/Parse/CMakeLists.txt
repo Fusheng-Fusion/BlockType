@@ -3,6 +3,7 @@ add_library(blocktype-parse
   ParseExpr.cpp
   ParseExprCXX.cpp
   ParseStmt.cpp
+  ParseStmtCXX.cpp
   Parser.cpp
 )
 

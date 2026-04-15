@@ -66,6 +66,10 @@ Stmt *Parser::parseStatement() {
     Result = parseForStatement();
     break;
 
+  case TokenKind::kw_try:
+    Result = parseCXXTryStatement();
+    break;
+
   case TokenKind::kw_case:
     Result = parseCaseStatement();
     break;
