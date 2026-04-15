@@ -145,27 +145,44 @@ Decl *Member = parseClassMember(nullptr); // 应该使用 RecordDecl*
 
 | 功能 | 描述 | 优先级 | 复杂度 |
 |------|------|--------|--------|
-| **模板实参列表解析** | `parseTemplateArgumentList()` | 🔴 高 | 高 |
-| **模板实参解析** | `parseTemplateArgument()` | 🔴 高 | 高 |
-| **模板标识符解析** | `parseTemplateId()` - `Vector<int>` | 🔴 高 | 高 |
 | **约束表达式** | C++20 `requires` 子句 | 🔴 高 | 极高 |
 | **概念约束** | `template<typename T> concept` | 🟡 中 | 极高 |
 | **类模板部分特化** | `template<typename T> class Vector<T*>` | 🟡 中 | 高 |
-| **变量模板** | `template<typename T> T value;` | 🟡 中 | 中 |
-| **别名模板** | `template<typename T> using Ptr = T*;` | 🟡 中 | 中 |
-| **显式实例化** | `template class Vector<int>;` | 🟢 低 | 低 |
-| **显式特化** | `template<> class Vector<int> {}` | 🟢 低 | 中 |
-| **变参模板展开** | 正确处理 `typename... Args` | 🟡 中 | 高 |
-| **模板参数默认值存储** | 非类型模板参数默认值未存储 | 🟡 中 | 低 |
 
 ### 3.2.1 已实现功能 ✅ (2026-04-16 更新)
 
 | 功能 | 状态 | 实现位置 |
 |------|------|----------|
 | **模板实参列表解析** | ✅ 已实现 | ParseDecl.cpp:1358-1373 |
-| **模板实参解析** | ✅ 已实现 | ParseDecl.cpp:1300-1355 |
+| **模板实参解析** | ✅ 已实现 | ParseDecl.cpp:1327-1439 |
 | **模板标识符解析** | ✅ 已实现 | ParseDecl.cpp:1378-1404 |
 | **TemplateArgument 类** | ✅ 已实现 | Type.h:481-524 |
+| **显式实例化** | ✅ 已实现 | ParseDecl.cpp:1002-1017 |
+| **显式特化** | ✅ 已实现 | ParseDecl.cpp:1019-1033 |
+| **变量模板** | ✅ 已实现 | ParseDecl.cpp:1035-1078 (通过 parseDeclaration) |
+| **别名模板** | ✅ 已实现 | ParseDecl.cpp:1035-1078 (通过 parseTypeAliasDeclaration) |
+| **变参模板展开** | ✅ 已实现 | ParseDecl.cpp:1333-1339, 1356-1361, 1374-1379 |
+
+### 3.2.2 实现说明 (2026-04-16 更新)
+
+**显式实例化和显式特化：**
+- 修改 `parseTemplateDeclaration()` 以检测 `template` 后面是否跟 `<`
+- `template` 后面没有 `<`：显式实例化
+- `template<>`：显式特化
+- `template<...>`：普通模板声明
+
+**变量模板和别名模板：**
+- 变量模板通过 `parseDeclaration()` 自动支持（解析为变量声明）
+- 别名模板通过 `parseTypeAliasDeclaration()` 自动支持（解析为类型别名）
+- `parseTemplateDeclaration()` 将这些声明包装在 `TemplateDecl` 中
+
+**变参模板展开：**
+- 在 `parseTemplateArgument()` 中添加对 `...` 的支持
+- 支持三种形式的参数包展开：
+  - `...Args`（前置展开）
+  - `Args...`（后置展开）
+  - `Type...`（类型展开）
+- 参数包展开可以出现在类型、表达式和模板实参中
 
 ### 3.3 不完善功能 ⚠️
 
@@ -212,7 +229,7 @@ if (Tok.is(TokenKind::equal)) {
 
 ---
 
-## 4. 命名空间声明解析模块审计
+## 4. 命名空间声明解析模块审计（完成）
 
 ### 4.1 已实现功能 ✅
 

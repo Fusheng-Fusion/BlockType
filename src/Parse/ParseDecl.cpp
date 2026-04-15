@@ -999,6 +999,8 @@ void Parser::parseBaseSpecifier(CXXRecordDecl *Class) {
 /// parseTemplateDeclaration - Parse a template declaration.
 ///
 /// template-declaration ::= 'template' '<' template-parameter-list '>' declaration
+///                        | 'template' '<' '>' declaration  (explicit specialization)
+///                        | 'template' declaration           (explicit instantiation)
 TemplateDecl *Parser::parseTemplateDeclaration() {
   // Expect 'template' keyword
   if (!Tok.is(TokenKind::kw_template)) {
@@ -1009,13 +1011,38 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
   SourceLocation TemplateLoc = Tok.getLocation();
   consumeToken(); // consume 'template'
 
-  // Expect '<'
+  // Check for explicit instantiation: template class Vector<int>;
+  // This is when 'template' is not followed by '<'
   if (!Tok.is(TokenKind::less)) {
-    emitError(DiagID::err_expected);
-    return nullptr;
+    // Explicit instantiation
+    Decl *InstantiatedDecl = parseDeclaration();
+    if (!InstantiatedDecl) {
+      return nullptr;
+    }
+
+    // Create a TemplateDecl for the instantiation
+    // Note: In a real compiler, this would be marked as an explicit instantiation
+    TemplateDecl *Template = Context.create<TemplateDecl>(TemplateLoc, "", InstantiatedDecl);
+    return Template;
   }
 
   consumeToken(); // consume '<'
+
+  // Check for explicit specialization: template<> class Vector<int> {}
+  if (Tok.is(TokenKind::greater)) {
+    consumeToken(); // consume '>'
+
+    // Parse the specialized declaration
+    Decl *SpecializedDecl = parseDeclaration();
+    if (!SpecializedDecl) {
+      return nullptr;
+    }
+
+    // Create a TemplateDecl for the specialization
+    // Note: In a real compiler, this would be marked as an explicit specialization
+    TemplateDecl *Template = Context.create<TemplateDecl>(TemplateLoc, "", SpecializedDecl);
+    return Template;
+  }
 
   // Parse template parameters
   llvm::SmallVector<NamedDecl *, 8> Params;
@@ -1300,7 +1327,21 @@ TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
 /// parseTemplateArgument - Parse a template argument.
 ///
 /// template-argument ::= type-id | constant-expression | id-expression
+///                     | '...' identifier  (pack expansion)
 TemplateArgument Parser::parseTemplateArgument() {
+  // Check for pack expansion: ...Args
+  if (Tok.is(TokenKind::ellipsis)) {
+    consumeToken(); // consume '...'
+
+    // Parse the pack pattern (could be a type or expression)
+    // For now, we just parse it as a type or expression
+    // In a real compiler, this would be marked as a pack expansion
+    TemplateArgument Pattern = parseTemplateArgument();
+    // Note: We should mark this as a pack expansion
+    // For now, we just return the pattern
+    return Pattern;
+  }
+
   // Try to parse as a type first
   // We need to determine if this is a type or an expression
   // For now, we use a simple heuristic:
@@ -1317,6 +1358,13 @@ TemplateArgument Parser::parseTemplateArgument() {
       Tok.is(TokenKind::kw_unsigned) || Tok.is(TokenKind::kw_signed)) {
     // Parse as type
     QualType Type = parseType();
+
+    // Check for pack expansion after type: Type...
+    if (!Type.isNull() && Tok.is(TokenKind::ellipsis)) {
+      consumeToken(); // consume '...'
+      // Mark as pack expansion (for now, just return the type)
+    }
+
     if (!Type.isNull()) {
       return TemplateArgument(Type);
     }
@@ -1330,6 +1378,13 @@ TemplateArgument Parser::parseTemplateArgument() {
     if (NextTok.is(TokenKind::less)) {
       // This is likely a template-id, parse as type
       QualType Type = parseType();
+
+      // Check for pack expansion after template-id: Template<Args>...
+      if (!Type.isNull() && Tok.is(TokenKind::ellipsis)) {
+        consumeToken(); // consume '...'
+        // Mark as pack expansion
+      }
+
       if (!Type.isNull()) {
         return TemplateArgument(Type);
       }
@@ -1338,6 +1393,13 @@ TemplateArgument Parser::parseTemplateArgument() {
 
     // Otherwise, parse as expression (could be a constant or id-expression)
     Expr *E = parseExpression();
+
+    // Check for pack expansion after expression: expr...
+    if (E && Tok.is(TokenKind::ellipsis)) {
+      consumeToken(); // consume '...'
+      // Mark as pack expansion
+    }
+
     if (E) {
       return TemplateArgument(E);
     }
@@ -1351,6 +1413,13 @@ TemplateArgument Parser::parseTemplateArgument() {
       Tok.is(TokenKind::kw_true) || Tok.is(TokenKind::kw_false) ||
       Tok.is(TokenKind::kw_nullptr)) {
     Expr *E = parseExpression();
+
+    // Check for pack expansion (rare but possible)
+    if (E && Tok.is(TokenKind::ellipsis)) {
+      consumeToken(); // consume '...'
+      // Mark as pack expansion
+    }
+
     if (E) {
       return TemplateArgument(E);
     }
@@ -1359,6 +1428,13 @@ TemplateArgument Parser::parseTemplateArgument() {
 
   // Default: try to parse as expression
   Expr *E = parseExpression();
+
+  // Check for pack expansion
+  if (E && Tok.is(TokenKind::ellipsis)) {
+    consumeToken(); // consume '...'
+    // Mark as pack expansion
+  }
+
   if (E) {
     return TemplateArgument(E);
   }
