@@ -29,6 +29,8 @@ namespace blocktype {
 class TranslationUnitDecl;
 class VarDecl;
 class FriendDecl;
+class NamespaceAliasDecl;
+class UsingEnumDecl;
 class CXXCtorInitializer;
 class FunctionDecl;
 class ParmVarDecl;
@@ -389,17 +391,20 @@ public:
   /// Parses a template-id (e.g., Vector<int>).
   TemplateSpecializationType *parseTemplateId(llvm::StringRef Name);
 
-  /// Parses a namespace declaration.
-  NamespaceDecl *parseNamespaceDeclaration();
+  /// Parses a namespace declaration (including namespace alias).
+  Decl *parseNamespaceDeclaration();
 
   /// Parses a namespace body.
   void parseNamespaceBody(NamespaceDecl *NS);
 
-  /// Parses a using declaration.
-  UsingDecl *parseUsingDeclaration();
+  /// Parses a using declaration (including using enum).
+  Decl *parseUsingDeclaration();
 
   /// Parses a using directive.
   UsingDirectiveDecl *parseUsingDirective();
+
+  /// Parses a namespace alias.
+  NamespaceAliasDecl *parseNamespaceAlias();
 
   /// Parses a module declaration (C++20).
   ModuleDecl *parseModuleDeclaration();

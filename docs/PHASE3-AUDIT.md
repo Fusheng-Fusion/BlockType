@@ -217,6 +217,16 @@ if (Tok.is(TokenKind::equal)) {
 | **using 声明完整形式** | `using A::B::C;` 当前只支持简单标识符 | 🟡 中 | 中 |
 | **using 枚举** | `using enum Color;` (C++20) | 🟢 低 | 低 |
 
+### 4.2.1 已实现功能 ✅ (2026-04-16 更新)
+
+| 功能 | 状态 | 实现位置 |
+|------|------|----------|
+| **嵌套命名空间定义** | ✅ 已实现 | ParseDecl.cpp:1439-1481 |
+| **命名空间别名** | ✅ 已实现 | Decl.h:753-771, ParseDecl.cpp:1437-1470 |
+| **嵌套名称说明符** | ✅ 已实现 | ParseType.cpp:420-460 (parseNestedNameSpecifier) |
+| **using 声明完整形式** | ✅ 已实现 | ParseDecl.cpp:1587-1625 |
+| **using 枚举** | ✅ 已实现 | Decl.h:773-791, ParseDecl.cpp:1601-1613 |
+
 ### 4.3 不完善功能 ⚠️
 
 ```cpp
@@ -235,6 +245,16 @@ if (Tok.is(TokenKind::equal)) {
 // For now, we only support simple namespace names
 // TODO: Implement nested-name-specifier parsing  <-- 问题
 ```
+
+### 4.3.1 已修复功能 ✅ (2026-04-16 更新)
+
+| 功能 | 状态 | 实现位置 |
+|------|------|----------|
+| **嵌套命名空间定义** | ✅ 已修复 | ParseDecl.cpp:1439-1481 |
+| **using 声明嵌套名称说明符** | ✅ 已修复 | ParseDecl.cpp:1587-1600 |
+| **using 指令嵌套名称说明符** | ✅ 已修复 | ParseDecl.cpp:1650-1656 |
+| **UsingDecl 嵌套名称存储** | ✅ 已修复 | Decl.h:719-731 |
+| **UsingDirectiveDecl 嵌套名称存储** | ✅ 已修复 | Decl.h:738-750 |
 
 ---
 

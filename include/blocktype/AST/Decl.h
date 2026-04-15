@@ -717,9 +717,17 @@ public:
 
 /// UsingDecl - Using declaration (using T::x).
 class UsingDecl : public NamedDecl {
+  llvm::StringRef NestedNameSpecifier; // e.g., "A::B::" for using A::B::C;
+  bool HasNestedNameSpecifier;
+
 public:
-  UsingDecl(SourceLocation Loc, llvm::StringRef Name)
-      : NamedDecl(Loc, Name) {}
+  UsingDecl(SourceLocation Loc, llvm::StringRef Name,
+            llvm::StringRef NestedName = "", bool HasNested = false)
+      : NamedDecl(Loc, Name), NestedNameSpecifier(NestedName),
+        HasNestedNameSpecifier(HasNested) {}
+
+  llvm::StringRef getNestedNameSpecifier() const { return NestedNameSpecifier; }
+  bool hasNestedNameSpecifier() const { return HasNestedNameSpecifier; }
 
   NodeKind getKind() const override { return NodeKind::UsingDeclKind; }
 
@@ -736,9 +744,17 @@ public:
 
 /// UsingDirectiveDecl - Using directive declaration (using namespace T).
 class UsingDirectiveDecl : public NamedDecl {
+  llvm::StringRef NestedNameSpecifier; // e.g., "A::B::" for using namespace A::B::C;
+  bool HasNestedNameSpecifier;
+
 public:
-  UsingDirectiveDecl(SourceLocation Loc, llvm::StringRef Name)
-      : NamedDecl(Loc, Name) {}
+  UsingDirectiveDecl(SourceLocation Loc, llvm::StringRef Name,
+                     llvm::StringRef NestedName = "", bool HasNested = false)
+      : NamedDecl(Loc, Name), NestedNameSpecifier(NestedName),
+        HasNestedNameSpecifier(HasNested) {}
+
+  llvm::StringRef getNestedNameSpecifier() const { return NestedNameSpecifier; }
+  bool hasNestedNameSpecifier() const { return HasNestedNameSpecifier; }
 
   NodeKind getKind() const override { return NodeKind::UsingDirectiveDeclKind; }
 
@@ -746,6 +762,65 @@ public:
 
   static bool classof(const ASTNode *N) {
     return N->getKind() == NodeKind::UsingDirectiveDeclKind;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// NamespaceAliasDecl - Namespace alias declaration
+//===----------------------------------------------------------------------===//
+
+/// NamespaceAliasDecl - Namespace alias declaration.
+/// Example: namespace AB = A::B;
+class NamespaceAliasDecl : public NamedDecl {
+  llvm::StringRef AliasedName; // The full qualified name being aliased
+  llvm::StringRef NestedNameSpecifier;
+
+public:
+  NamespaceAliasDecl(SourceLocation Loc, llvm::StringRef AliasName,
+                     llvm::StringRef AliasedName,
+                     llvm::StringRef NestedName = "")
+      : NamedDecl(Loc, AliasName), AliasedName(AliasedName),
+        NestedNameSpecifier(NestedName) {}
+
+  llvm::StringRef getAliasedName() const { return AliasedName; }
+  llvm::StringRef getNestedNameSpecifier() const { return NestedNameSpecifier; }
+
+  NodeKind getKind() const override { return NodeKind::NamespaceAliasDeclKind; }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::NamespaceAliasDeclKind;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// UsingEnumDecl - Using enum declaration (C++20)
+//===----------------------------------------------------------------------===//
+
+/// UsingEnumDecl - Using enum declaration (C++20).
+/// Example: using enum Color;
+class UsingEnumDecl : public Decl {
+  llvm::StringRef EnumName;
+  llvm::StringRef NestedNameSpecifier;
+  bool HasNestedNameSpecifier;
+
+public:
+  UsingEnumDecl(SourceLocation Loc, llvm::StringRef EnumName,
+                llvm::StringRef NestedName = "", bool HasNested = false)
+      : Decl(Loc), EnumName(EnumName), NestedNameSpecifier(NestedName),
+        HasNestedNameSpecifier(HasNested) {}
+
+  llvm::StringRef getEnumName() const { return EnumName; }
+  llvm::StringRef getNestedNameSpecifier() const { return NestedNameSpecifier; }
+  bool hasNestedNameSpecifier() const { return HasNestedNameSpecifier; }
+
+  NodeKind getKind() const override { return NodeKind::UsingEnumDeclKind; }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::UsingEnumDeclKind;
   }
 };
 

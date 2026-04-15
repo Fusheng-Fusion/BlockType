@@ -211,7 +211,11 @@ void TranslationUnitDecl::dump(raw_ostream &OS, unsigned Indent) const {
 
 void UsingDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
-  OS << "UsingDecl " << getName() << "\n";
+  OS << "UsingDecl ";
+  if (HasNestedNameSpecifier) {
+    OS << NestedNameSpecifier;
+  }
+  OS << getName() << "\n";
 }
 
 //===----------------------------------------------------------------------===//
@@ -220,7 +224,37 @@ void UsingDecl::dump(raw_ostream &OS, unsigned Indent) const {
 
 void UsingDirectiveDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
-  OS << "UsingDirectiveDecl " << getName() << "\n";
+  OS << "UsingDirectiveDecl ";
+  if (HasNestedNameSpecifier) {
+    OS << NestedNameSpecifier;
+  }
+  OS << getName() << "\n";
+}
+
+//===----------------------------------------------------------------------===//
+// NamespaceAliasDecl
+//===----------------------------------------------------------------------===//
+
+void NamespaceAliasDecl::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "NamespaceAliasDecl " << getName() << " = ";
+  if (!NestedNameSpecifier.empty()) {
+    OS << NestedNameSpecifier;
+  }
+  OS << AliasedName << "\n";
+}
+
+//===----------------------------------------------------------------------===//
+// UsingEnumDecl
+//===----------------------------------------------------------------------===//
+
+void UsingEnumDecl::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "UsingEnumDecl ";
+  if (HasNestedNameSpecifier) {
+    OS << NestedNameSpecifier;
+  }
+  OS << EnumName << "\n";
 }
 
 //===----------------------------------------------------------------------===//

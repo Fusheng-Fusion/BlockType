@@ -1410,7 +1410,8 @@ TemplateSpecializationType *Parser::parseTemplateId(llvm::StringRef Name) {
 /// namespace-definition ::= 'namespace' identifier? '{' namespace-body '}'
 ///                       | 'inline' 'namespace' identifier '{' namespace-body '}'
 ///                       | 'namespace' identifier '::' identifier '{' namespace-body '}'
-NamespaceDecl *Parser::parseNamespaceDeclaration() {
+///                       | 'namespace' identifier '=' qualified-namespace-specifier ';'
+Decl *Parser::parseNamespaceDeclaration() {
   // Check for 'inline' keyword
   bool IsInline = false;
   if (Tok.is(TokenKind::kw_inline)) {
@@ -1436,9 +1437,90 @@ NamespaceDecl *Parser::parseNamespaceDeclaration() {
     NameLoc = Tok.getLocation();
     consumeToken();
 
+    // Check for namespace alias: namespace AB = A::B;
+    if (Tok.is(TokenKind::equal)) {
+      // Backtrack and parse as namespace alias
+      // Note: We've already consumed the alias name, so we need to handle it
+      // Actually, we can just call parseNamespaceAlias with the current state
+      // But parseNamespaceAlias expects to start after 'namespace' keyword
+      // So we need to handle it inline here
+
+      // Expect '='
+      consumeToken(); // consume '='
+
+      // Parse nested-name-specifier (optional)
+      llvm::StringRef NestedName = parseNestedNameSpecifier();
+
+      // Parse target namespace name
+      if (!Tok.is(TokenKind::identifier)) {
+        emitError(DiagID::err_expected_identifier);
+        return nullptr;
+      }
+
+      llvm::StringRef TargetName = Tok.getText();
+      consumeToken();
+
+      // Expect ';'
+      if (!Tok.is(TokenKind::semicolon)) {
+        emitError(DiagID::err_expected_semi);
+        return nullptr;
+      }
+
+      consumeToken(); // consume ';'
+
+      return Context.create<NamespaceAliasDecl>(NameLoc, Name, TargetName, NestedName);
+    }
+
     // Check for nested namespace definition (C++17): namespace A::B::C { ... }
-    // For now, we only support simple namespace names
-    // TODO: Implement nested namespace definition
+    if (Tok.is(TokenKind::coloncolon)) {
+      // Parse nested namespace definition
+      llvm::SmallVector<std::pair<llvm::StringRef, SourceLocation>, 4> Names;
+      Names.push_back({Name, NameLoc});
+
+      while (Tok.is(TokenKind::coloncolon)) {
+        consumeToken(); // consume '::'
+
+        if (!Tok.is(TokenKind::identifier)) {
+          emitError(DiagID::err_expected_identifier);
+          return nullptr;
+        }
+
+        Names.push_back({Tok.getText(), Tok.getLocation()});
+        consumeToken();
+      }
+
+      // Create nested namespaces (innermost first, then wrap in outer)
+      NamespaceDecl *InnerNS = nullptr;
+      for (auto It = Names.rbegin(); It != Names.rend(); ++It) {
+        NamespaceDecl *NS = Context.create<NamespaceDecl>(It->second, It->first, IsInline && (It == Names.rend() - 1));
+        if (InnerNS) {
+          NS->addDecl(InnerNS);
+        }
+        InnerNS = NS;
+      }
+
+      // Expect '{'
+      if (!Tok.is(TokenKind::l_brace)) {
+        emitError(DiagID::err_expected_lbrace);
+        return InnerNS;
+      }
+
+      consumeToken(); // consume '{'
+
+      // Parse namespace body for the innermost namespace
+      parseNamespaceBody(InnerNS);
+
+      // Expect '}'
+      if (!Tok.is(TokenKind::r_brace)) {
+        emitError(DiagID::err_expected_rbrace);
+        return InnerNS;
+      }
+
+      consumeToken(); // consume '}'
+
+      // Return the outermost namespace
+      return Names.size() == 1 ? InnerNS : InnerNS;
+    }
   }
 
   // Create NamespaceDecl
@@ -1488,7 +1570,8 @@ void Parser::parseNamespaceBody(NamespaceDecl *NS) {
 /// using-declaration ::= 'using' using-declarator-list ';'
 /// using-declarator-list ::= using-declarator (',' using-declarator)*
 /// using-declarator ::= 'typename'? nested-name-specifier unqualified-id
-UsingDecl *Parser::parseUsingDeclaration() {
+///                      | 'using' 'enum' enum-name ';'
+Decl *Parser::parseUsingDeclaration() {
   // Expect 'using' keyword
   if (!Tok.is(TokenKind::kw_using)) {
     emitError(DiagID::err_expected);
@@ -1503,10 +1586,36 @@ UsingDecl *Parser::parseUsingDeclaration() {
     consumeToken(); // consume 'typename'
   }
 
-  // Parse nested-name-specifier and unqualified-id
-  // For now, we only support simple identifiers
-  // TODO: Implement nested-name-specifier parsing
+  // Parse nested-name-specifier (optional)
+  llvm::StringRef NestedName = parseNestedNameSpecifier();
+  bool HasNested = !NestedName.empty();
 
+  // Check for 'enum' keyword (C++20 using enum)
+  if (Tok.is(TokenKind::kw_enum)) {
+    consumeToken(); // consume 'enum'
+
+    // Parse enum name
+    if (!Tok.is(TokenKind::identifier)) {
+      emitError(DiagID::err_expected_identifier);
+      return nullptr;
+    }
+
+    llvm::StringRef EnumName = Tok.getText();
+    SourceLocation EnumNameLoc = Tok.getLocation();
+    consumeToken();
+
+    // Expect ';'
+    if (!Tok.is(TokenKind::semicolon)) {
+      emitError(DiagID::err_expected_semi);
+      return nullptr;
+    }
+
+    consumeToken(); // consume ';'
+
+    return Context.create<UsingEnumDecl>(EnumNameLoc, EnumName, NestedName, HasNested);
+  }
+
+  // Parse unqualified-id
   if (!Tok.is(TokenKind::identifier)) {
     emitError(DiagID::err_expected_identifier);
     return nullptr;
@@ -1524,7 +1633,7 @@ UsingDecl *Parser::parseUsingDeclaration() {
 
   consumeToken(); // consume ';'
 
-  return Context.create<UsingDecl>(NameLoc, Name);
+  return Context.create<UsingDecl>(NameLoc, Name, NestedName, HasNested);
 }
 
 /// parseUsingDirective - Parse a using directive.
@@ -1548,10 +1657,11 @@ UsingDirectiveDecl *Parser::parseUsingDirective() {
 
   consumeToken(); // consume 'namespace'
 
-  // Parse namespace name
-  // For now, we only support simple namespace names
-  // TODO: Implement nested-name-specifier parsing
+  // Parse nested-name-specifier (optional)
+  llvm::StringRef NestedName = parseNestedNameSpecifier();
+  bool HasNested = !NestedName.empty();
 
+  // Parse namespace name
   if (!Tok.is(TokenKind::identifier)) {
     emitError(DiagID::err_expected_identifier);
     return nullptr;
@@ -1569,7 +1679,55 @@ UsingDirectiveDecl *Parser::parseUsingDirective() {
 
   consumeToken(); // consume ';'
 
-  return Context.create<UsingDirectiveDecl>(NameLoc, Name);
+  return Context.create<UsingDirectiveDecl>(NameLoc, Name, NestedName, HasNested);
+}
+
+/// parseNamespaceAlias - Parse a namespace alias declaration.
+///
+/// namespace-alias ::= 'namespace' identifier '=' qualified-namespace-specifier ';'
+/// qualified-namespace-specifier ::= nested-name-specifier? namespace-name
+NamespaceAliasDecl *Parser::parseNamespaceAlias() {
+  // Expect 'namespace' keyword (already consumed by caller)
+
+  // Parse alias name
+  if (!Tok.is(TokenKind::identifier)) {
+    emitError(DiagID::err_expected_identifier);
+    return nullptr;
+  }
+
+  llvm::StringRef AliasName = Tok.getText();
+  SourceLocation AliasNameLoc = Tok.getLocation();
+  consumeToken();
+
+  // Expect '='
+  if (!Tok.is(TokenKind::equal)) {
+    emitError(DiagID::err_expected);
+    return nullptr;
+  }
+
+  consumeToken(); // consume '='
+
+  // Parse nested-name-specifier (optional)
+  llvm::StringRef NestedName = parseNestedNameSpecifier();
+
+  // Parse target namespace name
+  if (!Tok.is(TokenKind::identifier)) {
+    emitError(DiagID::err_expected_identifier);
+    return nullptr;
+  }
+
+  llvm::StringRef TargetName = Tok.getText();
+  consumeToken();
+
+  // Expect ';'
+  if (!Tok.is(TokenKind::semicolon)) {
+    emitError(DiagID::err_expected_semi);
+    return nullptr;
+  }
+
+  consumeToken(); // consume ';'
+
+  return Context.create<NamespaceAliasDecl>(AliasNameLoc, AliasName, TargetName, NestedName);
 }
 
 //===----------------------------------------------------------------------===//

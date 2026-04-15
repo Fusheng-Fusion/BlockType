@@ -169,6 +169,8 @@ DECL(TranslationUnitDecl, Decl)
 // Using declarations
 DECL(UsingDecl, NamedDecl)
 DECL(UsingDirectiveDecl, NamedDecl)
+DECL(NamespaceAliasDecl, NamedDecl)
+DECL(UsingEnumDecl, Decl)
 
 // Template declarations
 DECL(TemplateDecl, NamedDecl)
