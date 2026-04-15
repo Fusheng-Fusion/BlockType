@@ -56,6 +56,16 @@ void FunctionDecl::dump(raw_ostream &OS, unsigned Indent) const {
     OS << " inline";
   if (IsConstexpr)
     OS << " constexpr";
+  if (HasNoexceptSpec) {
+    OS << " noexcept";
+    if (NoexceptExpr) {
+      OS << "(";
+      NoexceptExpr->dump(OS, 0);
+      OS << ")";
+    } else if (!NoexceptValue) {
+      OS << "(false)";
+    }
+  }
   OS << "\n";
 
   if (!Params.empty()) {
@@ -262,12 +272,28 @@ void CXXMethodDecl::dump(raw_ostream &OS, unsigned Indent) const {
     OS << " static";
   if (IsConst)
     OS << " const";
+  if (IsVolatile)
+    OS << " volatile";
   if (IsVirtual)
     OS << " virtual";
   if (IsOverride)
     OS << " override";
   if (IsFinal)
     OS << " final";
+  if (RefQualifier == RQ_LValue)
+    OS << " &";
+  else if (RefQualifier == RQ_RValue)
+    OS << " &&";
+  if (hasNoexceptSpec()) {
+    OS << " noexcept";
+    if (getNoexceptExpr()) {
+      OS << "(";
+      getNoexceptExpr()->dump(OS, 0);
+      OS << ")";
+    } else if (!getNoexceptValue()) {
+      OS << "(false)";
+    }
+  }
   OS << "\n";
 
   if (!getParams().empty()) {

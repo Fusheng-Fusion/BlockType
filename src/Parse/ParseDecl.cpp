@@ -494,6 +494,8 @@ void Parser::parseClassBody(CXXRecordDecl *Class) {
     Decl *Member = parseClassMember(Class);
     if (Member) {
       Class->addMember(Member);
+      // Note: semicolon consumption is handled in parseClassMember for methods
+      // and data members
     } else {
       // Error recovery: skip to next ';' or '}'
       skipUntil({TokenKind::semicolon, TokenKind::r_brace});
@@ -637,15 +639,84 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
       }
     }
 
+    // Parse ref-qualifier (&, &&)
+    CXXMethodDecl::RefQualifierKind RefQual = CXXMethodDecl::RQ_None;
+    if (Tok.is(TokenKind::ampamp)) {
+      consumeToken();
+      RefQual = CXXMethodDecl::RQ_RValue;
+    } else if (Tok.is(TokenKind::amp)) {
+      consumeToken();
+      RefQual = CXXMethodDecl::RQ_LValue;
+    }
+
+    // Parse trailing return type (-> type)
+    if (Tok.is(TokenKind::arrow)) {
+      consumeToken(); // consume '->'
+      QualType TrailingReturnType = parseType();
+      if (!TrailingReturnType.isNull()) {
+        // Replace the return type with the trailing return type
+        Type = TrailingReturnType;
+      }
+    }
+
+    // Parse noexcept specification
+    bool HasNoexceptSpec = false;
+    bool NoexceptValue = false;
+    Expr *NoexceptExpr = nullptr;
+    if (Tok.is(TokenKind::kw_noexcept)) {
+      HasNoexceptSpec = true;
+      consumeToken();
+      
+      if (Tok.is(TokenKind::l_paren)) {
+        consumeToken();
+        // Check if it's noexcept(true), noexcept(false), or noexcept(expression)
+        if (Tok.is(TokenKind::kw_true)) {
+          NoexceptValue = true;
+          consumeToken();
+        } else if (Tok.is(TokenKind::kw_false)) {
+          NoexceptValue = false;
+          consumeToken();
+        } else {
+          // Parse expression
+          NoexceptExpr = parseExpression();
+        }
+        
+        if (!Tok.is(TokenKind::r_paren)) {
+          emitError(DiagID::err_expected_rparen);
+          return nullptr;
+        }
+        consumeToken();
+      } else {
+        // noexcept without parentheses means noexcept(true)
+        NoexceptValue = true;
+      }
+    }
+
     // Parse function body (if present)
     Stmt *Body = nullptr;
     if (Tok.is(TokenKind::l_brace)) {
       Body = parseCompoundStatement();
+    } else if (Tok.is(TokenKind::equal)) {
+      // Parse = default or = delete
+      consumeToken();
+      if (Tok.is(TokenKind::kw_default)) {
+        consumeToken();
+        // Mark as defaulted
+      } else if (Tok.is(TokenKind::kw_delete)) {
+        consumeToken();
+        // Mark as deleted
+      }
+    }
+
+    // Consume optional semicolon
+    if (Tok.is(TokenKind::semicolon)) {
+      consumeToken();
     }
 
     // Create CXXMethodDecl
     CXXMethodDecl *Method = Context.create<CXXMethodDecl>(NameLoc, Name, Type, Params, Class, Body,
-                                         IsStatic, IsConst, false, false, false);
+                                         IsStatic, IsConst, IsVolatile, false, false, false,
+                                         RefQual, HasNoexceptSpec, NoexceptValue, NoexceptExpr);
 
     // Add method to current scope
     if (CurrentScope) {

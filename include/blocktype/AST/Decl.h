@@ -125,13 +125,20 @@ class FunctionDecl : public ValueDecl {
   Stmt *Body; // CompoundStmt or nullptr
   bool IsInline;
   bool IsConstexpr;
+  bool HasNoexceptSpec;
+  bool NoexceptValue; // true if noexcept(true), false if noexcept(false)
+  Expr *NoexceptExpr; // noexcept(expression)
 
 public:
   FunctionDecl(SourceLocation Loc, llvm::StringRef Name, QualType T,
                llvm::ArrayRef<ParmVarDecl *> Params, Stmt *Body = nullptr,
-               bool IsInline = false, bool IsConstexpr = false)
+               bool IsInline = false, bool IsConstexpr = false,
+               bool HasNoexceptSpec = false, bool NoexceptValue = false,
+               Expr *NoexceptExpr = nullptr)
       : ValueDecl(Loc, Name, T), Params(Params.begin(), Params.end()),
-        Body(Body), IsInline(IsInline), IsConstexpr(IsConstexpr) {}
+        Body(Body), IsInline(IsInline), IsConstexpr(IsConstexpr),
+        HasNoexceptSpec(HasNoexceptSpec), NoexceptValue(NoexceptValue),
+        NoexceptExpr(NoexceptExpr) {}
 
   llvm::ArrayRef<ParmVarDecl *> getParams() const { return Params; }
   unsigned getNumParams() const { return Params.size(); }
@@ -142,6 +149,9 @@ public:
 
   bool isInline() const { return IsInline; }
   bool isConstexpr() const { return IsConstexpr; }
+  bool hasNoexceptSpec() const { return HasNoexceptSpec; }
+  bool getNoexceptValue() const { return NoexceptValue; }
+  Expr *getNoexceptExpr() const { return NoexceptExpr; }
 
   NodeKind getKind() const override { return NodeKind::FunctionDeclKind; }
 
@@ -446,6 +456,14 @@ public:
 
 /// CXXMethodDecl - C++ member function declaration.
 class CXXMethodDecl : public FunctionDecl {
+public:
+  enum RefQualifierKind {
+    RQ_None,   // No ref-qualifier
+    RQ_LValue, // & ref-qualifier
+    RQ_RValue  // && ref-qualifier
+  };
+
+private:
   CXXRecordDecl *Parent;
   bool IsStatic;
   bool IsConst;
@@ -453,15 +471,22 @@ class CXXMethodDecl : public FunctionDecl {
   bool IsVirtual;
   bool IsOverride;
   bool IsFinal;
+  RefQualifierKind RefQualifier;
 
 public:
   CXXMethodDecl(SourceLocation Loc, llvm::StringRef Name, QualType T,
                 llvm::ArrayRef<ParmVarDecl *> Params, CXXRecordDecl *Parent,
                 Stmt *Body = nullptr, bool IsStatic = false, bool IsConst = false,
-                bool IsVirtual = false, bool IsOverride = false, bool IsFinal = false)
-      : FunctionDecl(Loc, Name, T, Params, Body), Parent(Parent),
-        IsStatic(IsStatic), IsConst(IsConst), IsVolatile(false),
-        IsVirtual(IsVirtual), IsOverride(IsOverride), IsFinal(IsFinal) {}
+                bool IsVolatile = false, bool IsVirtual = false, 
+                bool IsOverride = false, bool IsFinal = false,
+                RefQualifierKind RefQual = RQ_None,
+                bool HasNoexceptSpec = false, bool NoexceptValue = false,
+                Expr *NoexceptExpr = nullptr)
+      : FunctionDecl(Loc, Name, T, Params, Body, false, false,
+                     HasNoexceptSpec, NoexceptValue, NoexceptExpr),
+        Parent(Parent), IsStatic(IsStatic), IsConst(IsConst), 
+        IsVolatile(IsVolatile), IsVirtual(IsVirtual), 
+        IsOverride(IsOverride), IsFinal(IsFinal), RefQualifier(RefQual) {}
 
   CXXRecordDecl *getParent() const { return Parent; }
 
@@ -471,6 +496,8 @@ public:
   bool isVirtual() const { return IsVirtual; }
   bool isOverride() const { return IsOverride; }
   bool isFinal() const { return IsFinal; }
+  RefQualifierKind getRefQualifier() const { return RefQualifier; }
+  bool hasRefQualifier() const { return RefQualifier != RQ_None; }
 
   NodeKind getKind() const override { return NodeKind::CXXMethodDeclKind; }
 
