@@ -21,17 +21,33 @@ void HeaderSearch::addSearchPath(StringRef Path, bool IsSystem, bool IsFramework
 
 const FileEntry *HeaderSearch::lookupHeader(StringRef Filename, bool IsAngled,
                                             StringRef IncludeDir) {
+  // D13: Check lookup cache first
+  auto CacheKey = std::make_tuple(Filename.str(), IsAngled, IncludeDir.str());
+  auto It = LookupCache.find(CacheKey);
+  if (It != LookupCache.end()) {
+    ++LookupCacheHits;
+    return It->second;
+  }
+  ++LookupCacheMisses;
+
+  const FileEntry *Result = nullptr;
+
   // Absolute path - search directly
   if (isAbsolutePath(Filename)) {
-    return FileMgr.getFile(Filename);
+    Result = FileMgr.getFile(Filename);
+    LookupCache[CacheKey] = Result;
+    return Result;
   }
 
   // For "..." style includes, first search in including directory
   if (!IsAngled && !IncludeDir.empty()) {
     std::string FullPath = joinPath(IncludeDir, Filename);
-    const FileEntry *FE = FileMgr.getFile(FullPath);
-    if (FE) {
-      return FE;
+    if (cachedFileExists(FullPath)) {
+      Result = FileMgr.getFile(FullPath);
+      if (Result) {
+        LookupCache[CacheKey] = Result;
+        return Result;
+      }
     }
   }
 
@@ -51,11 +67,14 @@ const FileEntry *HeaderSearch::lookupHeader(StringRef Filename, bool IsAngled,
     }
 
     if (FE) {
-      return FE;
+      Result = FE;
+      break;
     }
   }
 
-  return nullptr;
+  // D13: Cache the result (including nullptr for not found)
+  LookupCache[CacheKey] = Result;
+  return Result;
 }
 
 bool HeaderSearch::headerExists(StringRef Filename, bool IsAngled) {
@@ -141,6 +160,12 @@ std::string HeaderSearch::joinPath(StringRef Dir, StringRef Filename) {
 
 const FileEntry *HeaderSearch::searchInPath(StringRef Path, StringRef Filename) {
   std::string FullPath = joinPath(Path, Filename);
+
+  // D13: Use cached existence check
+  if (!cachedFileExists(FullPath)) {
+    return nullptr;
+  }
+
   return FileMgr.getFile(FullPath);
 }
 
@@ -148,7 +173,28 @@ const FileEntry *HeaderSearch::searchFramework(StringRef Path, StringRef Filenam
   // Framework search: FrameworkName.framework/Headers/HeaderName
   // Simplified implementation
   std::string FrameworkPath = Path.str() + "/" + Filename.str() + ".framework/Headers/" + Filename.str();
+
+  // D13: Use cached existence check
+  if (!cachedFileExists(FrameworkPath)) {
+    return nullptr;
+  }
+
   return FileMgr.getFile(FrameworkPath);
+}
+
+bool HeaderSearch::cachedFileExists(StringRef Path) {
+  // D13: Check stat cache first
+  auto It = StatCache.find(Path.str());
+  if (It != StatCache.end()) {
+    ++StatCacheHits;
+    return It->second;
+  }
+  ++StatCacheMisses;
+
+  // Check file existence and cache result
+  bool Exists = FileMgr.exists(Path);
+  StatCache[Path.str()] = Exists;
+  return Exists;
 }
 
 } // namespace blocktype

@@ -17,6 +17,8 @@
 #include <vector>
 #include <string>
 #include <set>
+#include <map>
+#include <tuple>
 
 namespace blocktype {
 
@@ -36,6 +38,19 @@ class HeaderSearch {
 
   std::set<std::string> IncludedFiles;
   std::set<std::string> IncludeGuardFiles;
+
+  // D13: Performance optimization caches
+  /// Cache for header lookup results: (Filename, IsAngled, IncludeDir) -> FileEntry*
+  std::map<std::tuple<std::string, bool, std::string>, const FileEntry*> LookupCache;
+
+  /// Cache for file existence checks: Path -> exists
+  std::map<std::string, bool> StatCache;
+
+  /// Cache statistics
+  mutable unsigned LookupCacheHits = 0;
+  mutable unsigned LookupCacheMisses = 0;
+  mutable unsigned StatCacheHits = 0;
+  mutable unsigned StatCacheMisses = 0;
 
 public:
   explicit HeaderSearch(FileManager &FM);
@@ -70,9 +85,24 @@ public:
   static bool isAbsolutePath(StringRef Path);
   static std::string joinPath(StringRef Dir, StringRef Filename);
 
+  // D13: Cache management
+  void clearLookupCache() { LookupCache.clear(); }
+  void clearAllCaches() { LookupCache.clear(); StatCache.clear(); }
+  unsigned getLookupCacheHits() const { return LookupCacheHits; }
+  unsigned getLookupCacheMisses() const { return LookupCacheMisses; }
+  unsigned getStatCacheHits() const { return StatCacheHits; }
+  unsigned getStatCacheMisses() const { return StatCacheMisses; }
+  double getLookupCacheHitRate() const {
+    unsigned total = LookupCacheHits + LookupCacheMisses;
+    return total > 0 ? static_cast<double>(LookupCacheHits) / total : 0.0;
+  }
+
 private:
   const FileEntry *searchInPath(StringRef Path, StringRef Filename);
   const FileEntry *searchFramework(StringRef Path, StringRef Filename);
+
+  /// Check if file exists with caching
+  bool cachedFileExists(StringRef Path);
 };
 
 } // namespace blocktype
