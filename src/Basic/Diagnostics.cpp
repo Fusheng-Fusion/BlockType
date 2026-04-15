@@ -183,22 +183,124 @@ void DiagnosticsEngine::printSourceLine(SourceLocation Loc) {
     ++LineEnd;
   }
 
-  // Print line number
+  // Print line number with padding
   std::string LineNumStr = std::to_string(Line);
-  OS << LineNumStr << " | ";
+  OS << llvm::format("%5s", LineNumStr.c_str()) << " | ";
 
   // Print the source line
   StringRef LineText(LineStart, LineEnd - LineStart);
   OS << LineText << "\n";
 
   // Print caret pointing to the column
-  OS << std::string(LineNumStr.size(), ' ') << " | ";
+  OS << std::string(6, ' ') << "| ";
   OS << std::string(Column - 1, ' ');
 
   if (OS.has_colors()) {
     OS.changeColor(llvm::raw_ostream::GREEN, true);
   }
   OS << "^\n";
+  if (OS.has_colors()) {
+    OS.resetColor();
+  }
+}
+
+void DiagnosticsEngine::printSourceRange(SourceLocation Start, SourceLocation End) {
+  if (!SM) return;
+
+  auto [StartLine, StartCol] = SM->getLineAndColumn(Start);
+  auto [EndLine, EndCol] = SM->getLineAndColumn(End);
+
+  if (StartLine == 0 || EndLine == 0) return;
+
+  if (StartLine == EndLine) {
+    // Single line range - print line and highlight range
+    printSourceLine(Start);
+    printRangeIndicator(StartCol, EndCol);
+  } else {
+    // Multi-line range - print start and end lines
+    printSourceLine(Start);
+    printRangeIndicator(StartCol, SM->getCharacterData(Start).size());
+    OS << "...\n";
+    printSourceLine(End);
+    printRangeIndicator(1, EndCol);
+  }
+}
+
+void DiagnosticsEngine::printErrorContext(SourceLocation Loc, unsigned ContextLines) {
+  if (!SM) return;
+
+  auto [Line, Column] = SM->getLineAndColumn(Loc);
+  if (Line == 0) return;
+
+  const FileInfo *FI = SM->getFileInfo(Loc);
+  if (!FI) return;
+
+  StringRef Content = FI->getContent();
+
+  // Find all line offsets
+  llvm::SmallVector<unsigned, 256> LineOffsets;
+  LineOffsets.push_back(0);
+  for (size_t i = 0; i < Content.size(); ++i) {
+    if (Content[i] == '\n') {
+      LineOffsets.push_back(i + 1);
+    }
+  }
+
+  // Determine range to display
+  unsigned StartLine = std::max(1u, Line - ContextLines);
+  unsigned EndLine = std::min(static_cast<unsigned>(LineOffsets.size()), Line + ContextLines);
+
+  // Print context lines
+  for (unsigned L = StartLine; L <= EndLine; ++L) {
+    unsigned LineOffset = LineOffsets[L - 1];
+    unsigned LineEnd = (L < LineOffsets.size()) ? LineOffsets[L] - 1 : Content.size();
+
+    StringRef LineText = Content.substr(LineOffset, LineEnd - LineOffset);
+
+    // Print line number with highlight for current line
+    std::string LineNumStr = std::to_string(L);
+    if (L == Line) {
+      if (OS.has_colors()) {
+        OS.changeColor(llvm::raw_ostream::CYAN, true);
+      }
+      OS << " > ";
+      if (OS.has_colors()) {
+        OS.resetColor();
+      }
+      OS << llvm::format("%5s", LineNumStr.c_str()) << " | ";
+      OS << LineText << "\n";
+    } else {
+      OS << "   " << llvm::format("%5s", LineNumStr.c_str()) << " | ";
+      OS << LineText << "\n";
+    }
+  }
+
+  // Print caret for error location
+  OS << std::string(6, ' ') << "| ";
+  OS << std::string(Column - 1, ' ');
+  if (OS.has_colors()) {
+    OS.changeColor(llvm::raw_ostream::RED, true);
+  }
+  OS << "^\n";
+  if (OS.has_colors()) {
+    OS.resetColor();
+  }
+}
+
+void DiagnosticsEngine::printRangeIndicator(unsigned StartCol, unsigned EndCol, llvm::StringRef Indicator) {
+  OS << std::string(6, ' ') << "| ";
+  OS << std::string(StartCol - 1, ' ');
+
+  if (OS.has_colors()) {
+    OS.changeColor(llvm::raw_ostream::RED, true);
+  }
+
+  unsigned Length = EndCol > StartCol ? EndCol - StartCol : 1;
+  for (unsigned i = 0; i < Length; ++i) {
+    OS << Indicator;
+  }
+  OS << "\n";
+
   if (OS.has_colors()) {
     OS.resetColor();
   }

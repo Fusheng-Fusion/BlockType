@@ -70,6 +70,9 @@ public:
 private:
   void printDiagnostic(SourceLocation Loc, DiagLevel Level, llvm::StringRef Message);
   void printSourceLine(SourceLocation Loc);
+  void printSourceRange(SourceLocation Start, SourceLocation End);
+  void printErrorContext(SourceLocation Loc, unsigned ContextLines = 2);
+  void printRangeIndicator(unsigned StartCol, unsigned EndCol, llvm::StringRef Indicator = "~");
 };
 
 } // namespace blocktype
