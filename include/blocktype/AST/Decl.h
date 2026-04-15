@@ -415,12 +415,13 @@ private:
   bool HasCopyConstructor;
   bool HasMoveConstructor;
   bool HasDestructor;
+  unsigned CurrentAccess; // Current access specifier (0=private, 1=protected, 2=public)
 
 public:
   CXXRecordDecl(SourceLocation Loc, llvm::StringRef Name, TagKind TK = TK_class)
       : RecordDecl(Loc, Name, TK), HasDefaultConstructor(false),
         HasCopyConstructor(false), HasMoveConstructor(false),
-        HasDestructor(false) {}
+        HasDestructor(false), CurrentAccess(TK == TK_class ? 0 : 2) {} // class默认private, struct/union默认public
 
   // Base classes
   llvm::ArrayRef<BaseSpecifier> bases() const { return Bases; }
@@ -440,6 +441,11 @@ public:
   bool hasCopyConstructor() const { return HasCopyConstructor; }
   bool hasMoveConstructor() const { return HasMoveConstructor; }
   bool hasDestructor() const { return HasDestructor; }
+
+  // Access control
+  unsigned getCurrentAccess() const { return CurrentAccess; }
+  void setCurrentAccess(unsigned Access) { CurrentAccess = Access; }
+  bool isDefaultAccessPublic() const { return getTagKind() == TK_struct || getTagKind() == TK_union; }
 
   NodeKind getKind() const override { return NodeKind::CXXRecordDeclKind; }
 

@@ -441,7 +441,8 @@ CXXRecordDecl *Parser::parseClassDeclaration(SourceLocation ClassLoc) {
 /// parseStructDeclaration - Parse a struct declaration.
 ///
 /// struct-specifier ::= 'struct' identifier? '{' member-specification? '}'
-RecordDecl *Parser::parseStructDeclaration(SourceLocation StructLoc) {
+///                    | 'struct' identifier base-clause? '{' member-specification? '}'
+CXXRecordDecl *Parser::parseStructDeclaration(SourceLocation StructLoc) {
   // Parse struct name (optional)
   llvm::StringRef Name;
   SourceLocation NameLoc;
@@ -452,8 +453,21 @@ RecordDecl *Parser::parseStructDeclaration(SourceLocation StructLoc) {
     consumeToken();
   }
 
-  // Create RecordDecl (struct has public default access)
-  RecordDecl *Struct = Context.create<RecordDecl>(NameLoc, Name, TagDecl::TK_struct);
+  // Create CXXRecordDecl (struct has public default access)
+  CXXRecordDecl *Struct = Context.create<CXXRecordDecl>(NameLoc, Name, TagDecl::TK_struct);
+
+  // Add struct to current scope before parsing body
+  if (CurrentScope) {
+    CurrentScope->addDecl(Struct);
+  }
+
+  // Parse base clause if present (struct can inherit)
+  if (Tok.is(TokenKind::colon)) {
+    if (!parseBaseClause(Struct)) {
+      // Error recovery: skip to '{'
+      skipUntil({TokenKind::l_brace});
+    }
+  }
 
   // Parse struct body
   if (!Tok.is(TokenKind::l_brace)) {
@@ -463,19 +477,8 @@ RecordDecl *Parser::parseStructDeclaration(SourceLocation StructLoc) {
 
   consumeToken(); // consume '{'
 
-  // Parse members
-  while (!Tok.is(TokenKind::r_brace) && !Tok.is(TokenKind::eof)) {
-    Decl *Member = parseClassMember(nullptr); // For struct, use nullptr for now
-    if (Member) {
-      Struct->addField(static_cast<FieldDecl *>(Member));
-    } else {
-      // Error recovery: skip to next ';' or '}'
-      skipUntil({TokenKind::semicolon, TokenKind::r_brace});
-      if (Tok.is(TokenKind::semicolon)) {
-        consumeToken();
-      }
-    }
-  }
+  // Parse members using parseClassBody
+  parseClassBody(Struct);
 
   if (!Tok.is(TokenKind::r_brace)) {
     emitError(DiagID::err_expected_rbrace);
@@ -516,7 +519,12 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
   if (Tok.is(TokenKind::kw_public) || Tok.is(TokenKind::kw_protected) ||
       Tok.is(TokenKind::kw_private)) {
     SourceLocation Loc = Tok.getLocation();
-    return parseAccessSpecifier(Loc);
+    AccessSpecDecl *AccessSpec = parseAccessSpecifier(Loc);
+    if (AccessSpec && Class) {
+      // Update current access specifier
+      Class->setCurrentAccess(AccessSpec->getAccess());
+    }
+    return AccessSpec;
   }
 
   // Check for constructor/destructor (if we're in a class scope)
@@ -1551,7 +1559,7 @@ void Parser::parseEnumerator(EnumDecl *Enum) {
 /// parseUnionDeclaration - Parse a union declaration.
 ///
 /// union-specifier ::= 'union' identifier? '{' member-specification? '}'
-RecordDecl *Parser::parseUnionDeclaration(SourceLocation UnionLoc) {
+CXXRecordDecl *Parser::parseUnionDeclaration(SourceLocation UnionLoc) {
   // Parse union name (optional)
   llvm::StringRef Name;
   SourceLocation NameLoc;
@@ -1562,8 +1570,13 @@ RecordDecl *Parser::parseUnionDeclaration(SourceLocation UnionLoc) {
     consumeToken();
   }
 
-  // Create RecordDecl (union)
-  RecordDecl *Union = Context.create<RecordDecl>(NameLoc, Name, TagDecl::TK_union);
+  // Create CXXRecordDecl (union has public default access)
+  CXXRecordDecl *Union = Context.create<CXXRecordDecl>(NameLoc, Name, TagDecl::TK_union);
+
+  // Add union to current scope before parsing body
+  if (CurrentScope) {
+    CurrentScope->addDecl(Union);
+  }
 
   // Parse union body
   if (!Tok.is(TokenKind::l_brace)) {
@@ -1573,19 +1586,8 @@ RecordDecl *Parser::parseUnionDeclaration(SourceLocation UnionLoc) {
 
   consumeToken(); // consume '{'
 
-  // Parse members
-  while (!Tok.is(TokenKind::r_brace) && !Tok.is(TokenKind::eof)) {
-    Decl *Member = parseClassMember(nullptr);
-    if (Member) {
-      Union->addField(static_cast<FieldDecl *>(Member));
-    } else {
-      // Error recovery: skip to next ';' or '}'
-      skipUntil({TokenKind::semicolon, TokenKind::r_brace});
-      if (Tok.is(TokenKind::semicolon)) {
-        consumeToken();
-      }
-    }
-  }
+  // Parse members using parseClassBody
+  parseClassBody(Union);
 
   if (!Tok.is(TokenKind::r_brace)) {
     emitError(DiagID::err_expected_rbrace);

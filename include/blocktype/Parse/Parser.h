@@ -344,7 +344,7 @@ public:
   CXXRecordDecl *parseClassDeclaration(SourceLocation ClassLoc);
 
   /// Parses a struct declaration.
-  RecordDecl *parseStructDeclaration(SourceLocation StructLoc);
+  CXXRecordDecl *parseStructDeclaration(SourceLocation StructLoc);
 
   /// Parses a class/struct body.
   void parseClassBody(CXXRecordDecl *Class);
@@ -416,7 +416,7 @@ public:
   void parseEnumerator(EnumDecl *Enum);
 
   /// Parses a union declaration.
-  RecordDecl *parseUnionDeclaration(SourceLocation UnionLoc);
+  CXXRecordDecl *parseUnionDeclaration(SourceLocation UnionLoc);
 
   /// Parses a typedef declaration.
   TypedefDecl *parseTypedefDeclaration(SourceLocation TypedefLoc);
