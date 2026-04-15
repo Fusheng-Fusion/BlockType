@@ -137,9 +137,7 @@ public:
   SourceLocation getEndLocation() const {
     if (!Location.isValid())
       return SourceLocation();
-    // Note: This assumes SourceLocation encodes offset information
-    // The actual implementation depends on SourceManager
-    return SourceLocation(Location.getID() + Length);
+    return Location.getLocWithOffset(Length);
   }
 };
 

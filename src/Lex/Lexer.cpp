@@ -45,7 +45,7 @@ Lexer::Lexer(SourceManager &SM, DiagnosticsEngine &Diags,
              StringRef Buffer, SourceLocation StartLoc)
     : SM(SM), Diags(Diags), BufferStart(Buffer.begin()),
       BufferEnd(Buffer.end()), BufferPtr(BufferStart),
-      FileID(StartLoc.getID()) {
+      FileID(StartLoc.getFileID()) {
   // Skip UTF-8 BOM if present
   if (BufferPtr + 3 <= BufferEnd &&
       static_cast<unsigned char>(BufferPtr[0]) == 0xEF &&
@@ -193,8 +193,9 @@ Token Lexer::peekNextToken() {
 }
 
 SourceLocation Lexer::getSourceLocation() const {
-  // Simple encoding: file ID stored in location
-  return SourceLocation(FileID);
+  // Calculate offset from buffer start
+  unsigned Offset = static_cast<unsigned>(BufferPtr - BufferStart);
+  return SourceLocation::getFileLoc(FileID, Offset);
 }
 
 //===----------------------------------------------------------------------===//

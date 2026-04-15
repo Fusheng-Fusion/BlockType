@@ -132,6 +132,12 @@ class Preprocessor {
   std::vector<Token> TokenBuffer;
   size_t TokenBufferIndex = 0;
 
+  // #pragma once tracking
+  std::set<unsigned> PragmaOnceFiles;
+
+  // Current file ID for #pragma once
+  unsigned CurrentFileID = static_cast<unsigned>(-1);
+
 public:
   Preprocessor(SourceManager &SM, DiagnosticsEngine &Diags,
                HeaderSearch *HS = nullptr, LanguageManager *LM = nullptr,

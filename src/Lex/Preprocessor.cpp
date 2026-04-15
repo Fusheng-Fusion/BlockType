@@ -565,6 +565,14 @@ void Preprocessor::handleIncludeDirective(Token &IncludeTok, bool IsAngled) {
     return;
   }
 
+  // Check if this file has been included with #pragma once
+  const FileInfo *FI = SM.getFileInfo(FE->getPath());
+  unsigned FileID = FI ? FI->getFileID() : static_cast<unsigned>(-1);
+  if (FileID != static_cast<unsigned>(-1) && PragmaOnceFiles.count(FileID) > 0) {
+    // File has #pragma once and was already included, skip
+    return;
+  }
+
   // Read the file content
   auto Buffer = FileMgr->getBuffer(FE->getPath());
   if (!Buffer) {
@@ -589,6 +597,7 @@ void Preprocessor::handleIncludeDirective(Token &IncludeTok, bool IsAngled) {
   // Update current filename for __FILE__
   CurrentFilename = Filename;
   CurrentLine = 1;  // Reset line number
+  CurrentFileID = IncludeLoc.getFileID();  // Track current file ID for #pragma once
 
   // Mark as included for #pragma once
   Headers->markIncluded(Filename);
@@ -907,38 +916,370 @@ void Preprocessor::handleEndifDirective(Token &EndifTok) {
   while (lexFromLexer(Tok) && !Tok.is(TokenKind::eod) && !Tok.is(TokenKind::eof)) {}
 }
 
-bool Preprocessor::evaluateCondition(ArrayRef<Token> Tokens) {
-  if (Tokens.empty()) {
-    return false;
+//===----------------------------------------------------------------------===//
+// Preprocessor Expression Evaluation
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+/// PPExprEvaluator - Recursive descent parser for preprocessor expressions.
+///
+/// Supports C++ preprocessor expression syntax including:
+/// - Integer literals (decimal, hex, octal, binary)
+/// - defined operator
+/// - Unary operators: !, ~, -, +
+/// - Binary operators: *, /, %, +, -, <<, >>, <, >, <=, >=, ==, !=, &, ^, |, &&, ||
+/// - Ternary conditional: ?:
+/// - Parentheses for grouping
+class PPExprEvaluator {
+  ArrayRef<Token> Tokens;
+  size_t Pos = 0;
+  Preprocessor &PP;
+
+public:
+  PPExprEvaluator(ArrayRef<Token> Toks, Preprocessor &P)
+      : Tokens(Toks), PP(P) {}
+
+  /// Evaluates the full expression.
+  long long evaluate() {
+    long long Result = parseConditionalExpr();
+    return Result;
   }
 
-  if (Tokens.size() >= 3 && Tokens[0].is(TokenKind::identifier) &&
-      Tokens[0].getText() == "defined") {
-    if (Tokens[1].is(TokenKind::l_paren) && Tokens[2].is(TokenKind::identifier)) {
-      return isMacroDefined(Tokens[2].getText());
-    }
-    if (Tokens[1].is(TokenKind::identifier)) {
-      return isMacroDefined(Tokens[1].getText());
-    }
+private:
+  /// Returns true if at end of tokens.
+  bool isAtEnd() const { return Pos >= Tokens.size(); }
+
+  /// Returns the current token.
+  const Token &peek() const {
+    static Token EmptyToken;
+    return isAtEnd() ? EmptyToken : Tokens[Pos];
   }
 
-  if (Tokens.size() == 1 && Tokens[0].is(TokenKind::identifier)) {
-    StringRef Name = Tokens[0].getText();
-    if (isMacroDefined(Name)) {
+  /// Consumes and returns the current token.
+  Token consume() {
+    if (isAtEnd()) return Token();
+    return Tokens[Pos++];
+  }
+
+  /// Checks if current token matches the given kind.
+  bool check(TokenKind Kind) const {
+    return !isAtEnd() && peek().is(Kind);
+  }
+
+  /// Consumes token if it matches, returns true if consumed.
+  bool match(TokenKind Kind) {
+    if (check(Kind)) {
+      consume();
       return true;
     }
     return false;
   }
 
-  if (Tokens.size() == 1 && Tokens[0].isNumericConstant()) {
-    StringRef Text = Tokens[0].getText();
-    unsigned long long Value = 0;
-    if (!Text.getAsInteger(10, Value)) {
-      return Value != 0;
+  /// Parses a conditional expression (?: operator).
+  long long parseConditionalExpr() {
+    long long Cond = parseLogicalOrExpr();
+    if (match(TokenKind::question)) {
+      long long TrueVal = parseExpression();
+      if (!match(TokenKind::colon)) {
+        PP.getDiagnostics().report(peek().getLocation(), DiagLevel::Error,
+                                   "expected ':' in conditional expression");
+        return 0;
+      }
+      long long FalseVal = parseConditionalExpr();
+      return Cond ? TrueVal : FalseVal;
     }
+    return Cond;
   }
 
-  return false;
+  /// Parses logical OR expression (||).
+  long long parseLogicalOrExpr() {
+    long long Left = parseLogicalAndExpr();
+    while (match(TokenKind::pipepipe)) {
+      long long Right = parseLogicalAndExpr();
+      Left = Left || Right;
+    }
+    return Left;
+  }
+
+  /// Parses logical AND expression (&&).
+  long long parseLogicalAndExpr() {
+    long long Left = parseBitwiseOrExpr();
+    while (match(TokenKind::ampamp)) {
+      long long Right = parseBitwiseOrExpr();
+      Left = Left && Right;
+    }
+    return Left;
+  }
+
+  /// Parses bitwise OR expression (|).
+  long long parseBitwiseOrExpr() {
+    long long Left = parseBitwiseXorExpr();
+    while (match(TokenKind::pipe)) {
+      long long Right = parseBitwiseXorExpr();
+      Left = Left | Right;
+    }
+    return Left;
+  }
+
+  /// Parses bitwise XOR expression (^).
+  long long parseBitwiseXorExpr() {
+    long long Left = parseBitwiseAndExpr();
+    while (match(TokenKind::caret)) {
+      long long Right = parseBitwiseAndExpr();
+      Left = Left ^ Right;
+    }
+    return Left;
+  }
+
+  /// Parses bitwise AND expression (&).
+  long long parseBitwiseAndExpr() {
+    long long Left = parseEqualityExpr();
+    while (match(TokenKind::amp)) {
+      long long Right = parseEqualityExpr();
+      Left = Left & Right;
+    }
+    return Left;
+  }
+
+  /// Parses equality expression (==, !=).
+  long long parseEqualityExpr() {
+    long long Left = parseRelationalExpr();
+    while (true) {
+      if (match(TokenKind::equalequal)) {
+        long long Right = parseRelationalExpr();
+        Left = Left == Right;
+      } else if (match(TokenKind::exclaimequal)) {
+        long long Right = parseRelationalExpr();
+        Left = Left != Right;
+      } else {
+        break;
+      }
+    }
+    return Left;
+  }
+
+  /// Parses relational expression (<, >, <=, >=).
+  long long parseRelationalExpr() {
+    long long Left = parseShiftExpr();
+    while (true) {
+      if (match(TokenKind::less)) {
+        long long Right = parseShiftExpr();
+        Left = Left < Right;
+      } else if (match(TokenKind::greater)) {
+        long long Right = parseShiftExpr();
+        Left = Left > Right;
+      } else if (match(TokenKind::lessequal)) {
+        long long Right = parseShiftExpr();
+        Left = Left <= Right;
+      } else if (match(TokenKind::greaterequal)) {
+        long long Right = parseShiftExpr();
+        Left = Left >= Right;
+      } else {
+        break;
+      }
+    }
+    return Left;
+  }
+
+  /// Parses shift expression (<<, >>).
+  long long parseShiftExpr() {
+    long long Left = parseAdditiveExpr();
+    while (true) {
+      if (match(TokenKind::lessless)) {
+        long long Right = parseAdditiveExpr();
+        Left = Left << Right;
+      } else if (match(TokenKind::greatergreater)) {
+        long long Right = parseAdditiveExpr();
+        Left = Left >> Right;
+      } else {
+        break;
+      }
+    }
+    return Left;
+  }
+
+  /// Parses additive expression (+, -).
+  long long parseAdditiveExpr() {
+    long long Left = parseMultiplicativeExpr();
+    while (true) {
+      if (match(TokenKind::plus)) {
+        long long Right = parseMultiplicativeExpr();
+        Left = Left + Right;
+      } else if (match(TokenKind::minus)) {
+        long long Right = parseMultiplicativeExpr();
+        Left = Left - Right;
+      } else {
+        break;
+      }
+    }
+    return Left;
+  }
+
+  /// Parses multiplicative expression (*, /, %).
+  long long parseMultiplicativeExpr() {
+    long long Left = parseUnaryExpr();
+    while (true) {
+      if (match(TokenKind::star)) {
+        long long Right = parseUnaryExpr();
+        Left = Left * Right;
+      } else if (match(TokenKind::slash)) {
+        long long Right = parseUnaryExpr();
+        if (Right == 0) {
+          PP.getDiagnostics().report(peek().getLocation(), DiagLevel::Error,
+                                     "division by zero in preprocessor expression");
+          return 0;
+        }
+        Left = Left / Right;
+      } else if (match(TokenKind::percent)) {
+        long long Right = parseUnaryExpr();
+        if (Right == 0) {
+          PP.getDiagnostics().report(peek().getLocation(), DiagLevel::Error,
+                                     "modulo by zero in preprocessor expression");
+          return 0;
+        }
+        Left = Left % Right;
+      } else {
+        break;
+      }
+    }
+    return Left;
+  }
+
+  /// Parses unary expression (!, ~, -, +).
+  long long parseUnaryExpr() {
+    if (match(TokenKind::exclaim)) {
+      return !parseUnaryExpr();
+    }
+    if (match(TokenKind::tilde)) {
+      return ~parseUnaryExpr();
+    }
+    if (match(TokenKind::minus)) {
+      return -parseUnaryExpr();
+    }
+    if (match(TokenKind::plus)) {
+      return parseUnaryExpr();
+    }
+    return parsePrimaryExpr();
+  }
+
+  /// Parses primary expression (numbers, identifiers, defined, parentheses).
+  long long parsePrimaryExpr() {
+    // Parenthesized expression
+    if (match(TokenKind::l_paren)) {
+      long long Val = parseConditionalExpr();
+      if (!match(TokenKind::r_paren)) {
+        PP.getDiagnostics().report(peek().getLocation(), DiagLevel::Error,
+                                   "expected ')' in expression");
+        return 0;
+      }
+      return Val;
+    }
+
+    // defined operator
+    if (check(TokenKind::identifier) && peek().getText() == "defined") {
+      consume(); // consume 'defined'
+      if (match(TokenKind::l_paren)) {
+        if (!check(TokenKind::identifier)) {
+          PP.getDiagnostics().report(peek().getLocation(), DiagLevel::Error,
+                                     "expected identifier after 'defined('");
+          return 0;
+        }
+        StringRef MacroName = consume().getText();
+        if (!match(TokenKind::r_paren)) {
+          PP.getDiagnostics().report(peek().getLocation(), DiagLevel::Error,
+                                     "expected ')' after 'defined'");
+          return 0;
+        }
+        return PP.isMacroDefined(MacroName) ? 1 : 0;
+      } else if (check(TokenKind::identifier)) {
+        StringRef MacroName = consume().getText();
+        return PP.isMacroDefined(MacroName) ? 1 : 0;
+      } else {
+        PP.getDiagnostics().report(peek().getLocation(), DiagLevel::Error,
+                                   "expected identifier after 'defined'");
+        return 0;
+      }
+    }
+
+    // Identifier (undefined macro evaluates to 0)
+    if (check(TokenKind::identifier)) {
+      StringRef Name = consume().getText();
+      return PP.isMacroDefined(Name) ? 1 : 0;
+    }
+
+    // Numeric constant
+    if (check(TokenKind::numeric_constant)) {
+      return parseIntegerLiteral();
+    }
+
+    // Character constant
+    if (check(TokenKind::char_constant) || check(TokenKind::utf8_char_constant)) {
+      Token Tok = consume();
+      StringRef Text = Tok.getText();
+      // Remove quotes
+      if (Text.size() >= 3) {
+        Text = Text.substr(1, Text.size() - 2);
+      }
+      // Simple character literal evaluation
+      if (!Text.empty()) {
+        return static_cast<long long>(Text[0]);
+      }
+      return 0;
+    }
+
+    // Unknown token
+    if (!isAtEnd()) {
+      PP.getDiagnostics().report(peek().getLocation(), DiagLevel::Error,
+                                 "invalid token in preprocessor expression");
+      consume();
+    }
+    return 0;
+  }
+
+  /// Parses an integer literal.
+  long long parseIntegerLiteral() {
+    Token Tok = consume();
+    StringRef Text = Tok.getText();
+
+    // Remove suffix (u, l, ul, ll, ull, etc.)
+    while (!Text.empty() && (Text.back() == 'u' || Text.back() == 'U' ||
+                             Text.back() == 'l' || Text.back() == 'L')) {
+      Text = Text.drop_back();
+    }
+
+    long long Value = 0;
+
+    // Hexadecimal: 0x or 0X
+    if (Text.startswith("0x") || Text.startswith("0X")) {
+      Text.getAsInteger(16, Value);
+    }
+    // Binary: 0b or 0B
+    else if (Text.startswith("0b") || Text.startswith("0B")) {
+      Text.getAsInteger(2, Value);
+    }
+    // Octal: starts with 0
+    else if (Text.startswith("0") && Text.size() > 1) {
+      Text.getAsInteger(8, Value);
+    }
+    // Decimal
+    else {
+      Text.getAsInteger(10, Value);
+    }
+
+    return Value;
+  }
+};
+
+} // anonymous namespace
+
+bool Preprocessor::evaluateCondition(ArrayRef<Token> Tokens) {
+  if (Tokens.empty()) {
+    return false;
+  }
+
+  PPExprEvaluator Eval(Tokens, *this);
+  return Eval.evaluate() != 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -978,12 +1319,65 @@ void Preprocessor::handleWarningDirective(Token &WarningTok) {
 }
 
 void Preprocessor::handlePragmaDirective(Token &PragmaTok) {
-  while (true) {
-    Token Tok;
-    if (!lexFromLexer(Tok) || Tok.is(TokenKind::eod) || Tok.is(TokenKind::eof)) {
-      break;
-    }
+  // Get the pragma directive name
+  Token PragmaNameTok;
+  if (!lexFromLexer(PragmaNameTok) || PragmaNameTok.is(TokenKind::eod) || PragmaNameTok.is(TokenKind::eof)) {
+    return;
   }
+
+  StringRef PragmaName = PragmaNameTok.getText();
+
+  // #pragma once - mark file as "include once"
+  if (PragmaName == "once") {
+    // Mark current file as "pragma once" protected
+    if (CurrentFileID != static_cast<unsigned>(-1)) {
+      PragmaOnceFiles.insert(CurrentFileID);
+    }
+    return;
+  }
+
+  // #pragma message("text")
+  if (PragmaName == "message") {
+    Token Tok;
+    if (lexFromLexer(Tok) && Tok.is(TokenKind::l_paren)) {
+      std::string Message;
+      while (lexFromLexer(Tok) && !Tok.is(TokenKind::r_paren) &&
+             !Tok.is(TokenKind::eod) && !Tok.is(TokenKind::eof)) {
+        if (!Message.empty()) Message += " ";
+        Message += Tok.getText().str();
+      }
+      Diags.report(PragmaTok.getLocation(), DiagLevel::Warning, Message);
+    }
+    return;
+  }
+
+  // #pragma warning - for compatibility, just skip
+  if (PragmaName == "warning") {
+    // Skip to end of directive
+    Token Tok;
+    while (lexFromLexer(Tok) && !Tok.is(TokenKind::eod) && !Tok.is(TokenKind::eof)) {}
+    return;
+  }
+
+  // #pragma GCC / #pragma clang - for compatibility, just skip
+  if (PragmaName == "GCC" || PragmaName == "clang") {
+    // Skip to end of directive
+    Token Tok;
+    while (lexFromLexer(Tok) && !Tok.is(TokenKind::eod) && !Tok.is(TokenKind::eof)) {}
+    return;
+  }
+
+  // #pragma region / #pragma endregion - for editor compatibility
+  if (PragmaName == "region" || PragmaName == "endregion") {
+    // Skip to end of directive
+    Token Tok;
+    while (lexFromLexer(Tok) && !Tok.is(TokenKind::eod) && !Tok.is(TokenKind::eof)) {}
+    return;
+  }
+
+  // Unknown pragma - skip with warning
+  Token Tok;
+  while (lexFromLexer(Tok) && !Tok.is(TokenKind::eod) && !Tok.is(TokenKind::eof)) {}
 }
 
 void Preprocessor::handleLineDirective(Token &LineTok) {

@@ -52,6 +52,17 @@ public:
   
   /// Detect encoding of a file
   Encoding detectFileEncoding(llvm::StringRef Path);
+
+  /// Convert buffer to UTF-8
+  /// Returns a new buffer with UTF-8 content, or nullptr if conversion fails
+  std::unique_ptr<llvm::MemoryBuffer> convertToUTF8(llvm::MemoryBuffer *Buffer);
+
+private:
+  /// Convert UTF-16 to UTF-8
+  static std::string convertUTF16ToUTF8(const char *Data, size_t Length, bool BigEndian);
+
+  /// Convert UTF-32 to UTF-8
+  static std::string convertUTF32ToUTF8(const char *Data, size_t Length, bool BigEndian);
 };
 
 } // namespace blocktype

@@ -72,15 +72,15 @@ SourceLocation SourceManager::createFileID(StringRef Filename, StringRef Content
   unsigned FileID = static_cast<unsigned>(Files.size());
   Files.push_back(std::make_unique<FileInfo>(Filename, Content, FileID));
   
-  // Encode file ID in source location (simple encoding: just use file ID)
-  return SourceLocation(FileID);
+  // Return a location at the start of the file (offset 0)
+  return SourceLocation::getFileLoc(FileID, 0);
 }
 
 const FileInfo *SourceManager::getFileInfo(SourceLocation Loc) const {
   if (!Loc.isValid())
     return nullptr;
   
-  unsigned FileID = Loc.getID();
+  unsigned FileID = Loc.getFileID();
   return getFileInfo(FileID);
 }
 
@@ -95,10 +95,7 @@ std::pair<unsigned, unsigned> SourceManager::getLineAndColumn(SourceLocation Loc
   if (!FI)
     return {0, 0};
   
-  // For now, we use a simple encoding where Loc.getID() is the file ID
-  // In a real implementation, we'd have offset information encoded
-  // This is a placeholder that returns line 1, column 1
-  return {1, 1};
+  return FI->getLineAndColumn(Loc.getOffset());
 }
 
 StringRef SourceManager::getCharacterData(SourceLocation Loc) const {
@@ -106,12 +103,27 @@ StringRef SourceManager::getCharacterData(SourceLocation Loc) const {
   if (!FI)
     return StringRef();
   
-  return FI->getContent();
+  unsigned Offset = Loc.getOffset();
+  StringRef Content = FI->getContent();
+  if (Offset >= Content.size())
+    return StringRef();
+  
+  return Content.substr(Offset);
 }
 
 StringRef SourceManager::getCharacterData(SourceLocation Start, SourceLocation End) const {
-  // Placeholder implementation
-  return getCharacterData(Start);
+  const FileInfo *FI = getFileInfo(Start);
+  if (!FI)
+    return StringRef();
+  
+  unsigned StartOffset = Start.getOffset();
+  unsigned EndOffset = End.getOffset();
+  StringRef Content = FI->getContent();
+  
+  if (StartOffset >= Content.size() || EndOffset > Content.size() || StartOffset > EndOffset)
+    return StringRef();
+  
+  return Content.substr(StartOffset, EndOffset - StartOffset);
 }
 
 void SourceManager::printLocation(raw_ostream &OS, SourceLocation Loc) const {
