@@ -1,4 +1,6 @@
 #include "blocktype/Basic/Unicode.h"
+#include "blocktype/Unicode/UnicodeData.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace blocktype {
@@ -20,7 +22,17 @@ bool Unicode::isCJK(uint32_t CP) {
 bool Unicode::isChinese(uint32_t CP) { return isCJK(CP); }
 
 std::string Unicode::normalizeNFC(llvm::StringRef Input) {
-  return Input.str(); // 简化实现
+  // Use the full NFC normalization implementation from blocktype-unicode
+  llvm::SmallVector<char, 256> Output;
+  llvm::StringRef Normalized = unicode::normalizeNFC(Input, Output);
+
+  // If the result references the input (already normalized), return a copy
+  if (Normalized.data() == Input.data()) {
+    return Input.str();
+  }
+
+  // Otherwise, return the normalized string
+  return std::string(Normalized.data(), Normalized.size());
 }
 
 unsigned Unicode::getUTF8ByteLength(uint8_t FirstByte) {

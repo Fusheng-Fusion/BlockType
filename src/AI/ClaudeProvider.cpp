@@ -201,13 +201,70 @@ llvm::Expected<AIResponse> ClaudeProvider::sendStreamingRequest(
   const AIRequest& Request,
   StreamCallback Callback
 ) {
-  // 简化实现：调用非流式版本
-  auto Response = sendRequest(Request);
-  if (Response && Callback) {
-    Callback(Response->Content, false);
+  auto StartTime = std::chrono::high_resolution_clock::now();
+
+  AIResponse FinalResponse;
+  FinalResponse.Success = false;
+  FinalResponse.Provider = "Claude";
+
+  std::string FullContent;
+
+  // 构建流式请求体
+  std::string Body = buildStreamingPrompt(Request);
+
+  // 设置请求头
+  std::map<std::string, std::string> Headers = {
+    {"Content-Type", "application/json"},
+    {"x-api-key", APIKey},
+    {"anthropic-version", "2023-06-01"}
+  };
+
+  // SSE 回调函数
+  auto SSECallback = [&](llvm::StringRef Data, bool Done) {
+    if (Done) {
+      return;
+    }
+
+    // 解析流式响应块
+    auto ChunkResponse = parseStreamingChunk(Data.str());
+    if (ChunkResponse && ChunkResponse->Success) {
+      FullContent += ChunkResponse->Content;
+
+      // 调用用户回调
+      if (Callback) {
+        Callback(ChunkResponse->Content, false);
+      }
+    }
+  };
+
+  // 发送 SSE 请求
+  auto HTTPResponse = HTTPClient::postSSE(APIEndpoint, Body, Headers, SSECallback, TimeoutMs);
+  if (!HTTPResponse) {
+    return HTTPResponse.takeError();
+  }
+
+  if (!HTTPResponse->Success) {
+    return llvm::make_error<llvm::StringError>(
+      HTTPResponse->ErrorMessage,
+      std::make_error_code(std::errc::protocol_error)
+    );
+  }
+
+  // 构建最终响应
+  FinalResponse.Success = true;
+  FinalResponse.Content = FullContent;
+
+  // 计算延迟
+  auto EndTime = std::chrono::high_resolution_clock::now();
+  auto Duration = std::chrono::duration_cast<std::chrono::milliseconds>(EndTime - StartTime);
+  FinalResponse.LatencyMs = Duration.count();
+
+  // 调用最终回调
+  if (Callback) {
     Callback("", true);
   }
-  return Response;
+
+  return FinalResponse;
 }
 
 } // namespace blocktype

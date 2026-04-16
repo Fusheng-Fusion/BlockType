@@ -729,7 +729,6 @@ Expr *Parser::parseIdentifier() {
     // Three-layer disambiguation strategy:
 
     // Layer 1: Check if next token is a type keyword
-    Token NextTok = PP.peekToken(0);
     if (isTypeKeyword(NextTok.getKind())) {
       return parseTemplateSpecializationExpr(Loc, Name);
     }
@@ -826,13 +825,6 @@ Expr *Parser::parseQualifiedName(SourceLocation StartLoc, llvm::StringRef FirstN
 ///
 /// template-specialization-expr ::= identifier '<' template-argument-list? '>'
 ///
-/// ⚠️⚠️⚠️ CRITICAL TECHNICAL DEBT ⚠️⚠️⚠️
-///
-/// This is a TEMPORARY, INCOMPLETE implementation that MUST be fixed before Phase 4.
-///
-/// Current implementation: Only consumes tokens without parsing them
-/// This is NOT a "reasonable trade-off" - it's a known deficiency that will cause:
-///
 /// Parse a template specialization expression (e.g., Vector<int>, std::vector<std::string>).
 ///
 /// This function properly parses template arguments and creates a TemplateSpecializationExpr
@@ -875,7 +867,7 @@ Expr *Parser::parseTemplateSpecializationExpr(SourceLocation StartLoc, llvm::Str
         VD = dyn_cast<ValueDecl>(D);
       }
     }
-    return Context.create<TemplateSpecializationExpr>(StartLoc, TemplateName, 
+    return Context.create<TemplateSpecializationExpr>(StartLoc, TemplateName,
                                                        TemplateArgs, VD);
   }
 
@@ -910,24 +902,27 @@ bool Parser::isTypeKeyword(TokenKind K) {
 /// This is the third layer of disambiguation. We try to parse template arguments
 /// and check if it looks like a valid template specialization. If not, we backtrack
 /// and return nullptr to indicate it should be parsed as a comparison.
+///
+/// NOTE: We avoid using TentativeParsingAction here to prevent conflicts with
+/// nested TPA in parseTemplateArgument(). Instead, we use a simple token-counting
+/// heuristic to determine if this looks like a template.
 Expr *Parser::tryParseTemplateOrComparison(SourceLocation Loc, llvm::StringRef Name) {
-  // Save the current parser state for backtracking
-  TentativeParsingAction TPA(*this);
+  // Simple heuristic: check if we can reach a matching '>' without errors
+  // We don't use TPA here to avoid conflicts with nested TPA in parseTemplateArgument()
+
+  // Save the current token position (manually, without TPA)
+  Token SavedTok = Tok;
+  Token SavedNextTok = NextTok;
+  size_t SavedBufferIndex = PP.saveTokenBufferState();
 
   // Try to parse '<' template-arguments '>'
   consumeToken(); // consume '<'
 
-  // Check if this looks like a template argument list
-  // A valid template argument list should:
-  // 1. Start with a type keyword, identifier, or constant
-  // 2. End with '>' (not '>>' which could be shift operator)
-  // 3. Have balanced angle brackets
-
   bool IsValidTemplate = false;
 
-  // Simple heuristic: check if we can reach a matching '>' without errors
+  // Check if this looks like a template argument list
   if (Tok.is(TokenKind::identifier) || isTypeKeyword(Tok.getKind()) ||
-      Tok.is(TokenKind::integer_literal) || Tok.is(TokenKind::floating_literal)) {
+      Tok.is(TokenKind::numeric_constant)) {
 
     // Try to consume tokens until we find a matching '>'
     int Depth = 1;
@@ -941,20 +936,29 @@ Expr *Parser::tryParseTemplateOrComparison(SourceLocation Loc, llvm::StringRef N
           break;
         }
       } else if (Tok.is(TokenKind::greatergreater)) {
-        // '>>' could be a nested template closing or shift operator
-        // In template context, it's usually nested closing
-        Depth -= 2;
-        if (Depth == 0) {
-          IsValidTemplate = true;
-          break;
+        // '>>' in C++11+ is treated as two '>' tokens for nested templates
+        if (Depth >= 2) {
+          Depth -= 2;
+          if (Depth == 0) {
+            IsValidTemplate = true;
+            break;
+          }
+        } else if (Depth == 1) {
+          Depth--;
+          if (Depth == 0) {
+            IsValidTemplate = true;
+            break;
+          }
         }
       }
       consumeToken();
     }
   }
 
-  // Restore the parser state (we'll parse for real if it's valid)
-  TPA.abort();
+  // Restore the parser state manually
+  Tok = SavedTok;
+  NextTok = SavedNextTok;
+  PP.restoreTokenBufferState(SavedBufferIndex);
 
   // If it looks like a valid template specialization, parse it for real
   if (IsValidTemplate) {

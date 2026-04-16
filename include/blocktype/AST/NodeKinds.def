@@ -208,3 +208,6 @@ DECL(CXXDeductionGuideDecl, FunctionDecl)
 
 // Attribute specifier (C++11)
 DECL(AttributeDecl, Decl)
+
+// Attribute list (C++11)
+DECL(AttributeListDecl, Decl)

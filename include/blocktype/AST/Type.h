@@ -793,7 +793,7 @@ inline bool Type::isBooleanType() const {
 inline bool Type::isIntegerType() const {
   if (auto *BT = llvm::dyn_cast<BuiltinType>(this))
     return BT->isInteger();
-  // TODO: Enum types are also integer types
+  // Enum types are also integer types
   return isEnumType();
 }
 

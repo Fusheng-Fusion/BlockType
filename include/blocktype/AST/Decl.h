@@ -26,6 +26,18 @@ class CompoundStmt;
 class ParmVarDecl; // Forward declaration
 class CXXMethodDecl; // Forward declaration
 class CXXRecordDecl; // Forward declaration
+class AccessSpecDecl; // Forward declaration
+
+//===----------------------------------------------------------------------===//
+// AccessSpecifier - Access control enumeration
+//===----------------------------------------------------------------------===//
+
+/// AccessSpecifier - Access control for class members.
+enum class AccessSpecifier {
+  AS_public,
+  AS_protected,
+  AS_private
+};
 
 //===----------------------------------------------------------------------===//
 // Decl - Base class for all declarations
@@ -196,18 +208,27 @@ class FieldDecl : public ValueDecl {
   Expr *BitWidth;
   Expr *InClassInitializer;
   bool IsMutable;
+  AccessSpecifier Access;
 
 public:
   FieldDecl(SourceLocation Loc, llvm::StringRef Name, QualType T,
             Expr *BitWidth = nullptr, bool IsMutable = false,
-            Expr *InClassInit = nullptr)
+            Expr *InClassInit = nullptr,
+            AccessSpecifier Access = AccessSpecifier::AS_private)
       : ValueDecl(Loc, Name, T), BitWidth(BitWidth),
-        InClassInitializer(InClassInit), IsMutable(IsMutable) {}
+        InClassInitializer(InClassInit), IsMutable(IsMutable), Access(Access) {}
 
   Expr *getBitWidth() const { return BitWidth; }
   bool isMutable() const { return IsMutable; }
   Expr *getInClassInitializer() const { return InClassInitializer; }
   bool hasInClassInitializer() const { return InClassInitializer != nullptr; }
+  
+  AccessSpecifier getAccess() const { return Access; }
+  void setAccess(AccessSpecifier A) { Access = A; }
+  
+  bool isPublic() const { return Access == AccessSpecifier::AS_public; }
+  bool isProtected() const { return Access == AccessSpecifier::AS_protected; }
+  bool isPrivate() const { return Access == AccessSpecifier::AS_private; }
 
   NodeKind getKind() const override { return NodeKind::FieldDeclKind; }
 
@@ -489,6 +510,7 @@ private:
   bool IsDefaulted;
   bool IsDeleted;
   RefQualifierKind RefQualifier;
+  AccessSpecifier Access;
 
 public:
   CXXMethodDecl(SourceLocation Loc, llvm::StringRef Name, QualType T,
@@ -499,13 +521,14 @@ public:
                 bool IsDefaulted = false, bool IsDeleted = false,
                 RefQualifierKind RefQual = RQ_None,
                 bool HasNoexceptSpec = false, bool NoexceptValue = false,
-                Expr *NoexceptExpr = nullptr)
+                Expr *NoexceptExpr = nullptr,
+                AccessSpecifier Access = AccessSpecifier::AS_private)
       : FunctionDecl(Loc, Name, T, Params, Body, false, false,
                      HasNoexceptSpec, NoexceptValue, NoexceptExpr),
         Parent(Parent), IsStatic(IsStatic), IsConst(IsConst), 
         IsVolatile(IsVolatile), IsVirtual(IsVirtual), IsPureVirtual(IsPureVirtual),
         IsOverride(IsOverride), IsFinal(IsFinal), IsDefaulted(IsDefaulted),
-        IsDeleted(IsDeleted), RefQualifier(RefQual) {}
+        IsDeleted(IsDeleted), RefQualifier(RefQual), Access(Access) {}
 
   CXXRecordDecl *getParent() const { return Parent; }
 
@@ -520,6 +543,13 @@ public:
   bool isDeleted() const { return IsDeleted; }
   RefQualifierKind getRefQualifier() const { return RefQualifier; }
   bool hasRefQualifier() const { return RefQualifier != RQ_None; }
+  
+  AccessSpecifier getAccess() const { return Access; }
+  void setAccess(AccessSpecifier A) { Access = A; }
+  
+  bool isPublic() const { return Access == AccessSpecifier::AS_public; }
+  bool isProtected() const { return Access == AccessSpecifier::AS_protected; }
+  bool isPrivate() const { return Access == AccessSpecifier::AS_private; }
 
   NodeKind getKind() const override { return NodeKind::CXXMethodDeclKind; }
 
@@ -641,13 +671,6 @@ public:
 
 /// AccessSpecDecl - Access specifier declaration (public, protected, private).
 class AccessSpecDecl : public Decl {
-public:
-  enum AccessSpecifier {
-    AS_public,
-    AS_protected,
-    AS_private
-  };
-
 private:
   AccessSpecifier Access;
   SourceLocation ColonLoc;
@@ -727,15 +750,19 @@ public:
 class UsingDecl : public NamedDecl {
   llvm::StringRef NestedNameSpecifier; // e.g., "A::B::" for using A::B::C;
   bool HasNestedNameSpecifier;
+  bool IsInheritingConstructor; // true for "using Base::Base;"
 
 public:
   UsingDecl(SourceLocation Loc, llvm::StringRef Name,
-            llvm::StringRef NestedName = "", bool HasNested = false)
+            llvm::StringRef NestedName = "", bool HasNested = false,
+            bool IsInheritingCtor = false)
       : NamedDecl(Loc, Name), NestedNameSpecifier(NestedName),
-        HasNestedNameSpecifier(HasNested) {}
+        HasNestedNameSpecifier(HasNested),
+        IsInheritingConstructor(IsInheritingCtor) {}
 
   llvm::StringRef getNestedNameSpecifier() const { return NestedNameSpecifier; }
   bool hasNestedNameSpecifier() const { return HasNestedNameSpecifier; }
+  bool isInheritingConstructor() const { return IsInheritingConstructor; }
 
   NodeKind getKind() const override { return NodeKind::UsingDeclKind; }
 
@@ -1348,6 +1375,35 @@ public:
 
   static bool classof(const ASTNode *N) {
     return N->getKind() == NodeKind::AttributeDeclKind;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// AttributeListDecl - List of attribute specifiers (C++11)
+//===----------------------------------------------------------------------===//
+
+/// AttributeListDecl - List of attribute specifiers.
+/// Example: [[nodiscard, deprecated("reason")]]
+class AttributeListDecl : public Decl {
+  llvm::SmallVector<AttributeDecl *, 4> Attrs;
+
+public:
+  AttributeListDecl(SourceLocation Loc) : Decl(Loc) {}
+
+  void addAttribute(AttributeDecl *Attr) { Attrs.push_back(Attr); }
+
+  llvm::ArrayRef<AttributeDecl *> getAttributes() const { return Attrs; }
+
+  size_t size() const { return Attrs.size(); }
+
+  bool empty() const { return Attrs.empty(); }
+
+  NodeKind getKind() const override { return NodeKind::AttributeListDeclKind; }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::AttributeListDeclKind;
   }
 };
 

@@ -234,20 +234,22 @@ Token Preprocessor::peekToken(unsigned N) {
 }
 
 bool Preprocessor::consumeToken(Token &Result) {
-  // If buffer is empty, lex directly
+  // Fill buffer if empty - this ensures TentativeParsingAction can work
   if (TokenBufferIndex >= TokenBuffer.size()) {
-    return lexToken(Result);
+    Token Tok;
+    if (!lexFromLexer(Tok)) {
+      Tok.setKind(TokenKind::eof);
+    }
+    TokenBuffer.push_back(Tok);
   }
-  
+
   // Return from buffer
   Result = TokenBuffer[TokenBufferIndex++];
-  
-  // Clean up buffer when fully consumed
-  if (TokenBufferIndex >= TokenBuffer.size()) {
-    TokenBuffer.clear();
-    TokenBufferIndex = 0;
-  }
-  
+
+  // Note: Don't clear the buffer here! TentativeParsingAction needs to restore
+  // the TokenBufferIndex, so we need to keep the tokens in the buffer.
+  // The buffer will be cleared when we know we won't need to backtrack.
+
   return !Result.is(TokenKind::eof);
 }
 
@@ -343,6 +345,7 @@ void Preprocessor::handleDirective(Token &HashTok) {
   // Check if it's a Chinese directive
   if (ChineseDirectiveMap.find(DirectiveName.str()) != ChineseDirectiveMap.end()) {
     handleBilingualDirective(DirectiveTok);
+    CurLexer->setInPreprocessorDirective(false);
     return;
   }
 
@@ -379,6 +382,9 @@ void Preprocessor::handleDirective(Token &HashTok) {
   } else {
     Diags.report(DirectiveTok.getLocation(), DiagLevel::Error, "unknown preprocessor directive");
   }
+
+  // Reset preprocessor directive mode
+  CurLexer->setInPreprocessorDirective(false);
 }
 
 StringRef Preprocessor::getDirectiveName(Token &Tok) {
@@ -626,12 +632,12 @@ void Preprocessor::handleIncludeDirective(Token &IncludeTok, bool IsAngled) {
   // B3.5: Try relative path first (from current file directory)
   const FileEntry *FE = nullptr;
   if (!IsAngled && !IncludeStack.empty()) {
-    StringRef CurrentDir = IncludeStack.back().Filename;
+    StringRef CurrentFile = IncludeStack.back().Filename;
     // Find directory part
-    size_t LastSlash = CurrentDir.rfind('/');
+    size_t LastSlash = CurrentFile.rfind('/');
     if (LastSlash != StringRef::npos) {
-      std::string RelativePath = CurrentDir.substr(0, LastSlash + 1).str() + Filename.str();
-      FE = Headers->lookupHeader(RelativePath, false);
+      StringRef IncludeDir = CurrentFile.substr(0, LastSlash);
+      FE = Headers->lookupHeader(Filename, false, IncludeDir);
     }
   }
 

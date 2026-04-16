@@ -314,14 +314,13 @@ Decl *Parser::parseDeclaration() {
     llvm::StringRef MemberName = Tok.getText();
     SourceLocation MemberLoc = Tok.getLocation();
     consumeToken();
-    
+
     // This is a static member definition
-    // For now, treat it as a variable declaration
     // Check if this is a function definition
     if (Tok.is(TokenKind::l_paren)) {
       return parseFunctionDeclaration(Type, MemberName, MemberLoc, IsStatic, IsConstexpr, IsInline);
     }
-    
+
     return parseVariableDeclaration(Type, MemberName, MemberLoc, IsStatic, IsConstexpr);
   }
 
@@ -400,14 +399,17 @@ FunctionDecl *Parser::parseFunctionDeclaration(QualType ReturnType,
                                                bool IsConstexpr, bool IsInline) {
   // Parse parameter list
   llvm::SmallVector<ParmVarDecl *, 8> Params;
-  
+  unsigned ParamIndex = 0;
+
   expectAndConsume(TokenKind::l_paren, "expected '(' in function declaration");
-  
+
   while (!Tok.is(TokenKind::r_paren)) {
-    ParmVarDecl *Param = parseParameterDeclaration();
-    if (Param)
+    ParmVarDecl *Param = parseParameterDeclaration(ParamIndex);
+    if (Param) {
       Params.push_back(Param);
-    
+      ++ParamIndex;
+    }
+
     if (!Tok.is(TokenKind::comma))
       break;
     consumeToken();
@@ -454,34 +456,33 @@ FunctionDecl *Parser::parseFunctionDeclaration(QualType ReturnType,
 /// parameter-declaration ::= decl-specifier-seq declarator?
 ///                         | decl-specifier-seq declarator '=' assignment-expression
 ///
-ParmVarDecl *Parser::parseParameterDeclaration() {
+ParmVarDecl *Parser::parseParameterDeclaration(unsigned Index) {
   // Parse type
   QualType Type = parseType();
   if (Type.isNull()) {
     emitError(DiagID::err_expected_type);
     return nullptr;
   }
-  
+
   // Parse parameter name (optional)
   llvm::StringRef Name;
   SourceLocation NameLoc;
-  
+
   if (Tok.is(TokenKind::identifier)) {
     Name = Tok.getText();
     NameLoc = Tok.getLocation();
     consumeToken();
   }
-  
+
   // Parse default argument
   Expr *DefaultArg = nullptr;
   if (Tok.is(TokenKind::equal)) {
     consumeToken();
     DefaultArg = parseExpression();
   }
-  
-  // Create ParmVarDecl
-  // Use 0 as the index for now (will be set correctly later)
-  return Context.create<ParmVarDecl>(NameLoc, Name, Type, 0, DefaultArg);
+
+  // Create ParmVarDecl with the correct index
+  return Context.create<ParmVarDecl>(NameLoc, Name, Type, Index, DefaultArg);
 }
 
 //===----------------------------------------------------------------------===//
@@ -639,7 +640,7 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
     AccessSpecDecl *AccessSpec = parseAccessSpecifier(Loc);
     if (AccessSpec && Class) {
       // Update current access specifier
-      Class->setCurrentAccess(AccessSpec->getAccess());
+      Class->setCurrentAccess(static_cast<unsigned>(AccessSpec->getAccess()));
     }
     return AccessSpec;
   }
@@ -712,13 +713,14 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
           // If Second == First, this is inheriting constructor: using Base::Base;
           if (Second == First) {
             // This is an inheriting constructor declaration
-            // For now, create a UsingDecl to represent it
+            // Create UsingDecl with IsInheritingConstructor flag
             if (!Tok.is(TokenKind::semicolon)) {
               emitError(DiagID::err_expected_semi);
               return nullptr;
             }
             consumeToken();
-            return Context.create<UsingDecl>(UsingLoc, First);
+            return Context.create<UsingDecl>(UsingLoc, First, llvm::StringRef(First.str() + "::"),
+                                             true, true);
           }
           // Otherwise, it's a regular using declaration
           // Fall through to handle as regular using declaration
@@ -778,10 +780,14 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
           return parseConstructorDeclaration(Class, NameLoc);
         }
         // Otherwise it might be a member variable with the same name as the class
-        // Fall through to normal member parsing
-        // But we've already consumed the identifier, so we need to handle this case
-        // For now, emit an error
-        emitError(DiagID::err_expected);
+        // This is legal in C++ but unusual - emit a warning and try to continue
+        emitError(DiagID::err_expected_lparen);
+
+        // Try to recover: skip to next ';' or '}'
+        skipUntil({TokenKind::semicolon, TokenKind::r_brace});
+        if (Tok.is(TokenKind::semicolon)) {
+          consumeToken();
+        }
         return nullptr;
       }
     }
@@ -827,18 +833,20 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
   if (Tok.is(TokenKind::l_paren)) {
     // Parse member function
     llvm::SmallVector<ParmVarDecl *, 8> Params;
+    unsigned ParamIndex = 0;
     consumeToken(); // consume '('
 
     // Parse parameters
     if (!Tok.is(TokenKind::r_paren)) {
       do {
-        ParmVarDecl *Param = parseParameterDeclaration();
+        ParmVarDecl *Param = parseParameterDeclaration(ParamIndex);
         if (!Param) {
           emitError(DiagID::err_expected_type);
           skipUntil({TokenKind::r_paren, TokenKind::semicolon});
           break;
         }
         Params.push_back(Param);
+        ++ParamIndex;
 
         if (Tok.is(TokenKind::comma)) {
           consumeToken();
@@ -978,10 +986,13 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
     }
 
     // Create CXXMethodDecl
+    AccessSpecifier Access =
+        static_cast<AccessSpecifier>(Class->getCurrentAccess());
     CXXMethodDecl *Method = Context.create<CXXMethodDecl>(NameLoc, Name, Type, Params, Class, Body,
                                          IsStatic, IsConst, IsVolatile, IsVirtual, IsPureVirtual,
                                          IsOverride, IsFinal, IsDefaulted, IsDeleted,
-                                         RefQual, HasNoexceptSpec, NoexceptValue, NoexceptExpr);
+                                         RefQual, HasNoexceptSpec, NoexceptValue, NoexceptExpr,
+                                         Access);
 
     // Add method to current scope
     if (CurrentScope) {
@@ -1022,23 +1033,25 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
     return VD;
   }
   
-  return Context.create<FieldDecl>(NameLoc, Name, Type, BitWidth, IsMutable, InClassInit);
+  AccessSpecifier Access =
+      static_cast<AccessSpecifier>(Class->getCurrentAccess());
+  return Context.create<FieldDecl>(NameLoc, Name, Type, BitWidth, IsMutable, InClassInit, Access);
 }
 
 /// parseAccessSpecifier - Parse an access specifier.
 ///
 /// access-specifier ::= 'public' | 'protected' | 'private'
 AccessSpecDecl *Parser::parseAccessSpecifier(SourceLocation Loc) {
-  AccessSpecDecl::AccessSpecifier Access;
+  AccessSpecifier Access;
 
   if (Tok.is(TokenKind::kw_public)) {
-    Access = AccessSpecDecl::AS_public;
+    Access = AccessSpecifier::AS_public;
     consumeToken();
   } else if (Tok.is(TokenKind::kw_protected)) {
-    Access = AccessSpecDecl::AS_protected;
+    Access = AccessSpecifier::AS_protected;
     consumeToken();
   } else if (Tok.is(TokenKind::kw_private)) {
-    Access = AccessSpecDecl::AS_private;
+    Access = AccessSpecifier::AS_private;
     consumeToken();
   } else {
     emitError(DiagID::err_expected_identifier);
@@ -1551,46 +1564,6 @@ TemplateArgument Parser::parseTemplateArgument() {
     return Arg;
   }
   return TemplateArgument(static_cast<Expr *>(nullptr));
-
-  // Check for literal (definitely an expression)
-  if (Tok.is(TokenKind::numeric_constant) ||
-      Tok.is(TokenKind::string_literal) ||
-      Tok.is(TokenKind::char_constant) ||
-      Tok.is(TokenKind::kw_true) || Tok.is(TokenKind::kw_false) ||
-      Tok.is(TokenKind::kw_nullptr)) {
-    Expr *E = parseExpression();
-
-    // Check for pack expansion (rare but possible)
-    bool IsPackExpansion = false;
-    if (E && Tok.is(TokenKind::ellipsis)) {
-      consumeToken(); // consume '...'
-      IsPackExpansion = true;
-    }
-
-    if (E) {
-      TemplateArgument Arg(E);
-      if (IsPackExpansion) {
-        Arg.setPackExpansion(true);
-      }
-      return Arg;
-    }
-    return TemplateArgument(static_cast<Expr *>(nullptr));
-  }
-
-  // Default: try to parse as expression
-  Expr *E = parseExpression();
-
-  // Check for pack expansion
-  if (E && Tok.is(TokenKind::ellipsis)) {
-    consumeToken(); // consume '...'
-    // Mark as pack expansion
-  }
-
-  if (E) {
-    return TemplateArgument(E);
-  }
-
-  return TemplateArgument(QualType());
 }
 
 /// parseTemplateArgumentList - Parse a template argument list.
@@ -2057,6 +2030,9 @@ ModuleDecl *Parser::parseModuleDeclaration() {
     PartitionName = parseModulePartition();
   }
 
+  // Create ModuleDecl with full module name
+  ModuleDecl *MD = Context.create<ModuleDecl>(ModuleLoc, FullModuleName, IsExported, PartitionName, IsModulePartition);
+
   // Parse attribute-specifier-seq (optional)
   // Attributes are specified using [[...]] syntax
   while (Tok.is(TokenKind::l_square)) {
@@ -2081,7 +2057,7 @@ ModuleDecl *Parser::parseModuleDeclaration() {
       if (Tok.is(TokenKind::identifier)) {
         std::string AttrName = Tok.getText().str();
         consumeToken();
-        
+
         // Parse optional attribute argument clause
         if (Tok.is(TokenKind::l_paren)) {
           consumeToken(); // consume '('
@@ -2094,9 +2070,9 @@ ModuleDecl *Parser::parseModuleDeclaration() {
             consumeToken(); // consume ')'
           }
         }
-        
-        // Store the attribute (will be added to ModuleDecl later)
-        // For now, we just skip it
+
+        // Store the attribute in ModuleDecl
+        MD->addAttribute(llvm::StringRef(AttrName));
       } else {
         consumeToken();
       }
@@ -2123,9 +2099,6 @@ ModuleDecl *Parser::parseModuleDeclaration() {
 
   consumeToken(); // consume ';'
 
-  // Create ModuleDecl with full module name
-  ModuleDecl *MD = Context.create<ModuleDecl>(ModuleLoc, FullModuleName, IsExported, PartitionName, IsModulePartition);
-  
   return MD;
 }
 
@@ -2749,15 +2722,17 @@ CXXDeductionGuideDecl *Parser::parseDeductionGuide(SourceLocation Loc) {
 
   // Parse parameters (simplified - just parse types)
   llvm::SmallVector<ParmVarDecl *, 8> Params;
+  unsigned ParamIndex = 0;
   if (!Tok.is(TokenKind::r_paren)) {
     do {
-      ParmVarDecl *Param = parseParameterDeclaration();
+      ParmVarDecl *Param = parseParameterDeclaration(ParamIndex);
       if (!Param) {
         emitError(DiagID::err_expected_type);
         skipUntil({TokenKind::r_paren, TokenKind::semicolon});
         break;
       }
       Params.push_back(Param);
+      ++ParamIndex;
 
       if (Tok.is(TokenKind::comma)) {
         consumeToken();
@@ -2807,7 +2782,7 @@ CXXDeductionGuideDecl *Parser::parseDeductionGuide(SourceLocation Loc) {
 /// attribute-list ::= attribute (',' attribute)*
 /// attribute ::= identifier ('(' argument-clause? ')')?
 ///             | identifier '::' identifier ('(' argument-clause? ')')?
-AttributeDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
+AttributeListDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
   // Expect '[['
   if (!Tok.is(TokenKind::l_square)) {
     emitError(DiagID::err_expected);
@@ -2823,25 +2798,23 @@ AttributeDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
 
   consumeToken(); // consume '['
 
+  // Create AttributeListDecl to store all attributes
+  AttributeListDecl *AttrList = Context.create<AttributeListDecl>(Loc);
+
   // Parse attribute(s) - we support multiple attributes separated by commas
-  llvm::StringRef Namespace;
-  llvm::StringRef AttrName;
-  Expr *ArgExpr = nullptr;
+  bool First = true;
+  do {
+    if (!First) {
+      // Consume comma separator
+      consumeToken();
+    }
+    First = false;
 
-  // Parse first attribute
-  if (!Tok.is(TokenKind::identifier)) {
-    emitError(DiagID::err_expected_identifier);
-    return nullptr;
-  }
+    llvm::StringRef Namespace;
+    llvm::StringRef AttrName;
+    Expr *ArgExpr = nullptr;
 
-  AttrName = Tok.getText();
-  consumeToken();
-
-  // Check for namespace::attribute syntax
-  if (Tok.is(TokenKind::coloncolon)) {
-    consumeToken();
-    Namespace = AttrName;
-
+    // Parse attribute
     if (!Tok.is(TokenKind::identifier)) {
       emitError(DiagID::err_expected_identifier);
       return nullptr;
@@ -2849,64 +2822,55 @@ AttributeDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
 
     AttrName = Tok.getText();
     consumeToken();
-  }
 
-  // Parse optional attribute argument
-  if (Tok.is(TokenKind::l_paren)) {
-    consumeToken(); // consume '('
-
-    // Parse argument expression
-    if (Tok.is(TokenKind::string_literal)) {
-      // Simple case: string literal
-      llvm::StringRef StrValue = Tok.getText();
+    // Check for namespace::attribute syntax
+    if (Tok.is(TokenKind::coloncolon)) {
       consumeToken();
-      // Create a StringLiteral expression
-      ArgExpr = Context.create<StringLiteral>(
-          SourceLocation(), StrValue);
-    } else if (Tok.isNot(TokenKind::r_paren)) {
-      // General case: parse as expression
-      ArgExpr = parseExpression();
-    }
+      Namespace = AttrName;
 
-    if (!Tok.is(TokenKind::r_paren)) {
-      emitError(DiagID::err_expected_rparen);
-      return nullptr;
-    }
-
-    consumeToken(); // consume ')'
-  }
-
-  // Skip any additional attributes (comma-separated)
-  // For now, we just parse and discard them to avoid errors
-  while (Tok.is(TokenKind::comma)) {
-    consumeToken();
-
-    // Skip the next attribute
-    if (Tok.is(TokenKind::identifier)) {
-      consumeToken();
-
-      // Check for namespace
-      if (Tok.is(TokenKind::coloncolon)) {
-        consumeToken();
-        if (Tok.is(TokenKind::identifier)) {
-          consumeToken();
-        }
+      if (!Tok.is(TokenKind::identifier)) {
+        emitError(DiagID::err_expected_identifier);
+        return nullptr;
       }
 
-      // Skip argument if present
-      if (Tok.is(TokenKind::l_paren)) {
-        consumeToken();
-        int ParenDepth = 1;
-        while (ParenDepth > 0 && Tok.isNot(TokenKind::eof)) {
-          if (Tok.is(TokenKind::l_paren))
-            ParenDepth++;
-          else if (Tok.is(TokenKind::r_paren))
-            ParenDepth--;
-          consumeToken();
-        }
-      }
+      AttrName = Tok.getText();
+      consumeToken();
     }
-  }
+
+    // Parse optional attribute argument
+    if (Tok.is(TokenKind::l_paren)) {
+      consumeToken(); // consume '('
+
+      // Parse argument expression
+      if (Tok.is(TokenKind::string_literal)) {
+        // Simple case: string literal
+        llvm::StringRef StrValue = Tok.getText();
+        consumeToken();
+        // Create a StringLiteral expression
+        ArgExpr = Context.create<StringLiteral>(
+            SourceLocation(), StrValue);
+      } else if (Tok.isNot(TokenKind::r_paren)) {
+        // General case: parse as expression
+        ArgExpr = parseExpression();
+      }
+
+      if (!Tok.is(TokenKind::r_paren)) {
+        emitError(DiagID::err_expected_rparen);
+        return nullptr;
+      }
+
+      consumeToken(); // consume ')'
+    }
+
+    // Create AttributeDecl and add to the list
+    AttributeDecl *AttrDecl;
+    if (Namespace.empty()) {
+      AttrDecl = Context.create<AttributeDecl>(Loc, AttrName, ArgExpr);
+    } else {
+      AttrDecl = Context.create<AttributeDecl>(Loc, Namespace, AttrName, ArgExpr);
+    }
+    AttrList->addAttribute(AttrDecl);
+  } while (Tok.is(TokenKind::comma));
 
   // Expect ']]'
   if (!Tok.is(TokenKind::r_square)) {
@@ -2923,12 +2887,7 @@ AttributeDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
 
   consumeToken(); // consume ']'
 
-  // Create AttributeDecl
-  if (Namespace.empty()) {
-    return Context.create<AttributeDecl>(Loc, AttrName, ArgExpr);
-  } else {
-    return Context.create<AttributeDecl>(Loc, Namespace, AttrName, ArgExpr);
-  }
+  return AttrList;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2944,19 +2903,21 @@ CXXConstructorDecl *Parser::parseConstructorDeclaration(CXXRecordDecl *Class,
                                                          SourceLocation Loc) {
   // Parse parameter list
   llvm::SmallVector<ParmVarDecl *, 8> Params;
+  unsigned ParamIndex = 0;
 
   expectAndConsume(TokenKind::l_paren, "expected '(' after constructor name");
 
   // Parse parameters
   if (!Tok.is(TokenKind::r_paren)) {
     do {
-      ParmVarDecl *Param = parseParameterDeclaration();
+      ParmVarDecl *Param = parseParameterDeclaration(ParamIndex);
       if (!Param) {
         emitError(DiagID::err_expected_type);
         skipUntil({TokenKind::r_paren, TokenKind::semicolon});
         break;
       }
       Params.push_back(Param);
+      ++ParamIndex;
 
       if (Tok.is(TokenKind::comma)) {
         consumeToken();
@@ -3229,13 +3190,15 @@ FriendDecl *Parser::parseFriendDeclaration(CXXRecordDecl *Class) {
   }
 
   llvm::SmallVector<ParmVarDecl *, 8> Params;
+  unsigned ParamIndex = 0;
   consumeToken(); // consume '('
 
   if (!Tok.is(TokenKind::r_paren)) {
     do {
-      ParmVarDecl *Param = parseParameterDeclaration();
+      ParmVarDecl *Param = parseParameterDeclaration(ParamIndex);
       if (Param) {
         Params.push_back(Param);
+        ++ParamIndex;
       }
 
       if (Tok.is(TokenKind::comma)) {

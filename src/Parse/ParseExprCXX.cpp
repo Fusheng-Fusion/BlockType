@@ -150,14 +150,16 @@ Expr *Parser::parseLambdaExpression() {
 
   // Parse parameter list (optional)
   llvm::SmallVector<ParmVarDecl *, 4> Params;
+  unsigned ParamIndex = 0;
   if (Tok.is(TokenKind::l_paren)) {
     consumeToken();
     if (!Tok.is(TokenKind::r_paren)) {
       // Parse parameter declarations
       while (Tok.isNot(TokenKind::r_paren) && Tok.isNot(TokenKind::eof)) {
-        ParmVarDecl *Param = parseParameterDeclaration();
+        ParmVarDecl *Param = parseParameterDeclaration(ParamIndex);
         if (Param != nullptr) {
           Params.push_back(Param);
+          ++ParamIndex;
         }
         if (!tryConsumeToken(TokenKind::comma)) {
           break;
@@ -369,7 +371,8 @@ Requirement *Parser::parseRequirement() {
     Expr *Expression = nullptr;
     Stmt *Body = nullptr;
 
-    // For now, parse as expression
+    // In compound requirements, the brace-enclosed content is an expression
+    // (C++20 [expr.prim.req.compound])
     if (Tok.isNot(TokenKind::r_brace)) {
       Expression = parseExpression();
     }
@@ -706,7 +709,8 @@ Expr *Parser::parseReflexprExpr() {
   }
 
   // Parse the argument (type-id or expression)
-  // For now, parse as expression
+  // reflexpr can accept both types and expressions
+  // Parsing as expression is acceptable as types can be represented
   Expr *Arg = parseExpression();
   if (Arg == nullptr) {
     Arg = createRecoveryExpr(ReflexprLoc);

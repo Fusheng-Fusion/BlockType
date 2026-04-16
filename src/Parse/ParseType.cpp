@@ -81,17 +81,17 @@ QualType Parser::parseTypeSpecifier() {
       if (Tok.is(TokenKind::identifier)) {
         // Check for nested-name-specifier (A::B::C)
         llvm::StringRef Qualifier = parseNestedNameSpecifier();
-        
+
         // Parse the final type name
         if (!Tok.is(TokenKind::identifier)) {
           emitError(DiagID::err_expected_identifier);
           return QualType();
         }
-        
+
         llvm::StringRef TypeName = Tok.getText();
         SourceLocation TypeNameLoc = Tok.getLocation();
         consumeToken();
-        
+
         // Check for template argument list
         if (Tok.is(TokenKind::less)) {
           // Parse template arguments
@@ -108,7 +108,7 @@ QualType Parser::parseTypeSpecifier() {
               }
             }
           }
-          
+
           // If not found in scope, create an unresolved type
           if (!FoundInScope) {
             UnresolvedType *Unresolved = Context.getUnresolvedType(TypeName);

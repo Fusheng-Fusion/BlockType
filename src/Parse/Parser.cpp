@@ -146,7 +146,7 @@ void Parser::popScope() {
 
 void Parser::advanceToken() {
   Token Result;
-  if (!PP.lexToken(Result)) {
+  if (!PP.consumeToken(Result)) {
     // EOF reached
     NextTok.setKind(TokenKind::eof);
   } else {

@@ -76,7 +76,7 @@ TEST_F(DeclarationTest, ClassWithMembers) {
   
   auto *RD = llvm::cast<CXXRecordDecl>(D);
   EXPECT_EQ(RD->getName(), "Point");
-  // Note: Member count verification depends on implementation
+  EXPECT_EQ(RD->members().size(), 2U) << "Point should have 2 members (x and y)";
 }
 
 TEST_F(DeclarationTest, ClassWithMemberFunction) {
@@ -328,7 +328,7 @@ TEST_F(DeclarationTest, EnumClass) {
   
   auto *ED = llvm::cast<EnumDecl>(D);
   EXPECT_EQ(ED->getName(), "Status");
-  // Note: isScoped() not implemented yet
+  EXPECT_TRUE(ED->isScoped()) << "enum class should have isScoped() == true";
 }
 
 TEST_F(DeclarationTest, EnumWithExplicitType) {

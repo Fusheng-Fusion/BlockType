@@ -16,6 +16,15 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# 代码覆盖率选项
+option(ENABLE_COVERAGE "Enable code coverage reporting" OFF)
+if(ENABLE_COVERAGE)
+  message(STATUS "Code coverage enabled")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+endif()
+
 # 导出 compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -85,4 +94,24 @@ if(LIT_COMMAND)
   )
 else()
   message(STATUS "lit not found, lit tests will be skipped")
+endif()
+
+# 代码覆盖率目标
+if(ENABLE_COVERAGE)
+  find_program(LCOV_PATH lcov)
+  find_program(GENHTML_PATH genhtml)
+  
+  if(LCOV_PATH AND GENHTML_PATH)
+    add_custom_target(coverage
+      COMMAND ${LCOV_PATH} --capture --directory . --output-file coverage.info
+      COMMAND ${LCOV_PATH} --remove coverage.info '/usr/*' '*/tests/*' '*/third_party/*' --output-file coverage.info.cleaned
+      COMMAND ${GENHTML_PATH} -o coverage_report coverage.info.cleaned
+      COMMAND ${CMAKE_COMMAND} -E echo "Coverage report generated in coverage_report/index.html"
+      WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+      COMMENT "Generating code coverage report"
+    )
+    message(STATUS "Coverage target 'coverage' available")
+  else()
+    message(WARNING "lcov or genhtml not found, coverage target will not be available")
+  endif()
 endif()

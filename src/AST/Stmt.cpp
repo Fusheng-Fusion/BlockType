@@ -57,11 +57,10 @@ void ExprStmt::dump(raw_ostream &OS, unsigned Indent) const {
 void DeclStmt::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << "DeclStmt\n";
-  // TODO: Uncomment once Decl is defined
-  // for (Decl *D : Decls) {
-  //   if (D)
-  //     D->dump(OS, Indent + 1);
-  // }
+  for (Decl *D : Decls) {
+    if (D)
+      D->dump(OS, Indent + 1);
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -197,9 +196,8 @@ void ForStmt::dump(raw_ostream &OS, unsigned Indent) const {
 void CXXForRangeStmt::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << "CXXForRangeStmt: for-range\n";
-  // TODO: Uncomment once Decl is defined
-  // if (LoopVar)
-  //   LoopVar->dump(OS, Indent + 1);
+  if (LoopVar)
+    LoopVar->dump(OS, Indent + 1);
   if (Range)
     Range->dump(OS, Indent + 1);
   if (Body)
@@ -228,9 +226,8 @@ void CXXTryStmt::dump(raw_ostream &OS, unsigned Indent) const {
 void CXXCatchStmt::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << "CXXCatchStmt: catch\n";
-  // TODO: Uncomment once Decl is defined
-  // if (ExceptionDecl)
-  //   ExceptionDecl->dump(OS, Indent + 1);
+  if (ExceptionDecl)
+    ExceptionDecl->dump(OS, Indent + 1);
   if (HandlerBlock)
     HandlerBlock->dump(OS, Indent + 1);
 }

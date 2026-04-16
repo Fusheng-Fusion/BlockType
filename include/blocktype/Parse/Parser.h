@@ -59,6 +59,7 @@ class ConceptDecl;
 class AsmDecl;
 class CXXDeductionGuideDecl;
 class AttributeDecl;
+class AttributeListDecl;
 
 /// LambdaCapture - Represents a lambda capture.
 /// ParsingContext - Represents the current parsing context.
@@ -89,6 +90,8 @@ class Parser {
   // Error recovery state
   unsigned ErrorCount = 0;
   bool HasRecoveryExpr = false;
+
+  friend class TentativeParsingAction;
 
 public:
   Parser(Preprocessor &PP, ASTContext &Ctx);
@@ -376,7 +379,7 @@ public:
                                          bool IsConstexpr = false, bool IsInline = false);
 
   /// Parses a parameter declaration.
-  ParmVarDecl *parseParameterDeclaration();
+  ParmVarDecl *parseParameterDeclaration(unsigned Index = 0);
 
   /// Parses a class declaration.
   CXXRecordDecl *parseClassDeclaration(SourceLocation ClassLoc);
@@ -499,7 +502,7 @@ public:
   CXXDeductionGuideDecl *parseDeductionGuide(SourceLocation Loc);
 
   /// Parses an attribute specifier (C++11).
-  AttributeDecl *parseAttributeSpecifier(SourceLocation Loc);
+  AttributeListDecl *parseAttributeSpecifier(SourceLocation Loc);
 
   /// Parses a constructor declaration.
   CXXConstructorDecl *parseConstructorDeclaration(CXXRecordDecl *Class, SourceLocation Loc);

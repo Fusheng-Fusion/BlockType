@@ -416,7 +416,7 @@ bool Type::isDependentType() const {
     // dependent
     auto *TST = cast<TemplateSpecializationType>(this);
     for (const TemplateArgument &Arg : TST->getTemplateArgs()) {
-      if (Arg.getArgumentType() == TemplateArgument::Type) {
+      if (Arg.isType()) {
         if (Arg.getAsType()->isDependentType()) {
           return true;
         }
@@ -431,13 +431,14 @@ bool Type::isDependentType() const {
     auto *DT = cast<DecltypeType>(this);
     if (Expr *E = DT->getExpression()) {
       // Check if the expression is type-dependent
-      // For now, we'll check if the underlying type is set and dependent
+      // First check if the underlying type is set and dependent
       QualType Underlying = DT->getUnderlyingType();
       if (!Underlying.isNull() && Underlying->isDependentType()) {
         return true;
       }
       // TODO: Implement proper expression type-dependence checking
-      // when Expr::isTypeDependent() is available
+      // Requires Expr::isTypeDependent() to be implemented
+      // This is a known limitation that affects template code
     }
     return false;
   }

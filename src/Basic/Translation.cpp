@@ -19,8 +19,9 @@ static bool parseTranslationEntry(llvm::yaml::MappingNode* ValueNode,
       continue;
     }
 
-    llvm::StringRef FieldName = FieldKey->getValue();
-    llvm::StringRef FieldContent = FieldValue->getValue();
+    llvm::SmallVector<char, 128> Storage1, Storage2;
+    llvm::StringRef FieldName = FieldKey->getValue(Storage1);
+    llvm::StringRef FieldContent = FieldValue->getValue(Storage2);
 
     if (FieldName == "message") {
       Entry.Message = FieldContent.str();
@@ -51,7 +52,8 @@ static void parseYAMLDocument(llvm::yaml::Document& Document,
       continue;
     }
 
-    llvm::StringRef DiagID = KeyNode->getValue();
+    llvm::SmallVector<char, 128> Storage;
+    llvm::StringRef DiagID = KeyNode->getValue(Storage);
 
     auto* ValueNode = llvm::dyn_cast<llvm::yaml::MappingNode>(Entry.getValue());
     TranslationEntry NewEntry;

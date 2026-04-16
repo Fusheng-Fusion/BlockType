@@ -111,6 +111,13 @@ void FieldDecl::dump(raw_ostream &OS, unsigned Indent) const {
     T.dump(OS);
     OS << "'";
   }
+  // Print access specifier
+  if (Access == AccessSpecifier::AS_public)
+    OS << " public";
+  else if (Access == AccessSpecifier::AS_protected)
+    OS << " protected";
+  else
+    OS << " private";
   if (IsMutable)
     OS << " mutable";
   if (BitWidth) {
@@ -220,6 +227,9 @@ void TranslationUnitDecl::dump(raw_ostream &OS, unsigned Indent) const {
 void UsingDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << "UsingDecl ";
+  if (IsInheritingConstructor) {
+    OS << "[inheriting-constructor] ";
+  }
   if (HasNestedNameSpecifier) {
     OS << NestedNameSpecifier;
   }
@@ -310,6 +320,13 @@ void CXXMethodDecl::dump(raw_ostream &OS, unsigned Indent) const {
     T.dump(OS);
     OS << "'";
   }
+  // Print access specifier
+  if (Access == AccessSpecifier::AS_public)
+    OS << " public";
+  else if (Access == AccessSpecifier::AS_protected)
+    OS << " protected";
+  else
+    OS << " private";
   if (IsStatic)
     OS << " static";
   if (IsConst)
@@ -450,13 +467,13 @@ void AccessSpecDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << "AccessSpecDecl ";
   switch (Access) {
-  case AS_public:
+  case AccessSpecifier::AS_public:
     OS << "public";
     break;
-  case AS_protected:
+  case AccessSpecifier::AS_protected:
     OS << "protected";
     break;
-  case AS_private:
+  case AccessSpecifier::AS_private:
     OS << "private";
     break;
   }
@@ -730,6 +747,25 @@ void AttributeDecl::dump(raw_ostream &OS, unsigned Indent) const {
     OS << "(";
     ArgumentExpr->dump(OS, Indent + 2);
     OS << ")";
+  }
+  OS << "]]\n";
+}
+
+void AttributeListDecl::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "AttributeListDecl [[";
+  for (size_t I = 0; I < Attrs.size(); ++I) {
+    if (I > 0)
+      OS << ", ";
+    if (Attrs[I]->hasNamespace()) {
+      OS << Attrs[I]->getNamespace() << "::";
+    }
+    OS << Attrs[I]->getAttributeName();
+    if (Attrs[I]->hasArgument()) {
+      OS << "(";
+      Attrs[I]->getArgumentExpr()->dump(OS, Indent + 2);
+      OS << ")";
+    }
   }
   OS << "]]\n";
 }

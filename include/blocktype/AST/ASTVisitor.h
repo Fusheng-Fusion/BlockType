@@ -15,6 +15,7 @@
 #include "blocktype/AST/ASTNode.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Stmt.h"
+#include "blocktype/AST/Decl.h"
 #include "llvm/Support/Casting.h"
 
 namespace blocktype {
@@ -58,7 +59,6 @@ public:
     // Dispatch based on node kind
     switch (Node->getKind()) {
     default:
-      // TODO: Handle Decl once it is defined
       derived().visitASTNode(Node);
       break;
 
@@ -90,6 +90,24 @@ public:
 #define ABSTRACT_STMT(Type, Base) STMT(Type, Base)
 #define DECL(Type, Base)
 #define ABSTRACT_DECL(Type, Base)
+#include "blocktype/AST/NodeKinds.def"
+#undef EXPR
+#undef ABSTRACT_EXPR
+#undef STMT
+#undef ABSTRACT_STMT
+#undef DECL
+#undef ABSTRACT_DECL
+
+// Declaration nodes
+#define EXPR(Type, Base)
+#define ABSTRACT_EXPR(Type, Base)
+#define STMT(Type, Base)
+#define ABSTRACT_STMT(Type, Base)
+#define DECL(Type, Base)                                                       \
+  case ASTNode::Type##Kind:                                                    \
+    derived().visit##Type(cast<Type>(Node));                                   \
+    break;
+#define ABSTRACT_DECL(Type, Base) DECL(Type, Base)
 #include "blocktype/AST/NodeKinds.def"
 #undef EXPR
 #undef ABSTRACT_EXPR
@@ -140,6 +158,23 @@ protected:
   void visit##Type(Type *Node) { /* No-op for abstract nodes */ }
 #define DECL(Type, Base)
 #define ABSTRACT_DECL(Type, Base)
+#include "blocktype/AST/NodeKinds.def"
+#undef EXPR
+#undef ABSTRACT_EXPR
+#undef STMT
+#undef ABSTRACT_STMT
+#undef DECL
+#undef ABSTRACT_DECL
+
+// Declaration nodes
+#define EXPR(Type, Base)
+#define ABSTRACT_EXPR(Type, Base)
+#define STMT(Type, Base)
+#define ABSTRACT_STMT(Type, Base)
+#define DECL(Type, Base)                                                       \
+  void visit##Type(Type *Node) { visit##Base(Node); }
+#define ABSTRACT_DECL(Type, Base)                                              \
+  void visit##Type(Type *Node) { /* No-op for abstract nodes */ }
 #include "blocktype/AST/NodeKinds.def"
 #undef EXPR
 #undef ABSTRACT_EXPR

@@ -63,10 +63,12 @@ TEST_F(HighPriorityFixesTest, LineMacro) {
 // Test 4: Circular include detection
 TEST_F(HighPriorityFixesTest, CircularIncludeDetection) {
   // Create a file that includes itself
-  PP->enterSourceFile("circular.cpp", "#include \"circular.cpp\"\n");
+  PP->enterSourceFile("circular.cpp", "#include \"circular.cpp\"\nint x;\n");
   
   Token Tok;
   ASSERT_TRUE(PP->lexToken(Tok));
+  // Should continue parsing after circular include error
+  EXPECT_EQ(Tok.getKind(), TokenKind::kw_int);
   // Should get an error about circular inclusion
   EXPECT_TRUE(Diags->hasErrorOccurred());
 }

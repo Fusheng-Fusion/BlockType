@@ -65,11 +65,18 @@ bool Parser::isDeclarationStatement() {
 
   // Check for identifier (could be a user-defined type)
   case TokenKind::identifier:
-    // Look ahead to see if this is a type followed by an identifier
-    // For example: "MyType x;" or "MyType* p;"
-    // This is a simplified check - a full implementation would need
-    // to look up the identifier in the symbol table
-    return false; // For now, treat identifiers as expressions
+    // Look up the identifier in the symbol table
+    // If it's a type name (TypeDecl), then this is a declaration statement
+    if (CurrentScope) {
+      NamedDecl *D = CurrentScope->lookup(Tok.getText());
+      if (D && llvm::isa<TypeDecl>(D)) {
+        // This identifier is a type name, so this is likely a declaration
+        // For example: "MyType x;" or "MyType* p;"
+        return true;
+      }
+    }
+    // If not found or not a type, treat as expression statement
+    return false;
 
   default:
     return false;
