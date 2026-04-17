@@ -11,10 +11,10 @@
 | Stage | 名称 | 完成度 | 关键问题 |
 |-------|------|--------|----------|
 | **Stage 3.1** | 声明 AST 节点定义 | **95%** | ~~DeclContext 基础设施~~ ✅、~~模板特化声明类~~ ✅ |
-| **Stage 3.2** | 基础声明解析 | **90%** | ~~DeclSpec/Declarator 架构~~ ✅、核心功能完整 |
+| **Stage 3.2** | 基础声明解析 | **95%** | DeclSpec/Declarator 架构 ✅、类型消歧 ✅、核心功能完整 |
 | **Stage 3.3** | 类与模板解析 | **98%** | ~~文件组织~~ ✅、~~模板特化/偏特化~~ ✅、~~约束表达式~~ ✅ |
 | **Stage 3.4** | C++26 特性 + 测试 | **70%** | ~~Lit 回归测试~~ ✅、缺少 C++23/26 新特性 |
-| **总计** | **Phase 3** | **~89%** | **关键路径功能已基本完成,高级特性待实现** |
+| **总计** | **Phase 3** | **~92%** | **关键路径功能已基本完成,高级特性待实现** |
 
 ---
 
@@ -335,44 +335,34 @@ class Declarator {
 - ✅ Decltype
 
 **单元测试:**
-- ✅ `DeclarationTest.cpp` (534 行)
+- ✅ `DeclarationTest.cpp` (581 行)
 - ✅ `ParserTest.cpp` (784 行)
 - ✅ `StatementTest.cpp` (345 行)
 - ✅ `ErrorRecoveryTest.cpp` (214 行)
 - ✅ `AccessControlTest.cpp` (134 行)
-- 总计: ~2011 行解析测试
+- 总计: 2058 行解析测试
 
 ---
 
-### ❌ Stage 3.4 缺失功能 (50%)
+### ⚠️ Stage 3.4 缺失功能 (50%)
 
-#### 1. C++23/C++26 新特性缺失 🔴
+#### 1. C++23/26 新特性
 
-**完全缺失:**
-- ❌ **Deducing this / 显式对象参数** (C++23)
-  ```cpp
-  struct S {
-    void f(this S& self);  // ❌ 不支持
-    void g(this auto& self);  // ❌ 不支持
-  };
-  ```
+> **详细审计见 [CPP23-CPP26-FEATURES.md](CPP23-CPP26-FEATURES.md)**
 
-- ❌ **占位符变量** (C++26)
-  ```cpp
-  auto _ = getValue();  // ❌ _ 作为特殊占位符
-  ```
+**34 项特性总览:**
+- ✅ 已实现 5 项: `#warning`, `Z`/`z` 后缀, `\e` 转义, `#embed`, 包索引
+- ⚠️ 部分实现 4 项: constexpr 放宽, `reflexpr`, `static_assert` 消息, `@` 字符
+- ❌ 未实现 25 项
 
-- ❌ **Contracts 属性** (P2900)
-  ```cpp
-  void f(int x)
-    [[pre: x > 0]]      // ❌ 前置条件
-    [[post: result > 0]]; // ❌ 后置条件
-  ```
+**Phase 3 需完成 P0 级 (5 项, ~5 天):**
+- `#elifdef` / `#elifndef` — 仅需预处理器扩展
+- `if consteval` — `IfStmt` 加 `IsConsteval` 标志
+- 多维 `operator[]` — `ArraySubscriptExpr` 扩展多参数
+- Lambda 模板参数 — `parseLambdaExpression` 添加 `<...>` 步骤
+- Lambda 属性 — 复用 `parseAttributeSpecifier()`
 
-- ❌ **静态反射类型** (C++26)
-  ```cpp
-  reflexpr(T)  // ❌ 不支持
-  ```
+**P1/P2 级延后到 Phase 7** (详见完整文档)
 
 ---
 
@@ -417,7 +407,7 @@ class Declarator {
 - ❌ 缺少声明级别的专门恢复策略
 - ❌ 缺少智能错误提示和建议
 
-**设计决策 (Phase 4 开发者必读):**
+**设计决策 (开发者必读):**
 - 声明级恢复策略应在 `Parser` 中实现（添加 `skipUntilNextDeclaration()` 方法），
   不要在 Sema 中用 try-catch 模拟。
 - 智能错误提示应通过 `DiagnosticsEngine` 的扩展实现，不要在各处散落
@@ -428,8 +418,8 @@ class Declarator {
 #### 4. 测试覆盖率缺口
 
 **缺失的测试场景:**
-- ❌ 模板特化声明测试
-- ❌ 偏特化测试
+- ✅ 模板特化声明测试 — 已覆盖 (template.test)
+- ✅ 偏特化测试 — 已覆盖 (template.test)
 - ❌ 推导指引测试
 - ❌ 复杂声明符测试 (成员指针、函数指针)
 - ❌ Contracts 测试 (功能未实现)
@@ -460,9 +450,11 @@ class Declarator {
 5. ~~**结构化 DeclSpec/Declarator 架构**~~ ✅ 已完成
 
 6. **C++23/26 新特性**
-   - 影响: 语言标准支持不完整
-   - 工作量: 小到中等
-   - 建议: 可以延后到 Phase 7
+   - 影响: 语言标准支持不完整 (已实现 5/35 ≈ 14%)
+   - 已实现: `#warning`, `Z`/`z` 后缀, `\e` 转义, `#embed`, 包索引
+   - 部分实现: `reflexpr` 基础框架, `static_assert` 消息
+   - 工作量: P0 级小, P1/P2 级中等~大
+   - 建议: P0 级可在 Phase 3 补充, P1/P2 延后到 Phase 7
 
 ---
 
@@ -484,66 +476,66 @@ class Declarator {
 
 ## 📋 建议的补救计划
 
-### 阶段 1: 紧急修复 (1-2 周)
+### ~~阶段 1~~ ✅ 已完成: 紧急修复
 
-**目标:** 解决阻塞性问题
+**状态:** 全部完成
 
-1. 实现模板特化声明类
+1. ~~实现模板特化声明类~~ ✅
    - `ClassTemplateSpecializationDecl`
    - `ClassTemplatePartialSpecializationDecl`
    - `FunctionTemplateDecl`
    - `ClassTemplateDecl`
    - `VarTemplateDecl` 等
 
-2. 实现模板特化/偏特化解析
+2. ~~实现模板特化/偏特化解析~~ ✅
    - `parseExplicitSpecialization()`
    - `parsePartialSpecialization()`
 
-3. 补充关键的 Lit 回归测试
-   - 至少覆盖基本声明、类、模板
+3. ~~补充关键的 Lit 回归测试~~ ✅
+   - 已覆盖基本声明、类、模板等 21 个测试文件
 
 ---
 
-### 阶段 2: 基础设施完善 (2-3 周)
+### ~~阶段 2~~ ✅ 已完成: 基础设施完善
 
-**目标:** 为 Phase 4 语义分析打好基础
+**状态:** 全部完成
 
-1. 实现 DeclContext 基础设施
-   - 创建独立的 `DeclContext` 类
-   - 重构现有容器类使用 DeclContext
-   - 实现统一的 `lookup()` 方法
+1. ~~实现 DeclContext 基础设施~~ ✅
+   - 已创建独立的 `DeclContext` 类
+   - 已重构 5 个容器类使用 DeclContext
+   - 已实现统一的 `lookup()` 方法
 
-2. ~~补全 TemplateArgument 类型~~ ✅ 已完成
+2. ~~补全 TemplateArgument 类型~~ ✅
    - 已添加: 9 种类型枚举 + TemplateArgumentLoc + 完整特殊成员函数
 
-3. 完善 Requires 子句和类型约束解析
+3. ~~完善 Requires 子句和类型约束解析~~ ✅
 
 ---
 
-### 阶段 3: 功能增强 (1-2 周)
+### 阶段 3: 功能增强 (1-2 周) — 待执行
 
 **目标:** 提升功能完整性
 
-1. 实现 C++23 deducing this
-2. 实现占位符变量 `_`
-3. 补充测试覆盖率
-4. 优化错误恢复机制
+1. 实现 C++23 P0 级特性: `#elifdef`/`#elifndef`, `if consteval`, 多维 `operator[]`
+2. 实现 C++23 P0 级特性: Lambda 模板参数, Lambda 属性
+3. 实现 C++26 P1 级特性: Deducing this, `= delete("reason")`
+4. 补充测试覆盖率 (推导指引、复杂声明符)
 
 ---
 
-### 阶段 4: 代码优化 (可选)
+### ~~阶段 4~~ ✅ 已完成: 代码优化
 
-**目标:** 提升代码质量
+**状态:** 全部完成
 
 1. ~~考虑是否重构为结构化 DeclSpec/Declarator~~ ✅ 已完成
-2. 分离 ParseClass.cpp 和 ParseTemplate.cpp
-3. 完善文档和注释
+2. ~~分离 ParseClass.cpp 和 ParseTemplate.cpp~~ ✅ 已完成
+3. 完善文档和注释 — 持续进行
 
 ---
 
 ## 📊 结论
 
-**Phase 3 当前完成度: ~89%** (从 87% 提升)
+**Phase 3 当前完成度: ~92%** (从 89% 提升)
 
 **核心功能状态:**
 - ✅ 基础声明 AST 节点: 完整
@@ -556,28 +548,26 @@ class Declarator {
 - ✅ Lit 回归测试: **21 个测试文件**
 
 **关键缺失:**
-- ⚠️ 模板特化表达式在类声明中的歧义解析
-  - 决策: 需要引入 DeclSpec/Declarator 架构来根本解决。不要在 `parseClassDeclaration`
-    中添加更多特殊情况的 `<` 消歧逻辑。Phase 4 引入 Declarator 时一并解决。
-- ⚠️ C++23/26 新特性 (Deducing this, Contracts)
-  - 决策: 延后到 Phase 7 统一实现。需要时添加新的 AST 节点类型，不要用
-    `FunctionDecl` 的 extra 字段来模拟 Deducing this。
-- ⚠️ 结构化 DeclSpec/Declarator 架构
-  - 决策: Phase 4 启动时同步引入。先定义 `DeclSpec`/`Declarator`/`DeclaratorChunk`
-  数据结构，然后逐步迁移 `parseDeclaration()` 中的即席逻辑。
+- ~~⚠️ 模板特化表达式在类声明中的歧义解析~~ ✅ **已修复**
+  - `parseTypeSpecifier()` 添加了三层消歧策略 (Layer 1: 类型关键字, Layer 2: 符号表查找, Layer 3: 试探性解析)
+  - 与表达式上下文 (`parseIdentifier`) 的消歧策略保持一致
+  - 新增 4 个单元测试 + 2 个 lit 测试覆盖
+- ⚠️ C++23/26 新特性: 已实现 5 项, 剩余 ~30 项待实现 (详见 Stage 3.4)
+  - 决策: P0 级特性可在 Phase 3 补充, P1/P2 级延后到 Phase 7
+- ~~⚠️ 结构化 DeclSpec/Declarator 架构~~ ✅ 已实现
 
 **对后续阶段的影响:**
 - Phase 4 (语义分析): ✅ 可以开始, DeclContext 已就绪
-- Phase 5 (模板实例化): ⚠️ 基本就绪, 类声明中的特化解析需改进
+- Phase 5 (模板实例化): ✅ 基本就绪, 类声明中的特化解析已修复
 - Phase 6 (IR 生成): 暂不受影响
 - Phase 7 (C++26 特性): 需要补充新特性实现
 
 **建议:**
 1. Phase 4 可以启动, DeclContext 已提供名称查找基础设施
-2. 模板特化解析歧义需要 DeclSpec/Declarator 架构改进来解决
+2. ~~模板特化解析歧义需要 DeclSpec/Declarator 架构改进来解决~~ ✅ 已通过三层消歧策略解决
 3. C++23/26 特性可以延后到 Phase 7 统一实现
 
 ---
 
 *报告生成时间: 2026-04-17*
-*基于 commit: 1ca9ee2*
+*基于 commit: 1486ff0 + 未提交工作区变更 (ParseType.cpp 模板约束增强, DeclarationTest.cpp/TemplateTest 新增测试)*

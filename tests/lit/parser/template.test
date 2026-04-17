@@ -57,3 +57,19 @@ void swap<double>(double& a, double& b) {
   a = b;
 }
 // CHECK: FunctionTemplateDecl{{.*}}swap
+
+// Test template specialization type as class member (disambiguation)
+template<template<typename> class Wrapper>
+struct Adapter {
+  Wrapper<int> w;
+};
+// CHECK: ClassTemplateDecl{{.*}}Adapter
+// CHECK: FieldDecl{{.*}}w
+
+// Test nested template specialization type as class member
+template<typename T>
+struct Container {
+  Vector<T> data;
+};
+// CHECK: ClassTemplateDecl{{.*}}Container
+// CHECK: FieldDecl{{.*}}data

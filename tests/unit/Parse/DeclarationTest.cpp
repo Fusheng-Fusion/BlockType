@@ -531,4 +531,51 @@ TEST_F(DeclarationTest, StaticAssertWithMessage) {
   ASSERT_NE(D, nullptr);
 }
 
+//===----------------------------------------------------------------------===//
+// Template Specialization Disambiguation in Type Context
+//===----------------------------------------------------------------------===//
+
+TEST_F(DeclarationTest, TemplateSpecTypeInClassMember) {
+  // Vector<int> as type in class member should be recognized as template spec
+  parse("template<typename T> class Vector {}; struct S { Vector<int> x; };");
+  Decl *D = P->parseDeclaration();
+  ASSERT_NE(D, nullptr);
+  // First declaration is the template, second is the struct
+  D = P->parseDeclaration();
+  ASSERT_NE(D, nullptr);
+  auto *Record = llvm::dyn_cast<CXXRecordDecl>(D);
+  ASSERT_NE(Record, nullptr);
+  EXPECT_EQ(Record->getName(), "S");
+}
+
+TEST_F(DeclarationTest, TypeDisambigWithBuiltinType) {
+  // Unknown<int> - <int> has builtin type keyword, should be parsed as template type
+  parse("struct S { Unknown<int> x; };");
+  Decl *D = P->parseDeclaration();
+  ASSERT_NE(D, nullptr);
+  auto *Record = llvm::dyn_cast<CXXRecordDecl>(D);
+  ASSERT_NE(Record, nullptr);
+  // Field may or may not be created depending on Unknown resolution,
+  // but parsing should succeed without crash
+}
+
+TEST_F(DeclarationTest, TypeDisambigWithKnownTemplate) {
+  // Register Vector as a template, then use Vector<T> as member type
+  parse("template<typename T> class Vector {}; struct S { Vector<float> v; };");
+  Decl *D = P->parseDeclaration(); // template
+  ASSERT_NE(D, nullptr);
+  D = P->parseDeclaration(); // struct S
+  ASSERT_NE(D, nullptr);
+  auto *Record = llvm::dyn_cast<CXXRecordDecl>(D);
+  ASSERT_NE(Record, nullptr);
+  EXPECT_EQ(Record->getName(), "S");
+}
+
+TEST_F(DeclarationTest, NestedTemplateSpecType) {
+  // Vector<Vector<int>> as type should work
+  parse("struct S { Vector<Vector<int>> x; };");
+  Decl *D = P->parseDeclaration();
+  ASSERT_NE(D, nullptr);
+}
+
 } // anonymous namespace

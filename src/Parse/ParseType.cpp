@@ -93,9 +93,73 @@ QualType Parser::parseTypeSpecifier() {
         consumeToken();
 
         // Check for template argument list
+        // Use three-layer disambiguation (similar to expression context)
+        // to avoid misparsing comparisons as template specializations.
         if (Tok.is(TokenKind::less)) {
-          // Parse template arguments
-          Result = parseTemplateSpecializationType(TypeName);
+          bool ShouldParseAsTemplate = false;
+
+          // Layer 1: Check if next token is a type keyword (int, float, etc.)
+          Token Lookahead = PP.peekToken(0);
+          if (isTypeKeyword(Lookahead.getKind())) {
+            ShouldParseAsTemplate = true;
+          }
+
+          // Layer 2: Check if the identifier is a known template in symbol table
+          if (!ShouldParseAsTemplate && CurrentScope) {
+            if (NamedDecl *D = CurrentScope->lookup(TypeName)) {
+              if (llvm::isa<TemplateDecl>(D)) {
+                ShouldParseAsTemplate = true;
+              }
+            }
+          }
+
+          // Layer 3: Tentative parsing - check if we can match < ... >
+          if (!ShouldParseAsTemplate) {
+            // Save parser state (member variables Tok and NextTok)
+            Token SavedTok = Tok;
+            Token SavedNextTok = NextTok;
+            size_t SavedBufferIndex = PP.saveTokenBufferState();
+
+            consumeToken(); // consume '<'
+            bool FoundMatch = false;
+
+            if (Tok.is(TokenKind::identifier) || isTypeKeyword(Tok.getKind()) ||
+                Tok.is(TokenKind::numeric_constant)) {
+              int Depth = 1;
+              while (Depth > 0 && !Tok.is(TokenKind::eof)) {
+                if (Tok.is(TokenKind::less)) {
+                  Depth++;
+                } else if (Tok.is(TokenKind::greater)) {
+                  Depth--;
+                  if (Depth == 0) { FoundMatch = true; break; }
+                } else if (Tok.is(TokenKind::greatergreater)) {
+                  if (Depth >= 2) Depth -= 2;
+                  else Depth--;
+                  if (Depth == 0) { FoundMatch = true; break; }
+                }
+                consumeToken();
+              }
+            }
+
+            // Restore parser state (member variables)
+            Tok = SavedTok;
+            NextTok = SavedNextTok;
+            PP.restoreTokenBufferState(SavedBufferIndex);
+
+            if (FoundMatch) {
+              ShouldParseAsTemplate = true;
+            }
+          }
+
+          if (ShouldParseAsTemplate) {
+            // Parse template arguments
+            Result = parseTemplateSpecializationType(TypeName);
+          } else {
+            // Not a template specialization - create unresolved type from the identifier
+            // The '<' will be handled by the caller (e.g., as a comparison operator)
+            UnresolvedType *Unresolved = Context.getUnresolvedType(TypeName);
+            Result = QualType(Unresolved, Qualifier::None);
+          }
         } else {
           // Try to look up the type name in the symbol table
           bool FoundInScope = false;
