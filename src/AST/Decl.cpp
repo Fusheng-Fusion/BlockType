@@ -13,9 +13,30 @@
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Stmt.h"
+#include "blocktype/AST/TemplateParameterList.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace blocktype {
+
+//===----------------------------------------------------------------------===//
+// TemplateDecl helper methods
+//===----------------------------------------------------------------------===//
+
+void TemplateDecl::addTemplateParameter(NamedDecl *Param) {
+  if (!Params) {
+    Params = new TemplateParameterList(
+        SourceLocation(), SourceLocation(), SourceLocation(), {});
+  }
+  Params->addParam(Param);
+}
+
+void TemplateDecl::setRequiresClause(Expr *E) {
+  if (!Params) {
+    Params = new TemplateParameterList(
+        SourceLocation(), SourceLocation(), SourceLocation(), {});
+  }
+  Params->setRequiresClause(E);
+}
 
 //===----------------------------------------------------------------------===//
 // VarDecl
@@ -513,18 +534,8 @@ void TemplateDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << "TemplateDecl " << getName() << "\n";
 
-  if (!TemplateParams.empty()) {
-    printIndent(OS, Indent + 2);
-    OS << "TemplateParameters:\n";
-    for (auto *Param : TemplateParams) {
-      Param->dump(OS, Indent + 4);
-    }
-  }
-
-  if (RequiresClause) {
-    printIndent(OS, Indent + 2);
-    OS << "RequiresClause:\n";
-    RequiresClause->dump(OS, Indent + 4);
+  if (Params) {
+    Params->dump(OS, Indent);
   }
 
   if (TemplatedDecl) {
@@ -580,12 +591,9 @@ void TemplateTemplateParmDecl::dump(raw_ostream &OS, unsigned Indent) const {
   }
   OS << "\n";
 
-  if (!TemplateParams.empty()) {
-    printIndent(OS, Indent + 2);
-    OS << "TemplateParameters:\n";
-    for (auto *Param : TemplateParams) {
-      Param->dump(OS, Indent + 4);
-    }
+  // Dump nested template parameters via TemplateParameterList
+  if (auto *TPL = getTemplateParameterList()) {
+    TPL->dump(OS, Indent + 2);
   }
 }
 
@@ -905,12 +913,10 @@ void ClassTemplatePartialSpecializationDecl::dump(raw_ostream &OS, unsigned Inde
   printIndent(OS, Indent);
   OS << "ClassTemplatePartialSpecializationDecl " << getName() << "\n";
   
-  if (!TemplateParams.empty()) {
+  if (Params) {
     printIndent(OS, Indent + 1);
     OS << "PartialSpecParams:\n";
-    for (auto *Param : TemplateParams) {
-      Param->dump(OS, Indent + 2);
-    }
+    Params->dump(OS, Indent + 2);
   }
   
   // Call base class dump for template args
@@ -951,12 +957,10 @@ void VarTemplatePartialSpecializationDecl::dump(raw_ostream &OS, unsigned Indent
   printIndent(OS, Indent);
   OS << "VarTemplatePartialSpecializationDecl " << getName() << "\n";
   
-  if (!TemplateParams.empty()) {
+  if (Params) {
     printIndent(OS, Indent + 1);
     OS << "PartialSpecParams:\n";
-    for (auto *Param : TemplateParams) {
-      Param->dump(OS, Indent + 2);
-    }
+    Params->dump(OS, Indent + 2);
   }
   
   // Call base class dump

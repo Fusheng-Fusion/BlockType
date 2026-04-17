@@ -6,6 +6,7 @@ add_library(blocktype-ast
   Decl.cpp
   Expr.cpp
   Stmt.cpp
+  TemplateParameterList.cpp
   Type.cpp
 )
 

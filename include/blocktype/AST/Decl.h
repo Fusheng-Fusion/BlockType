@@ -13,6 +13,7 @@
 #pragma once
 
 #include "blocktype/AST/ASTNode.h"
+#include "blocktype/AST/TemplateParameterList.h"
 #include "blocktype/AST/Type.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
@@ -893,24 +894,34 @@ public:
 /// TemplateDecl - Base class for template declarations.
 class TemplateDecl : public NamedDecl {
 protected:
-  llvm::SmallVector<NamedDecl *, 8> TemplateParams;
+  TemplateParameterList *Params = nullptr;
   Decl *TemplatedDecl;
-  Expr *RequiresClause; // C++20 requires-clause
 
 public:
   TemplateDecl(SourceLocation Loc, llvm::StringRef Name, Decl *TemplatedDecl)
-      : NamedDecl(Loc, Name), TemplatedDecl(TemplatedDecl), RequiresClause(nullptr) {}
+      : NamedDecl(Loc, Name), TemplatedDecl(TemplatedDecl) {}
 
+  /// Get the template parameter list.
+  TemplateParameterList *getTemplateParameterList() const { return Params; }
+
+  /// Set the template parameter list.
+  void setTemplateParameterList(TemplateParameterList *TPL) { Params = TPL; }
+
+  /// Convenience: get template parameters as ArrayRef.
   llvm::ArrayRef<NamedDecl *> getTemplateParameters() const {
-    return TemplateParams;
+    return Params ? Params->getParams() : llvm::ArrayRef<NamedDecl *>();
   }
-  void addTemplateParameter(NamedDecl *Param) { TemplateParams.push_back(Param); }
+
+  /// Legacy: add a single template parameter (creates list if needed).
+  void addTemplateParameter(NamedDecl *Param);
 
   Decl *getTemplatedDecl() const { return TemplatedDecl; }
 
-  Expr *getRequiresClause() const { return RequiresClause; }
-  void setRequiresClause(Expr *E) { RequiresClause = E; }
-  bool hasRequiresClause() const { return RequiresClause != nullptr; }
+  Expr *getRequiresClause() const {
+    return Params ? Params->getRequiresClause() : nullptr;
+  }
+  void setRequiresClause(Expr *E);
+  bool hasRequiresClause() const { return getRequiresClause() != nullptr; }
 
   NodeKind getKind() const override { return NodeKind::TemplateDeclKind; }
 
@@ -1545,7 +1556,7 @@ public:
 /// ClassTemplatePartialSpecializationDecl - Represents a class template partial specialization.
 /// Example: template<typename T> class Vector<T*> { ... };
 class ClassTemplatePartialSpecializationDecl : public ClassTemplateSpecializationDecl {
-  llvm::SmallVector<NamedDecl *, 8> TemplateParams;
+  TemplateParameterList *Params = nullptr;
 
 public:
   ClassTemplatePartialSpecializationDecl(SourceLocation Loc, llvm::StringRef Name,
@@ -1553,9 +1564,12 @@ public:
                                           llvm::ArrayRef<TemplateArgument> Args)
       : ClassTemplateSpecializationDecl(Loc, Name, Template, Args, false) {}
 
-  void addTemplateParameter(NamedDecl *Param) { TemplateParams.push_back(Param); }
-  
-  llvm::ArrayRef<NamedDecl *> getTemplateParameters() const { return TemplateParams; }
+  void setTemplateParameterList(TemplateParameterList *TPL) { Params = TPL; }
+  TemplateParameterList *getTemplateParameterList() const { return Params; }
+
+  llvm::ArrayRef<NamedDecl *> getTemplateParameters() const {
+    return Params ? Params->getParams() : llvm::ArrayRef<NamedDecl *>();
+  }
 
   NodeKind getKind() const override {
     return NodeKind::ClassTemplatePartialSpecializationDeclKind;
@@ -1610,7 +1624,7 @@ public:
 
 /// VarTemplatePartialSpecializationDecl - Represents a variable template partial specialization.
 class VarTemplatePartialSpecializationDecl : public VarTemplateSpecializationDecl {
-  llvm::SmallVector<NamedDecl *, 8> TemplateParams;
+  TemplateParameterList *Params = nullptr;
 
 public:
   VarTemplatePartialSpecializationDecl(SourceLocation Loc, llvm::StringRef Name, QualType T,
@@ -1619,9 +1633,12 @@ public:
                                         Expr *Init = nullptr)
       : VarTemplateSpecializationDecl(Loc, Name, T, Template, Args, Init, false) {}
 
-  void addTemplateParameter(NamedDecl *Param) { TemplateParams.push_back(Param); }
-  
-  llvm::ArrayRef<NamedDecl *> getTemplateParameters() const { return TemplateParams; }
+  void setTemplateParameterList(TemplateParameterList *TPL) { Params = TPL; }
+  TemplateParameterList *getTemplateParameterList() const { return Params; }
+
+  llvm::ArrayRef<NamedDecl *> getTemplateParameters() const {
+    return Params ? Params->getParams() : llvm::ArrayRef<NamedDecl *>();
+  }
 
   NodeKind getKind() const override {
     return NodeKind::VarTemplatePartialSpecializationDeclKind;

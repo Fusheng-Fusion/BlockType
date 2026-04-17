@@ -15,6 +15,7 @@
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Stmt.h"
+#include "blocktype/AST/TemplateParameterList.h"
 #include "blocktype/AST/Type.h"
 #include "blocktype/Basic/Diagnostics.h"
 #include "blocktype/Lex/Token.h"
@@ -1167,8 +1168,12 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
 
   consumeToken(); // consume '<'
 
+  // Record the '<' location for TemplateParameterList
+  SourceLocation LAngleLoc = Tok.getLocation();
+
   // Check for explicit specialization: template<> class Vector<int> {}
   if (Tok.is(TokenKind::greater)) {
+    SourceLocation RAngleLoc = Tok.getLocation();
     consumeToken(); // consume '>'
 
     // Parse the specialized declaration
@@ -1209,6 +1214,7 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
     return nullptr;
   }
 
+  SourceLocation RAngleLoc = Tok.getLocation();
   consumeToken(); // consume '>'
 
   // Check for concept definition (C++20)
@@ -1253,15 +1259,10 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
     Template = Context.create<TemplateDecl>(TemplateLoc, "", TemplatedDecl);
   }
 
-  // Add template parameters
-  for (auto *Param : Params) {
-    Template->addTemplateParameter(Param);
-  }
-
-  // Set requires-clause if present
-  if (RequiresClause) {
-    Template->setRequiresClause(RequiresClause);
-  }
+  // Create TemplateParameterList and assign it to the template
+  auto *TPL = new TemplateParameterList(
+      TemplateLoc, LAngleLoc, RAngleLoc, Params, RequiresClause);
+  Template->setTemplateParameterList(TPL);
 
   return Template;
 }
@@ -1429,6 +1430,9 @@ TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
 
   consumeToken(); // consume '<'
 
+  // Record the '<' location
+  SourceLocation InnerLAngleLoc = Tok.getLocation();
+
   // Parse template parameters
   llvm::SmallVector<NamedDecl *, 8> Params;
   parseTemplateParameters(Params);
@@ -1439,6 +1443,7 @@ TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
     return nullptr;
   }
 
+  SourceLocation InnerRAngleLoc = Tok.getLocation();
   consumeToken(); // consume '>'
 
   // Parse optional requires-clause (C++20)
@@ -1485,10 +1490,10 @@ TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
     Param->setConstraint(Constraint);
   }
 
-  // Add template parameters
-  for (auto *P : Params) {
-    Param->addTemplateParameter(P);
-  }
+  // Create TemplateParameterList for the template template parameter
+  auto *TPL = new TemplateParameterList(
+      SourceLocation(), InnerLAngleLoc, InnerRAngleLoc, Params);
+  Param->setTemplateParameterList(TPL);
 
   // Parse default argument (optional)
   // For template template parameter, default is a template name
@@ -3331,11 +3336,11 @@ ConceptDecl *Parser::parseConceptDefinition(SourceLocation Loc,
   }
   consumeToken(); // consume ';'
 
-  // Create TemplateDecl for the concept
+  // Create TemplateDecl for the concept with TemplateParameterList
   TemplateDecl *Template = Context.create<TemplateDecl>(Loc, ConceptName, nullptr);
-  for (auto *Param : TemplateParams) {
-    Template->addTemplateParameter(Param);
-  }
+  auto *TPL = new TemplateParameterList(
+      Loc, SourceLocation(), SourceLocation(), TemplateParams);
+  Template->setTemplateParameterList(TPL);
 
   // Create ConceptDecl
   ConceptDecl *Concept = Context.create<ConceptDecl>(ConceptNameLoc, ConceptName, Constraint, Template);
