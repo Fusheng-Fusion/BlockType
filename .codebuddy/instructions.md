@@ -27,8 +27,7 @@
 本项目架构参考 Clang 编译器。遇到不确定的设计决策时：
 
 1. 查看 `docs/ARCHITECTURE.md` 中的模块职责划分
-2. 查看 `docs/PHASE3-GAP-ANALYSIS.md` 中的已知缺口
-3. 参照 Clang 的对应实现做决策
+2. 参照 Clang 的对应实现做决策
 
 ### 规则 4：修改前先读文档
 

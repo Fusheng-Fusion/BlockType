@@ -73,17 +73,17 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.1.1.1** 创建 `include/nova-cc/AST/TemplateBase.h`：
+- **E5.1.1.1** 创建 `include/BlockType-cc/AST/TemplateBase.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Decl.h"
-  #include "nova-cc/AST/Type.h"
-  #include "nova-cc/Basic/LLVM.h"
+  #include "BlockType-cc/AST/Decl.h"
+  #include "BlockType-cc/AST/Type.h"
+  #include "BlockType-cc/Basic/LLVM.h"
   #include "llvm/ADT/SmallVector.h"
   #include "llvm/ADT/PointerUnion.h"
   
-  namespace nova {
+  namespace BlockType {
   
   // === 模板参数 ===
   
@@ -207,17 +207,17 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
     QualType getAsType() const { assert(isType()); return TypeArg; }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
-- **E5.1.1.2** 创建 `include/nova-cc/AST/DeclTemplate.h`：
+- **E5.1.1.2** 创建 `include/BlockType-cc/AST/DeclTemplate.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Decl.h"
-  #include "nova-cc/AST/TemplateBase.h"
+  #include "BlockType-cc/AST/Decl.h"
+  #include "BlockType-cc/AST/TemplateBase.h"
   
-  namespace nova {
+  namespace BlockType {
   
   // === 模板声明基类 ===
   
@@ -290,11 +290,11 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
     ArrayRef<TemplateArgument> getTemplateArgs() const { return TemplateArgs; }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 定义模板声明的 AST 节点。
+> 请为 BlockType-cc 定义模板声明的 AST 节点。
 >
 > **模板参数分类**：
 > 1. 类型参数：typename T, class T
@@ -428,7 +428,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现模板解析。
+> 请为 BlockType-cc 实现模板解析。
 >
 > **解析流程**：
 > 1. template 关键字
@@ -466,14 +466,14 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.1.3.1** 创建 `include/nova-cc/Sema/TemplateInstantiation.h`：
+- **E5.1.3.1** 创建 `include/BlockType-cc/Sema/TemplateInstantiation.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/DeclTemplate.h"
-  #include "nova-cc/AST/TemplateBase.h"
+  #include "BlockType-cc/AST/DeclTemplate.h"
+  #include "BlockType-cc/AST/TemplateBase.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class TemplateInstantiator {
     Sema &SemaRef;
@@ -500,7 +500,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
                                        const TemplateArgumentList &Args);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E5.1.3.2** 实现类模板实例化：
@@ -535,7 +535,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现模板实例化框架。
+> 请为 BlockType-cc 实现模板实例化框架。
 >
 > **实例化时机**：
 > - 隐式实例化：使用时触发（vector<int> v;）
@@ -620,7 +620,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现模板名称查找。
+> 请为 BlockType-cc 实现模板名称查找。
 >
 > **模板名称查找场景**：
 > 1. 模板 ID：vector<int> 中的 vector
@@ -653,14 +653,14 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.2.1.1** 创建 `include/nova-cc/Sema/TemplateDeduction.h`：
+- **E5.2.1.1** 创建 `include/BlockType-cc/Sema/TemplateDeduction.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/TemplateBase.h"
+  #include "BlockType-cc/AST/TemplateBase.h"
   #include "llvm/ADT/DenseMap.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class TemplateDeductionInfo {
     // 推导结果
@@ -703,7 +703,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
     bool DeducePartialOrdering(TemplateDecl *P1, TemplateDecl *P2);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E5.2.1.2** 实现类型推导算法：
@@ -774,7 +774,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现模板参数推导。
+> 请为 BlockType-cc 实现模板参数推导。
 >
 > **推导场景**：
 > 1. 函数调用：f(1, 2) 推导 f 的模板参数
@@ -807,13 +807,13 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.2.2.1** 创建 `include/nova-cc/Sema/SFINAE.h`：
+- **E5.2.2.1** 创建 `include/BlockType-cc/Sema/SFINAE.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/TemplateBase.h"
+  #include "BlockType-cc/AST/TemplateBase.h"
   
-  namespace nova {
+  namespace BlockType {
   
   enum class SFINAEResult {
     Success,    // 替换成功
@@ -836,7 +836,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
     }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E5.2.2.2** 实现 SFINAE 检查：
@@ -867,7 +867,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现 SFINAE。
+> 请为 BlockType-cc 实现 SFINAE。
 >
 > **SFINAE 场景**：
 > 1. 无效类型：typename T::type 当 T 没有 type 成员
@@ -900,13 +900,13 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.2.3.1** 创建 `include/nova-cc/Sema/TemplatePartialOrdering.h`：
+- **E5.2.3.1** 创建 `include/BlockType-cc/Sema/TemplatePartialOrdering.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/DeclTemplate.h"
+  #include "BlockType-cc/AST/DeclTemplate.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class TemplatePartialOrdering {
   public:
@@ -919,7 +919,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
     static TemplateArgument generateDeducedArg(TemplateParameter *P);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E5.2.3.2** 实现排序算法：
@@ -950,7 +950,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现模板部分排序。
+> 请为 BlockType-cc 实现模板部分排序。
 >
 > **部分排序规则**：
 > 1. 更特化的模板优先
@@ -982,7 +982,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.3.1.1** 扩展 `include/nova-cc/AST/TemplateBase.h`：
+- **E5.3.1.1** 扩展 `include/BlockType-cc/AST/TemplateBase.h`：
   ```cpp
   class TemplateTypeParmDecl : public TemplateParameter {
     bool IsParameterPack = false;
@@ -1031,7 +1031,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现参数包解析。
+> 请为 BlockType-cc 实现参数包解析。
 >
 > **参数包语法**：
 > - typename... Ts：类型参数包
@@ -1057,14 +1057,14 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.3.2.1** 创建 `include/nova-cc/AST/PackExpansion.h`：
+- **E5.3.2.1** 创建 `include/BlockType-cc/AST/PackExpansion.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Expr.h"
-  #include "nova-cc/AST/Type.h"
+  #include "BlockType-cc/AST/Expr.h"
+  #include "BlockType-cc/AST/Type.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class PackExpansionExpr : public Expr {
     Expr *Pattern;        // 展开模式
@@ -1086,7 +1086,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
     QualType getPattern() const { return Pattern; }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E5.3.2.2** 实现包展开实例化：
@@ -1114,7 +1114,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现参数包展开。
+> 请为 BlockType-cc 实现参数包展开。
 >
 > **展开场景**：
 > 1. 函数参数：void f(Ts... args);
@@ -1142,13 +1142,13 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.3.3.1** 创建 `include/nova-cc/AST/FoldExpr.h`：
+- **E5.3.3.1** 创建 `include/BlockType-cc/AST/FoldExpr.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Expr.h"
+  #include "BlockType-cc/AST/Expr.h"
   
-  namespace nova {
+  namespace BlockType {
   
   enum class FoldOperator {
     Add, Sub, Mul, Div, Mod,
@@ -1182,7 +1182,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
     Expr* getRHS() const { return RHS; }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E5.3.3.2** 实现折叠表达式求值：
@@ -1217,7 +1217,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现折叠表达式。
+> 请为 BlockType-cc 实现折叠表达式。
 >
 > **折叠表达式语法**：
 > - 一元右折叠：(pack op ...)
@@ -1254,14 +1254,14 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.4.1.1** 创建 `include/nova-cc/AST/DeclConcept.h`：
+- **E5.4.1.1** 创建 `include/BlockType-cc/AST/DeclConcept.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Decl.h"
-  #include "nova-cc/AST/Expr.h"
+  #include "BlockType-cc/AST/Decl.h"
+  #include "BlockType-cc/AST/Expr.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class ConceptDecl : public TemplateDecl {
     Expr *Constraint;  // 约束表达式
@@ -1278,7 +1278,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
     bool isSatisfied(QualType T) const;
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E5.4.1.2** 解析 Concept 声明：
@@ -1310,7 +1310,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现 Concept 声明。
+> 请为 BlockType-cc 实现 Concept 声明。
 >
 > **Concept 语法**：
 > ```cpp
@@ -1344,14 +1344,14 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.4.2.1** 创建 `include/nova-cc/AST/ExprConcept.h`：
+- **E5.4.2.1** 创建 `include/BlockType-cc/AST/ExprConcept.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Expr.h"
-  #include "nova-cc/AST/Decl.h"
+  #include "BlockType-cc/AST/Expr.h"
+  #include "BlockType-cc/AST/Decl.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class Requirement {
   public:
@@ -1406,11 +1406,11 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
     ArrayRef<Requirement*> getRequirements() const { return Requirements; }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现 requires 表达式。
+> 请为 BlockType-cc 实现 requires 表达式。
 >
 > **Requires 表达式语法**：
 > ```cpp
@@ -1442,14 +1442,14 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.4.3.1** 创建 `include/nova-cc/Sema/ConstraintSatisfaction.h`：
+- **E5.4.3.1** 创建 `include/BlockType-cc/Sema/ConstraintSatisfaction.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/DeclConcept.h"
-  #include "nova-cc/AST/ExprConcept.h"
+  #include "BlockType-cc/AST/DeclConcept.h"
+  #include "BlockType-cc/AST/ExprConcept.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class ConstraintSatisfaction {
     Sema &SemaRef;
@@ -1469,11 +1469,11 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
     bool EvaluateRequirement(Requirement *R, const TemplateArgumentList &Args);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现约束满足检查。
+> 请为 BlockType-cc 实现约束满足检查。
 >
 > **检查流程**：
 > 1. 实例化约束表达式
@@ -1504,7 +1504,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.5.1.1** 扩展 `include/nova-cc/AST/DeclTemplate.h`：
+- **E5.5.1.1** 扩展 `include/BlockType-cc/AST/DeclTemplate.h`：
   ```cpp
   class ClassTemplateSpecializationDecl : public CXXRecordDecl {
   public:
@@ -1536,7 +1536,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现模板显式特化。
+> 请为 BlockType-cc 实现模板显式特化。
 >
 > **显式特化语法**：
 > ```cpp
@@ -1568,7 +1568,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
 
 **开发要点：**
 
-- **E5.5.2.1** 创建 `include/nova-cc/AST/DeclTemplate.h`：
+- **E5.5.2.1** 创建 `include/BlockType-cc/AST/DeclTemplate.h`：
   ```cpp
   class ClassTemplatePartialSpecializationDecl : public ClassTemplateSpecializationDecl {
     TemplateParameterList *TemplateParams;
@@ -1584,7 +1584,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现模板偏特化。
+> 请为 BlockType-cc 实现模板偏特化。
 >
 > **偏特化语法**：
 > ```cpp
@@ -1635,7 +1635,7 @@ Phase 5 包含 5 个 Stage，共 15 个 Task，预计 6 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 建立模板测试。
+> 请为 BlockType-cc 建立模板测试。
 >
 > **测试重点**：
 > 1. 模板参数推导正确性

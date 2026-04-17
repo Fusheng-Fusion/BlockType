@@ -67,21 +67,21 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.1.1.1** 创建 `include/nova-cc/Sema/Sema.h`：
+- **E4.1.1.1** 创建 `include/BlockType-cc/Sema/Sema.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/ASTContext.h"
-  #include "nova-cc/AST/Decl.h"
-  #include "nova-cc/AST/Expr.h"
-  #include "nova-cc/AST/Stmt.h"
-  #include "nova-cc/Basic/Diagnostics.h"
-  #include "nova-cc/Sema/SymbolTable.h"
-  #include "nova-cc/Sema/Scope.h"
+  #include "BlockType-cc/AST/ASTContext.h"
+  #include "BlockType-cc/AST/Decl.h"
+  #include "BlockType-cc/AST/Expr.h"
+  #include "BlockType-cc/AST/Stmt.h"
+  #include "BlockType-cc/Basic/Diagnostics.h"
+  #include "BlockType-cc/Sema/SymbolTable.h"
+  #include "BlockType-cc/Sema/Scope.h"
   #include "llvm/ADT/DenseMap.h"
   #include <memory>
   
-  namespace nova {
+  namespace BlockType {
   
   class Sema {
     ASTContext &Context;
@@ -128,14 +128,14 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     bool hasErrorOccurred() const { return Diags.hasErrorOccurred(); }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E4.1.1.2** 实现 `src/Sema/Sema.cpp` 核心逻辑：
   ```cpp
-  #include "nova-cc/Sema/Sema.h"
+  #include "BlockType-cc/Sema/Sema.h"
   
-  namespace nova {
+  namespace BlockType {
   
   Sema::Sema(ASTContext &C, DiagnosticsEngine &D)
     : Context(C), Diags(D), Symbols(C) {
@@ -168,11 +168,11 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     // ... 详细实现见后续 Task
   }
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现 Sema 主类。
+> 请为 BlockType-cc 实现 Sema 主类。
 >
 > **核心职责**：
 > 1. 协调符号表、作用域链、类型系统
@@ -208,17 +208,17 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.1.2.1** 创建 `include/nova-cc/Sema/SymbolTable.h`：
+- **E4.1.2.1** 创建 `include/BlockType-cc/Sema/SymbolTable.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Decl.h"
-  #include "nova-cc/Basic/LLVM.h"
+  #include "BlockType-cc/AST/Decl.h"
+  #include "BlockType-cc/Basic/LLVM.h"
   #include "llvm/ADT/DenseMap.h"
   #include "llvm/ADT/StringMap.h"
   #include <vector>
   
-  namespace nova {
+  namespace BlockType {
   
   class SymbolTable {
     ASTContext &Context;
@@ -252,7 +252,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     void dump() const;
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E4.1.2.2** 实现 `src/Sema/SymbolTable.cpp`：
@@ -288,7 +288,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现符号表。
+> 请为 BlockType-cc 实现符号表。
 >
 > **符号分类**：
 > - 普通符号：变量、函数、枚举值
@@ -319,15 +319,15 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.1.3.1** 创建 `include/nova-cc/Sema/Scope.h`：
+- **E4.1.3.1** 创建 `include/BlockType-cc/Sema/Scope.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Decl.h"
+  #include "BlockType-cc/AST/Decl.h"
   #include "llvm/ADT/SmallPtrSet.h"
   #include "llvm/ADT/StringMap.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class Scope {
   public:
@@ -389,7 +389,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     bool empty() const { return Chain.empty(); }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E4.1.3.2** 实现作用域查找算法：
@@ -411,7 +411,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现作用域管理。
+> 请为 BlockType-cc 实现作用域管理。
 >
 > **作用域类型**：
 > - Global：文件作用域，包含全局变量、函数
@@ -445,7 +445,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.1.4.1** 扩展 `include/nova-cc/AST/Decl.h`：
+- **E4.1.4.1** 扩展 `include/BlockType-cc/AST/Decl.h`：
   ```cpp
   class DeclContext {
     DeclContext *Parent = nullptr;
@@ -495,7 +495,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现 DeclContext。
+> 请为 BlockType-cc 实现 DeclContext。
 >
 > **DeclContext 的作用**：
 > - 表示可以包含声明的实体（命名空间、类、函数等）
@@ -531,14 +531,14 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.2.1.1** 创建 `include/nova-cc/AST/Type.h`：
+- **E4.2.1.1** 创建 `include/BlockType-cc/AST/Type.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/Basic/LLVM.h"
+  #include "BlockType-cc/Basic/LLVM.h"
   #include "llvm/ADT/FoldingSet.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class Type {
   public:
@@ -607,17 +607,17 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     void dump(raw_ostream &OS) const override;
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
-- **E4.2.1.2** 创建 `include/nova-cc/AST/QualType.h`：
+- **E4.2.1.2** 创建 `include/BlockType-cc/AST/QualType.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Type.h"
+  #include "BlockType-cc/AST/Type.h"
   #include "llvm/ADT/PointerIntPair.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class QualType {
     // 低 3 位存储 CV 限定符
@@ -651,11 +651,11 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     bool operator!=(QualType RHS) const { return !(*this == RHS); }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现类型系统基础。
+> 请为 BlockType-cc 实现类型系统基础。
 >
 > **内建类型分类**：
 > - Void：void 类型
@@ -694,7 +694,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.2.2.1** 扩展 `include/nova-cc/AST/Type.h`：
+- **E4.2.2.1** 扩展 `include/BlockType-cc/AST/Type.h`：
   ```cpp
   class PointerType : public Type {
     QualType Pointee;
@@ -747,7 +747,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现派生类型。
+> 请为 BlockType-cc 实现派生类型。
 >
 > **指针类型**：
 > - 存储被指向类型
@@ -786,14 +786,14 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.2.3.1** 创建 `include/nova-cc/Sema/TypeDeduction.h`：
+- **E4.2.3.1** 创建 `include/BlockType-cc/Sema/TypeDeduction.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Type.h"
-  #include "nova-cc/AST/Expr.h"
+  #include "BlockType-cc/AST/Type.h"
+  #include "BlockType-cc/AST/Expr.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class TypeDeduction {
     ASTContext &Context;
@@ -813,7 +813,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
                                      QualType Target);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E4.2.3.2** 实现 auto 推导：
@@ -842,7 +842,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现类型推导。
+> 请为 BlockType-cc 实现类型推导。
 >
 > **auto 推导规则**（C++11 起）：
 > 1. auto x = expr；推导为 expr 的类型（去除引用）
@@ -875,7 +875,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.2.4.1** 扩展 `include/nova-cc/AST/Type.h`：
+- **E4.2.4.1** 扩展 `include/BlockType-cc/AST/Type.h`：
   ```cpp
   class RecordType : public Type {
     RecordDecl *Decl;
@@ -906,7 +906,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现用户定义类型。
+> 请为 BlockType-cc 实现用户定义类型。
 >
 > **RecordType**：
 > - 表示类、结构、联合
@@ -938,7 +938,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.2.5.1** 扩展 `include/nova-cc/AST/ASTContext.h`：
+- **E4.2.5.1** 扩展 `include/BlockType-cc/AST/ASTContext.h`：
   ```cpp
   class ASTContext {
     // 内建类型缓存
@@ -989,7 +989,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现类型工厂。
+> 请为 BlockType-cc 实现类型工厂。
 >
 > **类型唯一化**：
 > - 相同的类型只创建一个实例
@@ -1022,15 +1022,15 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.3.1.1** 创建 `include/nova-cc/Sema/Lookup.h`：
+- **E4.3.1.1** 创建 `include/BlockType-cc/Sema/Lookup.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Decl.h"
-  #include "nova-cc/Sema/Scope.h"
+  #include "BlockType-cc/AST/Decl.h"
+  #include "BlockType-cc/Sema/Scope.h"
   #include "llvm/ADT/SmallVector.h"
   
-  namespace nova {
+  namespace BlockType {
   
   enum LookupNameKind {
     LNK_LookupOrdinaryName,    // 普通名字查找
@@ -1066,7 +1066,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
                                         LookupNameKind Kind = LNK_LookupOrdinaryName);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E4.3.1.2** 实现查找算法：
@@ -1099,7 +1099,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现非限定名字查找。
+> 请为 BlockType-cc 实现非限定名字查找。
 >
 > **查找顺序**：
 > 1. 当前块作用域
@@ -1134,7 +1134,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.3.2.1** 扩展 `include/nova-cc/Sema/Lookup.h`：
+- **E4.3.2.1** 扩展 `include/BlockType-cc/Sema/Lookup.h`：
   ```cpp
   class NestedNameSpecifier {
   public:
@@ -1186,7 +1186,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现限定名字查找。
+> 请为 BlockType-cc 实现限定名字查找。
 >
 > **NestedNameSpecifier**：
 > - 表示 A::B::C 中的 A::B:: 部分
@@ -1218,13 +1218,13 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.3.3.1** 创建 `include/nova-cc/Sema/ADL.h`：
+- **E4.3.3.1** 创建 `include/BlockType-cc/Sema/ADL.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/Sema/Lookup.h"
+  #include "BlockType-cc/Sema/Lookup.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class ADL {
   public:
@@ -1239,7 +1239,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
                                              llvm::SmallPtrSet<NamespaceDecl*, 4> &Namespaces);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E4.3.3.2** 实现 ADL 算法：
@@ -1278,7 +1278,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现 ADL。
+> 请为 BlockType-cc 实现 ADL。
 >
 > **ADL 规则**：
 > - 函数调用时，除了普通查找，还在参数类型所在的命名空间中查找
@@ -1318,16 +1318,16 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.4.1.1** 创建 `include/nova-cc/Sema/Overload.h`：
+- **E4.4.1.1** 创建 `include/BlockType-cc/Sema/Overload.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Decl.h"
-  #include "nova-cc/AST/Expr.h"
-  #include "nova-cc/AST/Type.h"
+  #include "BlockType-cc/AST/Decl.h"
+  #include "BlockType-cc/AST/Expr.h"
+  #include "BlockType-cc/AST/Type.h"
   #include "llvm/ADT/SmallVector.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class OverloadCandidate {
     FunctionDecl *Function;
@@ -1355,11 +1355,11 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     FunctionDecl* resolve(ArrayRef<Expr*> Args);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现重载候选收集。
+> 请为 BlockType-cc 实现重载候选收集。
 >
 > **候选来源**：
 > 1. 普通查找结果
@@ -1392,13 +1392,13 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.4.2.1** 创建 `include/nova-cc/Sema/Conversion.h`：
+- **E4.4.2.1** 创建 `include/BlockType-cc/Sema/Conversion.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Type.h"
+  #include "BlockType-cc/AST/Type.h"
   
-  namespace nova {
+  namespace BlockType {
   
   enum ConversionRank {
     CR_ExactMatch,      // 完全匹配
@@ -1421,7 +1421,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     bool operator<(const ImplicitConversion &RHS) const;
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E4.4.2.2** 实现候选排序：
@@ -1453,7 +1453,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现参数转换和候选排序。
+> 请为 BlockType-cc 实现参数转换和候选排序。
 >
 > **转换序列**：
 > 1. 标准转换序列：左值转换 → 数值提升/转换 → 限定符调整
@@ -1536,7 +1536,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现最佳函数选择。
+> 请为 BlockType-cc 实现最佳函数选择。
 >
 > **决议流程**：
 > 1. 收集候选
@@ -1572,14 +1572,14 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.5.1.1** 创建 `include/nova-cc/Sema/TypeCheck.h`：
+- **E4.5.1.1** 创建 `include/BlockType-cc/Sema/TypeCheck.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Expr.h"
-  #include "nova-cc/AST/Type.h"
+  #include "BlockType-cc/AST/Expr.h"
+  #include "BlockType-cc/AST/Type.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class TypeCheck {
     DiagnosticsEngine &Diags;
@@ -1601,11 +1601,11 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     QualType getCommonType(QualType T1, QualType T2);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现类型检查。
+> 请为 BlockType-cc 实现类型检查。
 >
 > **赋值检查**：
 > - const 对象不可赋值
@@ -1637,13 +1637,13 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.5.2.1** 创建 `include/nova-cc/Sema/AccessControl.h`：
+- **E4.5.2.1** 创建 `include/BlockType-cc/Sema/AccessControl.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Decl.h"
+  #include "BlockType-cc/AST/Decl.h"
   
-  namespace nova {
+  namespace BlockType {
   
   enum AccessSpecifier {
     AS_public,
@@ -1661,11 +1661,11 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     static AccessSpecifier GetAccess(NamedDecl *D);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现访问控制检查。
+> 请为 BlockType-cc 实现访问控制检查。
 >
 > **访问级别**：
 > - public：任何代码可访问
@@ -1692,7 +1692,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.5.3.1** 创建 `include/nova-Basic/DiagnosticSemaKinds.td`：
+- **E4.5.3.1** 创建 `include/BlockType-Basic/DiagnosticSemaKinds.td`：
   ```tablegen
   // 语义分析错误
   
@@ -1722,7 +1722,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现语义诊断系统。
+> 请为 BlockType-cc 实现语义诊断系统。
 >
 > **诊断级别**：
 > - Error：必须修复
@@ -1756,15 +1756,15 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 
 **开发要点：**
 
-- **E4.5.4.1** 创建 `include/nova-cc/Sema/ConstantExpr.h`：
+- **E4.5.4.1** 创建 `include/BlockType-cc/Sema/ConstantExpr.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/AST/Expr.h"
+  #include "BlockType-cc/AST/Expr.h"
   #include "llvm/ADT/APInt.h"
   #include "llvm/ADT/APFloat.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class ConstantExprEvaluator {
     ASTContext &Context;
@@ -1783,11 +1783,11 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
     bool EvaluateCall(FunctionDecl *F, ArrayRef<Expr*> Args, llvm::APInt &Result);
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 实现常量表达式求值。
+> 请为 BlockType-cc 实现常量表达式求值。
 >
 > **常量表达式场景**：
 > - 数组大小：int arr[10];
@@ -1845,7 +1845,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 建立语义分析测试。
+> 请为 BlockType-cc 建立语义分析测试。
 >
 > **单元测试重点**：
 > - 符号表增删查

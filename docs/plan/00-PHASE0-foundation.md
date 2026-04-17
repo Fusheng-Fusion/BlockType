@@ -22,12 +22,12 @@ Phase 0 包含 4 个 Stage，共 12 个 Task，预计 2 周完成。
 **Phase 0 架构图：**
 
 ```
-nova-cc/
+BlockType-cc/
 ├── CMakeLists.txt              # 主构建配置
 ├── cmake/                      # CMake 模块
 │   ├── LLVM.cmake             # LLVM 配置
 │   └── CompilerOptions.cmake  # 编译选项
-├── include/nova-cc/
+├── include/BlockType-cc/
 │   ├── Basic/                 # 基础设施
 │   ├── Lex/                   # 词法分析
 │   ├── Parse/                 # 语法分析
@@ -59,7 +59,7 @@ nova-cc/
 - **E0.1.1** 创建根目录 `CMakeLists.txt`：
   ```cmake
   cmake_minimum_required(VERSION 3.20)
-  project(nova-cc
+  project(BlockType-cc
     VERSION 0.1.0
     DESCRIPTION "A C++26 compiler built with AI"
     LANGUAGES CXX
@@ -82,7 +82,7 @@ nova-cc/
 - **E0.1.2** 创建 `cmake/CompilerOptions.cmake`：
   ```cmake
   # 编译选项
-  function(nova_cc_add_compile_options target)
+  function(BlockType_cc_add_compile_options target)
     target_compile_options(${target} PRIVATE
       # 警告
       $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wall -Wextra -Wpedantic -Werror>
@@ -99,17 +99,17 @@ nova-cc/
 - **E0.1.3** 创建 `cmake/LLVM.cmake` 配置 LLVM 依赖
 
 **开发关键点提示：**
-> 请为 nova-cc 创建 CMake 基础配置。
+> 请为 BlockType-cc 创建 CMake 基础配置。
 >
 > **根目录 CMakeLists.txt**：
 > - CMake 最低版本 3.20
-> - 项目名 nova-cc，版本 0.1.0
+> - 项目名 BlockType-cc，版本 0.1.0
 > - C++23 标准，不使用扩展
 > - 默认 Release 构建类型
 > - 导出 compile_commands.json
 >
 > **cmake/CompilerOptions.cmake**：
-> - 定义 `nova_cc_add_compile_options(target)` 函数
+> - 定义 `BlockType_cc_add_compile_options(target)` 函数
 > - Clang/GCC: -Wall -Wextra -Wpedantic -Werror
 > - MSVC: /W4 /WX
 > - Debug: -g -O0
@@ -173,7 +173,7 @@ nova-cc/
 - **E0.2.3** 配置交叉编译支持（Linux x86_64 + macOS arm64）
 
 **开发关键点提示：**
-> 请为 nova-cc 集成 LLVM。
+> 请为 BlockType-cc 集成 LLVM。
 >
 > **LLVM 版本**：最低 18.x
 >
@@ -215,7 +215,7 @@ nova-cc/
   BUILD_TYPE=${1:-Release}
   BUILD_DIR="build-${BUILD_TYPE,,}"
   
-  echo "Building nova-cc in ${BUILD_TYPE} mode..."
+  echo "Building BlockType-cc in ${BUILD_TYPE} mode..."
   
   cmake -B "${BUILD_DIR}" \
     -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
@@ -224,7 +224,7 @@ nova-cc/
   
   cmake --build "${BUILD_DIR}" -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
   
-  echo "Build complete. Binary at ${BUILD_DIR}/bin/nova-cc"
+  echo "Build complete. Binary at ${BUILD_DIR}/bin/BlockType-cc"
   ```
 
 - **E0.3.2** 创建 `scripts/test.sh`：
@@ -242,7 +242,7 @@ nova-cc/
 - **E0.3.3** 创建 `scripts/clean.sh`
 
 **开发关键点提示：**
-> 请为 nova-cc 创建编译脚本。
+> 请为 BlockType-cc 创建编译脚本。
 >
 > **scripts/build.sh**：
 > - 接受参数：Release | Debug
@@ -276,10 +276,10 @@ nova-cc/
 
 - **E0.2.1** 创建目录结构：
   ```
-  nova-cc/
+  BlockType-cc/
   ├── CMakeLists.txt
   ├── cmake/
-  ├── include/nova-cc/
+  ├── include/BlockType-cc/
   │   ├── Basic/
   │   ├── Lex/
   │   ├── Parse/
@@ -304,23 +304,23 @@ nova-cc/
 - **E0.2.2** 每个模块创建 CMakeLists.txt：
   ```cmake
   # src/Basic/CMakeLists.txt
-  add_library(nova-cc-basic
+  add_library(BlockType-cc-basic
     SourceLocation.cpp
     Diagnostics.cpp
     FileManager.cpp
     # ...
   )
-  target_include_directories(nova-cc-basic PUBLIC
+  target_include_directories(BlockType-cc-basic PUBLIC
     ${PROJECT_SOURCE_DIR}/include
   )
-  nova_cc_add_compile_options(nova-cc-basic)
+  BlockType_cc_add_compile_options(BlockType-cc-basic)
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 创建项目目录结构。
+> 请为 BlockType-cc 创建项目目录结构。
 >
 > **目录说明**：
-> - include/nova-cc/：公共头文件
+> - include/BlockType-cc/：公共头文件
 > - src/：源代码实现
 > - tests/unit/：GTest 单元测试
 > - tests/lit/：Lit 回归测试
@@ -348,7 +348,7 @@ nova-cc/
 
 **开发要点：**
 
-- **E0.2.1** 创建 `include/nova-cc/Basic/LLVM.h`：
+- **E0.2.1** 创建 `include/BlockType-cc/Basic/LLVM.h`：
   ```cpp
   #pragma once
   
@@ -360,7 +360,7 @@ nova-cc/
   #include "llvm/Support/raw_ostream.h"
   #include "llvm/Support/MemoryBuffer.h"
   
-  namespace nova {
+  namespace BlockType {
     using llvm::StringRef;
     using llvm::SmallVector;
     using llvm::SmallString;
@@ -370,13 +370,13 @@ nova-cc/
   }
   ```
 
-- **E0.2.2** 创建 `include/nova-cc/Basic/SourceLocation.h`：
+- **E0.2.2** 创建 `include/BlockType-cc/Basic/SourceLocation.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/Basic/LLVM.h"
+  #include "BlockType-cc/Basic/LLVM.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class SourceLocation {
     unsigned ID = 0;
@@ -405,17 +405,17 @@ nova-cc/
     bool isValid() const { return Begin.isValid() && End.isValid(); }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
-- **E0.2.3** 创建 `include/nova-cc/Basic/Diagnostics.h`：
+- **E0.2.3** 创建 `include/BlockType-cc/Basic/Diagnostics.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/Basic/LLVM.h"
-  #include "nova-cc/Basic/SourceLocation.h"
+  #include "BlockType-cc/Basic/LLVM.h"
+  #include "BlockType-cc/Basic/SourceLocation.h"
   
-  namespace nova {
+  namespace BlockType {
   
   enum class DiagLevel {
     Ignored, Note, Remark, Warning, Error, Fatal
@@ -430,24 +430,24 @@ nova-cc/
     void reset();
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 创建基础类型定义。
+> 请为 BlockType-cc 创建基础类型定义。
 >
-> **include/nova-cc/Basic/LLVM.h**：
+> **include/BlockType-cc/Basic/LLVM.h**：
 > - 引入常用的 LLVM ADT 类型
-> - 放在 nova 命名空间中
+> - 放在 BlockType 命名空间中
 > - StringRef, SmallVector, ArrayRef, raw_ostream 等
 >
-> **include/nova-cc/Basic/SourceLocation.h**：
+> **include/BlockType-cc/Basic/SourceLocation.h**：
 > - SourceLocation 类：表示源代码位置
 > - 内部使用 unsigned ID 表示（引用 SourceManager 中的位置）
 > - SourceRange 类：表示源代码范围
 > - 提供比较操作符
 >
-> **include/nova-cc/Basic/Diagnostics.h**：
+> **include/BlockType-cc/Basic/Diagnostics.h**：
 > - DiagLevel 枚举：Ignored, Note, Remark, Warning, Error, Fatal
 > - DiagnosticsEngine 类：诊断引擎
 > - report() 方法：报告诊断
@@ -463,13 +463,13 @@ nova-cc/
 
 **开发要点：**
 
-- **E0.3.1** 创建 `include/nova-cc/Basic/FileEntry.h`：
+- **E0.3.1** 创建 `include/BlockType-cc/Basic/FileEntry.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/Basic/LLVM.h"
+  #include "BlockType-cc/Basic/LLVM.h"
   
-  namespace nova {
+  namespace BlockType {
   
   class FileEntry {
     StringRef Name;       // 文件名
@@ -483,19 +483,19 @@ nova-cc/
     unsigned getUID() const { return UID; }
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
-- **E0.3.2** 创建 `include/nova-cc/Basic/FileManager.h`：
+- **E0.3.2** 创建 `include/BlockType-cc/Basic/FileManager.h`：
   ```cpp
   #pragma once
   
-  #include "nova-cc/Basic/LLVM.h"
-  #include "nova-cc/Basic/FileEntry.h"
+  #include "BlockType-cc/Basic/LLVM.h"
+  #include "BlockType-cc/Basic/FileEntry.h"
   #include <memory>
   #include <map>
   
-  namespace nova {
+  namespace BlockType {
   
   class FileManager {
     std::map<StringRef, std::unique_ptr<FileEntry>> FileCache;
@@ -506,13 +506,13 @@ nova-cc/
     bool exists(StringRef Path) const;
   };
   
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E0.3.3** 实现 `src/Basic/FileManager.cpp`
 
 **开发关键点提示：**
-> 请为 nova-cc 实现文件管理器。
+> 请为 BlockType-cc 实现文件管理器。
 >
 > **FileEntry 类**：
 > - 文件名、路径、大小
@@ -562,27 +562,27 @@ nova-cc/
 - **E0.3.2** 创建测试模板：
   ```cmake
   # tests/unit/CMakeLists.txt
-  add_executable(nova-cc-tests
+  add_executable(BlockType-cc-tests
     Basic/SourceLocationTest.cpp
     Basic/FileManagerTest.cpp
     # ...
   )
   
-  target_link_libraries(nova-cc-tests
-    nova-cc-basic
+  target_link_libraries(BlockType-cc-tests
+    BlockType-cc-basic
     GTest::gtest_main
   )
   
-  gtest_discover_tests(nova-cc-tests)
+  gtest_discover_tests(BlockType-cc-tests)
   ```
 
 - **E0.3.3** 创建第一个测试：
   ```cpp
   // tests/unit/Basic/SourceLocationTest.cpp
   #include <gtest/gtest.h>
-  #include "nova-cc/Basic/SourceLocation.h"
+  #include "BlockType-cc/Basic/SourceLocation.h"
   
-  using namespace nova;
+  using namespace BlockType;
   
   TEST(SourceLocationTest, DefaultInvalid) {
     SourceLocation Loc;
@@ -598,7 +598,7 @@ nova-cc/
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 集成 Google Test。
+> 请为 BlockType-cc 集成 Google Test。
 >
 > **GTest 配置**：
 > - 使用 FetchContent 下载 GTest v1.14.0
@@ -629,14 +629,14 @@ nova-cc/
   ```python
   import lit.formats
   
-  config.name = "nova-cc"
+  config.name = "BlockType-cc"
   config.test_format = lit.formats.ShTest(True)
   config.suffixes = ['.test']
   config.test_source_root = os.path.dirname(__file__)
   config.test_exec_root = os.path.join(config.binary_dir, 'tests', 'lit')
   
   # 工具路径
-  config.substitutions.append(('%nova-cc', os.path.join(config.binary_dir, 'bin', 'nova-cc')))
+  config.substitutions.append(('%BlockType-cc', os.path.join(config.binary_dir, 'bin', 'BlockType-cc')))
   config.substitutions.append(('%FileCheck', 'FileCheck'))
   ```
 
@@ -652,19 +652,19 @@ nova-cc/
 - **E0.3.3** 创建第一个 Lit 测试：
   ```lit
   // tests/lit/basic/version.test
-  // RUN: %nova-cc --version | FileCheck %s
+  // RUN: %BlockType-cc --version | FileCheck %s
   
-  // CHECK: nova-cc version {{[0-9]+\.[0-9]+\.[0-9]+}}
+  // CHECK: BlockType-cc version {{[0-9]+\.[0-9]+\.[0-9]+}}
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 配置 LLVM Lit 测试框架。
+> 请为 BlockType-cc 配置 LLVM Lit 测试框架。
 >
 > **lit.cfg 配置**：
-> - 测试名称：nova-cc
+> - 测试名称：BlockType-cc
 > - 测试格式：ShTest
 > - 测试后缀：.test
-> - 配置 %nova-cc 和 %FileCheck 替换
+> - 配置 %BlockType-cc 和 %FileCheck 替换
 >
 > **CMake 集成**：
 > - 使用 configure_file 生成 lit.site.cfg
@@ -688,10 +688,10 @@ nova-cc/
   ```cpp
   #pragma once
   
-  #include "nova-cc/Basic/LLVM.h"
+  #include "BlockType-cc/Basic/LLVM.h"
   #include <gtest/gtest.h>
   
-  namespace nova {
+  namespace BlockType {
   namespace test {
   
   // 创建临时文件
@@ -706,13 +706,13 @@ nova-cc/
   };
   
   } // namespace test
-  } // namespace nova
+  } // namespace BlockType
   ```
 
 - **E0.3.2** 实现 `tests/TestHelpers.cpp`
 
 **开发关键点提示：**
-> 请为 nova-cc 创建测试辅助工具。
+> 请为 BlockType-cc 创建测试辅助工具。
 >
 > **TestHelpers.h**：
 > - createTempFile()：创建临时文件，用于文件相关测试
@@ -788,7 +788,7 @@ nova-cc/
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 配置 GitHub Actions CI/CD。
+> 请为 BlockType-cc 配置 GitHub Actions CI/CD。
 >
 > **CI 流水线**：
 > - Linux (ubuntu-22.04) + macOS (macos-14) 双平台
@@ -817,7 +817,7 @@ nova-cc/
 
 - **E0.4.1** 创建 `README.md`：
   ```markdown
-  # nova-cc
+  # BlockType-cc
   
   A C++26 compiler built with AI assistance.
   
@@ -846,7 +846,7 @@ nova-cc/
 - **E0.4.4** 创建 `CONTRIBUTING.md`
 
 **开发关键点提示：**
-> 请为 nova-cc 创建项目文档。
+> 请为 BlockType-cc 创建项目文档。
 >
 > **README.md**：
 > - 项目介绍
@@ -920,7 +920,7 @@ nova-cc/
   ```
 
 **开发关键点提示：**
-> 请为 nova-cc 配置编码规范工具。
+> 请为 BlockType-cc 配置编码规范工具。
 >
 > **.clang-format**：
 > - 基于 LLVM 风格
@@ -950,31 +950,31 @@ nova-cc/
 - **E0.4.1** 配置版本号：
   ```cmake
   # CMakeLists.txt
-  set(NOVA_CC_VERSION_MAJOR 0)
-  set(NOVA_CC_VERSION_MINOR 1)
-  set(NOVA_CC_VERSION_PATCH 0)
+  set(BlockType_CC_VERSION_MAJOR 0)
+  set(BlockType_CC_VERSION_MINOR 1)
+  set(BlockType_CC_VERSION_PATCH 0)
   
   configure_file(
-    ${PROJECT_SOURCE_DIR}/include/nova-cc/Config/Version.h.in
-    ${PROJECT_BINARY_DIR}/include/nova-cc/Config/Version.h
+    ${PROJECT_SOURCE_DIR}/include/BlockType-cc/Config/Version.h.in
+    ${PROJECT_BINARY_DIR}/include/BlockType-cc/Config/Version.h
   )
   ```
 
-- **E0.4.2** 创建 `include/nova-cc/Config/Version.h.in`：
+- **E0.4.2** 创建 `include/BlockType-cc/Config/Version.h.in`：
   ```cpp
   #pragma once
   
-  #define NOVA_CC_VERSION_MAJOR @NOVA_CC_VERSION_MAJOR@
-  #define NOVA_CC_VERSION_MINOR @NOVA_CC_VERSION_MINOR@
-  #define NOVA_CC_VERSION_PATCH @NOVA_CC_VERSION_PATCH@
+  #define BlockType_CC_VERSION_MAJOR @BlockType_CC_VERSION_MAJOR@
+  #define BlockType_CC_VERSION_MINOR @BlockType_CC_VERSION_MINOR@
+  #define BlockType_CC_VERSION_PATCH @BlockType_CC_VERSION_PATCH@
   
-  #define NOVA_CC_VERSION_STRING "@NOVA_CC_VERSION_MAJOR@.@NOVA_CC_VERSION_MINOR@.@NOVA_CC_VERSION_PATCH@"
+  #define BlockType_CC_VERSION_STRING "@BlockType_CC_VERSION_MAJOR@.@BlockType_CC_VERSION_MINOR@.@BlockType_CC_VERSION_PATCH@"
   ```
 
 - **E0.4.3** 创建 `scripts/release.sh`
 
 **开发关键点提示：**
-> 请为 nova-cc 实现版本号管理。
+> 请为 BlockType-cc 实现版本号管理。
 >
 > **版本号格式**：MAJOR.MINOR.PATCH
 >
@@ -991,7 +991,7 @@ nova-cc/
 > - 创建 Git tag
 > - 打包发布
 
-**Checkpoint：** `nova-cc --version` 输出正确版本号
+**Checkpoint：** `BlockType-cc --version` 输出正确版本号
 
 ---
 
