@@ -1,4 +1,5 @@
 add_library(blocktype-sema
+  Lookup.cpp
   Scope.cpp
   Sema.cpp
   SymbolTable.cpp

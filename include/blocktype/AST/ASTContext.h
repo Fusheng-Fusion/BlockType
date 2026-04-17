@@ -56,6 +56,12 @@ class ASTContext {
   /// Cached builtin types.
   BuiltinType *BuiltinTypes[static_cast<unsigned>(BuiltinKind::NumBuiltinTypes)] = {};
 
+  /// Cache: RecordDecl* -> RecordType* (ensures uniqueness for type comparison)
+  llvm::DenseMap<RecordDecl *, RecordType *> RecordTypeCache;
+
+  /// Cache: EnumDecl* -> EnumType* (ensures uniqueness for type comparison)
+  llvm::DenseMap<EnumDecl *, EnumType *> EnumTypeCache;
+
 public:
   ASTContext() = default;
   ~ASTContext();

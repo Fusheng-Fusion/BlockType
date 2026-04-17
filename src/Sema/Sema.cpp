@@ -325,32 +325,8 @@ QualType Sema::getCanonicalType(QualType T) const {
 }
 
 //===----------------------------------------------------------------------===//
-// Name lookup [Stage 4.3 stub]
+// Name lookup [Stage 4.3 — implemented in Lookup.cpp]
 //===----------------------------------------------------------------------===//
-
-// TODO: Stage 4.3 - Implement name lookup
-LookupResult Sema::LookupUnqualifiedName(llvm::StringRef Name, Scope *S,
-                                          LookupNameKind Kind) {
-  return LookupResult();
-}
-
-LookupResult Sema::LookupQualifiedName(llvm::StringRef Name,
-                                         NestedNameSpecifier *NNS) {
-  return LookupResult();
-}
-
-void Sema::LookupADL(llvm::StringRef Name,
-                      llvm::ArrayRef<Expr *> Args,
-                      LookupResult &Result) {
-  // TODO: Stage 4.3 - Implement ADL
-}
-
-void Sema::CollectAssociatedNamespacesAndClasses(
-    QualType T,
-    llvm::SmallPtrSetImpl<NamespaceDecl *> &Namespaces,
-    llvm::SmallPtrSetImpl<const RecordType *> &Classes) {
-  // TODO: Stage 4.3 - Implement associated namespace/class collection
-}
 
 //===----------------------------------------------------------------------===//
 // Overload resolution [Stage 4.4 stub]

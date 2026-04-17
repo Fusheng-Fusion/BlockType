@@ -167,9 +167,13 @@ private:
   union {
     NamespaceDecl *Namespace;
     const blocktype::Type *TypeSpec;
-    llvm::StringRef Identifier;
+    const char *IdentifierStr; // Stored as const char* for trivial construction
   } Data;
   NestedNameSpecifier *Prefix;
+
+  // Private constructor for in-place initialization
+  NestedNameSpecifier(SpecifierKind K, decltype(Data) D, NestedNameSpecifier *P)
+      : Kind(K), Data(D), Prefix(P) {}
 
 public:
   // Static factory methods
@@ -195,7 +199,8 @@ public:
     return Kind == TypeSpec || Kind == TemplateTypeSpec ? Data.TypeSpec : nullptr;
   }
   llvm::StringRef getAsIdentifier() const {
-    return Kind == Identifier ? Data.Identifier : llvm::StringRef();
+    return Kind == Identifier ? llvm::StringRef(Data.IdentifierStr)
+                               : llvm::StringRef();
   }
 
   /// Convert to string representation (for diagnostics).

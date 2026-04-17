@@ -203,14 +203,22 @@ QualType ASTContext::getAutoType() {
 //===----------------------------------------------------------------------===//
 
 QualType ASTContext::getRecordType(RecordDecl *D) {
+  auto It = RecordTypeCache.find(D);
+  if (It != RecordTypeCache.end())
+    return QualType(It->second, Qualifier::None);
   void *Mem = Allocator.Allocate(sizeof(RecordType), alignof(RecordType));
   auto *RT = new (Mem) RecordType(D);
+  RecordTypeCache[D] = RT;
   return QualType(RT, Qualifier::None);
 }
 
 QualType ASTContext::getEnumType(EnumDecl *D) {
+  auto It = EnumTypeCache.find(D);
+  if (It != EnumTypeCache.end())
+    return QualType(It->second, Qualifier::None);
   void *Mem = Allocator.Allocate(sizeof(EnumType), alignof(EnumType));
   auto *ET = new (Mem) EnumType(D);
+  EnumTypeCache[D] = ET;
   return QualType(ET, Qualifier::None);
 }
 
