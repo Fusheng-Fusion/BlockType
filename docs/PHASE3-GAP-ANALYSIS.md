@@ -71,9 +71,10 @@
 - ✅ `AttributeDecl`, `AttributeListDecl` - 属性
 
 **TemplateArgument 类:**
-- ✅ 支持 Type、NonType、Template 三种类型
+- ✅ 支持 9 种类型 (Null, Type, Declaration, NullPtr, Integral, Template, TemplateExpansion, Expression, Pack)
+- ✅ `TemplateArgumentLoc` 类 (带 SourceLocation)
 - ✅ 参数包展开支持 (`isPackExpansion`/`setPackExpansion`)
-- ✅ 完整的访问方法 (`getAsType`, `getAsExpr`, `getAsTemplate`)
+- ✅ 完整的访问方法和拷贝/移动/析构支持
 
 ---
 
@@ -114,40 +115,51 @@
 
 ---
 
-#### 3. TemplateArgument 类型不完整 ⚠️
+#### 3. TemplateArgument 类型 ✅ 已补全
 
-**规划要求的类型:**
+**所有类型已实现 (commit: 待提交):**
 ```cpp
-enum ArgKind {
-  Null, Type, Declaration, NullPtr,
-  Integral, Template, TemplateExpansion, Expression, Pack
+enum class TemplateArgumentKind {
+  Null,              // 空参数，错误恢复
+  Type,              // 类型参数
+  Declaration,       // 非类型参数解析为声明 (Phase 4 Sema 产出)
+  NullPtr,           // nullptr 参数
+  Integral,          // 编译期整数值 (Phase 4 Sema 产出，用 APSInt 存储)
+  Template,          // 模板模板参数
+  TemplateExpansion, // 带包展开的模板模板参数
+  Expression,        // 未求值表达式 (Phase 3 Parser 产出)
+  Pack,              // 参数包 (内含 TemplateArgument 数组)
 };
 ```
 
-**现状仅支持:**
-- ✅ Type
-- ✅ NonType (对应 Expression)
-- ✅ Template
+**额外已实现:**
+- ✅ `TemplateArgumentLoc` 类 (带 SourceLocation 的模板参数，Phase 4 Sema 诊断用)
+- ✅ 完整的拷贝/移动/析构支持 (因 APSInt 有非平凡特殊成员)
+- ✅ 向后兼容: `isNonType()` / `getAsNonType()` 映射到 Expression
 
-**缺失:**
-- ❌ Null
-- ❌ Declaration
-- ❌ NullPtr
-- ❌ Integral (单独的整数类型)
-- ❌ TemplateExpansion
-- ❌ Pack (作为独立类型,而非标记)
-
-**额外缺失:**
-- ❌ `TemplateArgumentLoc` 类 (带位置信息的模板参数)
+**设计决策 (Phase 4 开发者必读):**
+- **Expression → Integral**: Phase 3 Parser 产出 `Expression` 类型的参数。Phase 4 Sema
+  应在求值后将其替换为 `Integral`（用 `getAsIntegral()` 获取 `APSInt`）。不要用 `Expr*`
+  表示已求值的整常数。
+- **Expression → Declaration**: 当非类型参数解析到具体声明时，Phase 4 Sema 应创建
+  `Declaration` 类型的参数。不要用 `Expr*` 指向 DeclRefExpr 来代替。
+- **Pack vs IsPackExpansion**: `IsPackExpansion` 标记单个参数后有 `...`（如 `Ts...`）。
+  当需要表示多个参数组成的包时，使用 `Pack` kind（通过 `getAsPack()` 获取数组）。
+  不要用 `std::vector` 或其他容器代替 `Pack` kind。
 
 ---
 
 #### 4. 其他缺失的声明类型
 
-- ❌ `IndirectField` - 间接字段 (用于匿名联合体)
-- ❌ `UnresolvedUsingTypename` - 未解析的 using typename
-- ❌ `UnresolvedUsingValue` - 未解析的 using value
-- ❌ `UsingPack` - using 包展开 (C++17)
+- ❌ `IndirectFieldDecl` - 间接字段 (用于匿名联合体)
+  - Phase 4 Sema 在处理匿名联合体成员访问时需要。应在 `AST/Decl.h` 中添加，
+    继承 `ValueDecl`，包含字段链。不要用多个 `FieldDecl` 指针的 workaround。
+- ❌ `UnresolvedUsingTypenameDecl` - 未解析的 using typename
+  - Phase 4 Sema 模板实例化时需要。应在 `AST/Decl.h` 中添加，继承 `NamedDecl`。
+- ❌ `UnresolvedUsingValueDecl` - 未解析的 using value
+  - Phase 4 Sema 模板实例化时需要。应在 `AST/Decl.h` 中添加，继承 `NamedDecl`。
+- ❌ `UsingPackDecl` - using 包展开 (C++17)
+  - Phase 4 Sema 处理 `using typename... Ts` 时需要。应在 `AST/Decl.h` 中添加。
 
 ---
 
@@ -210,6 +222,15 @@ struct DeclaratorChunk {
 - 代码可维护性较差
 - 复杂声明符 (如函数指针、成员指针) 可能处理不完整
 
+**设计决策 (Phase 4 开发者必读):**
+- **何时引入**: Phase 4 启动时同步引入，因为 Sema 需要结构化的声明信息。
+  不要在 Sema 中用 `std::tuple<QualType, llvm::StringRef, ...>` 等临时结构替代 `Declarator`。
+- **如何引入**: 参考 Clang 的 `DeclSpec.h` / `Declarator.h`。最小化实现：
+  `DeclSpec` 存储类型+说明符，`Declarator` 管理声明符链，`DeclaratorChunk` 表示
+  指针/引用/数组/函数/成员指针。先定义数据结构，再逐步迁移 `parseDeclaration()`
+  内的即席逻辑。
+- **不要做**: 不要一次性重写所有解析函数。先让新架构和旧代码共存。
+
 ---
 
 #### 2. 复杂声明符支持不完整 ⚠️
@@ -221,6 +242,12 @@ struct DeclaratorChunk {
 - ⚠️ 指针数组: `int *ap[10]`
 
 需要实际测试验证这些场景是否正常工作。
+
+**设计决策 (Phase 4 开发者必读):**
+- 如果复杂声明符解析失败，不要在 Sema 中用字符串匹配或手动解析来 workaround。
+  应回到 `ParseType.cpp` 的 `parseDeclarator()` 中修复根本问题。
+- 引入 `DeclaratorChunk::MemberPointer` 来处理 `int Class::*ptr`，不要用特殊的
+  FieldDecl 标记来表示成员指针类型。
 
 ---
 
@@ -399,6 +426,12 @@ struct DeclaratorChunk {
 - ❌ 缺少声明级别的专门恢复策略
 - ❌ 缺少智能错误提示和建议
 
+**设计决策 (Phase 4 开发者必读):**
+- 声明级恢复策略应在 `Parser` 中实现（添加 `skipUntilNextDeclaration()` 方法），
+  不要在 Sema 中用 try-catch 模拟。
+- 智能错误提示应通过 `DiagnosticsEngine` 的扩展实现，不要在各处散落
+  `OS << "did you mean..."` 式的临时诊断。
+
 ---
 
 #### 4. 测试覆盖率缺口
@@ -452,10 +485,9 @@ struct DeclaratorChunk {
    - 工作量: 小 (主要是移动代码)
    - 建议: 有时间再做
 
-8. **TemplateArgument 类型补全**
-   - 影响: 模板参数的精确表示
-   - 工作量: 小到中等
-   - 建议: 按需实现
+8. **~~TemplateArgument 类型补全~~** ✅ 已完成
+   - 已完成: 9 种 TemplateArgumentKind + TemplateArgumentLoc
+   - 含决策说明: Expression→Integral 转换规则、Pack 用法
 
 9. **高级错误恢复**
    - 影响: 用户体验
@@ -495,9 +527,8 @@ struct DeclaratorChunk {
    - 重构现有容器类使用 DeclContext
    - 实现统一的 `lookup()` 方法
 
-2. 补全 TemplateArgument 类型
-   - 添加缺失的类型枚举
-   - 实现 `TemplateArgumentLoc`
+2. ~~补全 TemplateArgument 类型~~ ✅ 已完成
+   - 已添加: 9 种类型枚举 + TemplateArgumentLoc + 完整特殊成员函数
 
 3. 完善 Requires 子句和类型约束解析
 
@@ -540,8 +571,14 @@ struct DeclaratorChunk {
 
 **关键缺失:**
 - ⚠️ 模板特化表达式在类声明中的歧义解析
+  - 决策: 需要引入 DeclSpec/Declarator 架构来根本解决。不要在 `parseClassDeclaration`
+    中添加更多特殊情况的 `<` 消歧逻辑。Phase 4 引入 Declarator 时一并解决。
 - ⚠️ C++23/26 新特性 (Deducing this, Contracts)
+  - 决策: 延后到 Phase 7 统一实现。需要时添加新的 AST 节点类型，不要用
+    `FunctionDecl` 的 extra 字段来模拟 Deducing this。
 - ⚠️ 结构化 DeclSpec/Declarator 架构
+  - 决策: Phase 4 启动时同步引入。先定义 `DeclSpec`/`Declarator`/`DeclaratorChunk`
+  数据结构，然后逐步迁移 `parseDeclaration()` 中的即席逻辑。
 
 **对后续阶段的影响:**
 - Phase 4 (语义分析): ✅ 可以开始, DeclContext 已就绪

@@ -13,10 +13,12 @@
 #pragma once
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
+#include "blocktype/Basic/SourceLocation.h"
 
 namespace blocktype {
 
@@ -24,6 +26,7 @@ class Expr;
 class RecordDecl;
 class EnumDecl;
 class TemplateDecl;
+class ValueDecl;
 
 //===----------------------------------------------------------------------===//
 // Type Classifications
@@ -624,59 +627,238 @@ public:
 //===----------------------------------------------------------------------===//
 
 /// TemplateArgumentKind - Kind of template argument.
+///
+/// Covers all forms of template arguments as specified by the C++ standard.
+/// Each kind corresponds to a specific grammar production in template-argument:
+///
+///   template-argument ::= constant-expression        (Integral/Expression)
+///                       | type-id                     (Type)
+///                       | id-expression               (Declaration)
+///                       | template-name               (Template/TemplateExpansion)
+///                       | nullptr                     (NullPtr)
+///                       | template-argument ...       (Pack)
 enum class TemplateArgumentKind {
-  Type,      // type argument: template<typename T> -> T = int
-  NonType,   // non-type argument: template<int N> -> N = 42
-  Template,  // template template argument: template<template<typename> class T> -> T = vector
+  Null,              // empty/unresolved argument (used in error recovery)
+  Type,              // type argument: template<typename T> -> T = int
+  Declaration,       // non-type argument resolved to a declaration
+                     // (Phase 4 Sema: when a non-type template parameter
+                     // is resolved to a specific declaration)
+  NullPtr,           // nullptr as a template argument
+  Integral,          // compile-time integer constant
+                     // (Phase 4 Sema: replaces Expr* with evaluated value.
+                     //  Do NOT use Expr* to represent integral constants.)
+  Template,          // template template argument: template<template<typename> class T>
+  TemplateExpansion, // template template argument with pack expansion
+                     // (e.g., template<template<typename...> class T> -> T = vector)
+  Expression,        // non-type argument as an unevaluated expression
+                     // (Parser/Phase 3 produces this; Phase 4 Sema evaluates
+                     //  it to Integral/Declaration/NullPtr as appropriate)
+  Pack,              // a pack of template arguments (for variadic templates)
+                     // Contains an array of TemplateArguments.
+                     // Do NOT use IsPackExpansion on individual args to
+                     // represent packs; use this kind instead.
 };
 
 /// TemplateArgument - Represents a template argument.
-/// A template argument can be a type, a non-type (expression), or a template.
+///
+/// A template argument can be:
+/// - A type (Type)
+/// - A compile-time integer value (Integral)
+/// - An unevaluated expression that will resolve to a value (Expression)
+/// - A template name (Template)
+/// - A template name with pack expansion (TemplateExpansion)
+/// - A declaration (Declaration)
+/// - nullptr (NullPtr)
+/// - A pack of arguments (Pack)
+/// - Empty/unresolved (Null)
+///
+/// Lifecycle:
+/// - Phase 3 (Parser) produces: Type, Expression, Template, Pack
+/// - Phase 4 (Sema) evaluates Expression into: Integral, Declaration, NullPtr
+/// - Null is used for error recovery and placeholder arguments
 class TemplateArgument {
   TemplateArgumentKind Kind;
-  bool IsPackExpansion = false;  // ✅ Added: Mark if this is a pack expansion (Ts...)
-  union {
-    QualType AsType;
-    Expr *AsExpr;
-    TemplateDecl *AsTemplate;
-  };
+  bool IsPackExpansion = false; // true if this arg is followed by "..."
+
+  /// Storage for the template argument value.
+  /// The active member is determined by Kind.
+  /// Pack data is stored separately since it has different lifetime semantics
+  /// (points to external storage).
+  union Storage {
+    QualType AsType;                // Kind == Type
+    Expr *AsExpr;                   // Kind == Expression, Null, NullPtr
+    TemplateDecl *AsTemplate;       // Kind == Template, TemplateExpansion
+    ValueDecl *AsDecl;              // Kind == Declaration
+    llvm::APSInt AsIntegral;        // Kind == Integral
+
+    Storage() : AsExpr(nullptr) {}
+    ~Storage() {} // Managed by TemplateArgument's dtor
+  } Data;
+
+  // Pack storage (separate from union to avoid anonymous struct issues)
+  const TemplateArgument *PackArgs = nullptr;  // Kind == Pack
+  unsigned PackNumArgs = 0;                     // Kind == Pack
 
 public:
-  /// Construct a type template argument.
-  TemplateArgument(QualType T) : Kind(TemplateArgumentKind::Type), AsType(T) {}
+  /// Construct a null template argument (for error recovery).
+  TemplateArgument() : Kind(TemplateArgumentKind::Null), Data() {}
 
-  /// Construct a non-type template argument.
-  TemplateArgument(Expr *E) : Kind(TemplateArgumentKind::NonType), AsExpr(E) {}
+  /// Construct a type template argument.
+  TemplateArgument(QualType T) : Kind(TemplateArgumentKind::Type) { Data.AsType = T; }
+
+  /// Construct a non-type template argument (expression).
+  /// Phase 3 Parser produces these; Phase 4 Sema evaluates them.
+  TemplateArgument(Expr *E) : Kind(TemplateArgumentKind::Expression) { Data.AsExpr = E; }
 
   /// Construct a template template argument.
-  TemplateArgument(TemplateDecl *T) : Kind(TemplateArgumentKind::Template), AsTemplate(T) {}
+  TemplateArgument(TemplateDecl *T)
+      : Kind(TemplateArgumentKind::Template) { Data.AsTemplate = T; }
+
+  /// Construct an integral template argument (Phase 4 Sema).
+  /// Used when a non-type template argument is evaluated to a constant.
+  TemplateArgument(const llvm::APSInt &Val)
+      : Kind(TemplateArgumentKind::Integral) { ::new (&Data.AsIntegral) llvm::APSInt(Val); }
+
+  /// Construct a declaration template argument (Phase 4 Sema).
+  /// Used when a non-type template argument resolves to a declaration.
+  TemplateArgument(ValueDecl *D)
+      : Kind(TemplateArgumentKind::Declaration) { Data.AsDecl = D; }
+
+  /// Construct a pack template argument from an array of arguments.
+  /// The pointed-to array must outlive this TemplateArgument.
+  TemplateArgument(llvm::ArrayRef<TemplateArgument> Args)
+      : Kind(TemplateArgumentKind::Pack), IsPackExpansion(false), Data() {
+    PackArgs = Args.data();
+    PackNumArgs = Args.size();
+  }
+
+  /// Construct a TemplateExpansion template argument.
+  struct TemplateExpansionTag {};
+  TemplateArgument(TemplateDecl *T, TemplateExpansionTag)
+      : Kind(TemplateArgumentKind::TemplateExpansion) { Data.AsTemplate = T; }
+
+  /// Construct a NullPtr template argument.
+  struct NullPtrTag {};
+  TemplateArgument(NullPtrTag)
+      : Kind(TemplateArgumentKind::NullPtr), Data() {}
+
+  // --- Copy/Move support ---
+  // The union contains llvm::APSInt which has a non-trivial copy/move,
+  // so we must define these explicitly.
+  TemplateArgument(const TemplateArgument &Other);
+  TemplateArgument(TemplateArgument &&Other);
+  TemplateArgument &operator=(const TemplateArgument &Other);
+  TemplateArgument &operator=(TemplateArgument &&Other);
+  ~TemplateArgument();
+
+  // --- Kind accessors ---
 
   TemplateArgumentKind getKind() const { return Kind; }
 
+  bool isNull() const { return Kind == TemplateArgumentKind::Null; }
   bool isType() const { return Kind == TemplateArgumentKind::Type; }
-  bool isNonType() const { return Kind == TemplateArgumentKind::NonType; }
+  bool isDeclaration() const { return Kind == TemplateArgumentKind::Declaration; }
+  bool isNullPtr() const { return Kind == TemplateArgumentKind::NullPtr; }
+  bool isIntegral() const { return Kind == TemplateArgumentKind::Integral; }
   bool isTemplate() const { return Kind == TemplateArgumentKind::Template; }
+  bool isTemplateExpansion() const {
+    return Kind == TemplateArgumentKind::TemplateExpansion;
+  }
+  bool isExpression() const { return Kind == TemplateArgumentKind::Expression; }
+  bool isPack() const { return Kind == TemplateArgumentKind::Pack; }
 
-  /// Check if this template argument is a pack expansion (Ts...).
+  // Legacy alias: NonType in old code maps to Expression in new code
+  bool isNonType() const { return Kind == TemplateArgumentKind::Expression; }
+
+  /// Check if this template argument is a pack expansion (e.g., Ts...).
   bool isPackExpansion() const { return IsPackExpansion; }
-  
+
   /// Mark this template argument as a pack expansion.
   void setPackExpansion(bool IsPack = true) { IsPackExpansion = IsPack; }
 
+  // --- Value accessors ---
+
   QualType getAsType() const {
     assert(isType() && "Template argument is not a type");
-    return AsType;
+    return Data.AsType;
   }
 
   Expr *getAsExpr() const {
-    assert(isNonType() && "Template argument is not a non-type");
-    return AsExpr;
+    assert(isExpression() && "Template argument is not an expression");
+    return Data.AsExpr;
   }
 
+  /// Legacy alias for getAsExpr.
+  Expr *getAsNonType() const { return getAsExpr(); }
+
   TemplateDecl *getAsTemplate() const {
-    assert(isTemplate() && "Template argument is not a template");
-    return AsTemplate;
+    assert((isTemplate() || isTemplateExpansion()) &&
+           "Template argument is not a template");
+    return Data.AsTemplate;
   }
+
+  TemplateDecl *getAsTemplateOrTemplateExpansion() const {
+    assert((isTemplate() || isTemplateExpansion()) &&
+           "Template argument is not a template");
+    return Data.AsTemplate;
+  }
+
+  ValueDecl *getAsDecl() const {
+    assert(isDeclaration() && "Template argument is not a declaration");
+    return Data.AsDecl;
+  }
+
+  const llvm::APSInt &getAsIntegral() const {
+    assert(isIntegral() && "Template argument is not integral");
+    return Data.AsIntegral;
+  }
+
+  llvm::ArrayRef<TemplateArgument> getAsPack() const {
+    assert(isPack() && "Template argument is not a pack");
+    return llvm::ArrayRef<TemplateArgument>(PackArgs, PackNumArgs);
+  }
+
+  unsigned getNumPackArguments() const {
+    assert(isPack() && "Template argument is not a pack");
+    return PackNumArgs;
+  }
+
+  void dump(llvm::raw_ostream &OS) const;
+  void dump() const;
+};
+
+//===----------------------------------------------------------------------===//
+// TemplateArgumentLoc - Template argument with source location info
+//===----------------------------------------------------------------------===//
+
+/// TemplateArgumentLoc - A template argument together with its source
+/// location information. Used by Sema for diagnostics and by CodeGen
+/// for emission.
+///
+/// Phase 4 Sema: When evaluating template arguments, use this class
+/// to preserve source locations for error reporting. Do not create
+/// ad-hoc structs to carry location info alongside TemplateArgument.
+class TemplateArgumentLoc {
+  TemplateArgument Argument;
+  SourceLocation Location;
+
+public:
+  TemplateArgumentLoc() = default;
+  TemplateArgumentLoc(const TemplateArgument &Arg, SourceLocation Loc)
+      : Argument(Arg), Location(Loc) {}
+
+  const TemplateArgument &getArgument() const { return Argument; }
+  TemplateArgument &getArgument() { return Argument; }
+
+  SourceLocation getLocation() const { return Location; }
+  void setLocation(SourceLocation Loc) { Location = Loc; }
+
+  /// Convenience: forward common queries to the argument.
+  TemplateArgumentKind getKind() const { return Argument.getKind(); }
+  bool isType() const { return Argument.isType(); }
+  bool isExpression() const { return Argument.isExpression(); }
+  bool isIntegral() const { return Argument.isIntegral(); }
+  bool isPack() const { return Argument.isPack(); }
 
   void dump(llvm::raw_ostream &OS) const;
 };

@@ -561,8 +561,8 @@ void TemplateSpecializationExpr::dump(raw_ostream &OS, unsigned Indent) const {
         Arg.getAsType().dump(OS);
         OS << "\n";
         break;
-      case TemplateArgumentKind::NonType:
-        OS << "NonType: ";
+      case TemplateArgumentKind::Expression:
+        OS << "Expression: ";
         if (Arg.getAsExpr()) {
           OS << "<expr>\n";
           Arg.getAsExpr()->dump(OS, Indent + 3);
@@ -572,6 +572,24 @@ void TemplateSpecializationExpr::dump(raw_ostream &OS, unsigned Indent) const {
         break;
       case TemplateArgumentKind::Template:
         OS << "Template: <template>\n";
+        break;
+      case TemplateArgumentKind::Integral:
+        OS << "Integral: " << Arg.getAsIntegral() << "\n";
+        break;
+      case TemplateArgumentKind::Declaration:
+        OS << "Declaration: <decl>\n";
+        break;
+      case TemplateArgumentKind::NullPtr:
+        OS << "NullPtr\n";
+        break;
+      case TemplateArgumentKind::TemplateExpansion:
+        OS << "TemplateExpansion: <template...>\n";
+        break;
+      case TemplateArgumentKind::Pack:
+        OS << "Pack: <" << Arg.getNumPackArguments() << " args>\n";
+        break;
+      case TemplateArgumentKind::Null:
+        OS << "Null\n";
         break;
       }
     }

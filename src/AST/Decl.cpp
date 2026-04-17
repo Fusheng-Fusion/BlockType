@@ -898,11 +898,29 @@ void ClassTemplateSpecializationDecl::dump(raw_ostream &OS, unsigned Indent) con
         Arg.getAsType().dump(OS);
         OS << "\n";
         break;
-      case TemplateArgumentKind::NonType:
-        OS << "NonType: <expr>\n";
+      case TemplateArgumentKind::Expression:
+        OS << "Expression: <expr>\n";
         break;
       case TemplateArgumentKind::Template:
         OS << "Template: <template>\n";
+        break;
+      case TemplateArgumentKind::Integral:
+        OS << "Integral: " << Arg.getAsIntegral() << "\n";
+        break;
+      case TemplateArgumentKind::Declaration:
+        OS << "Declaration: " << Arg.getAsDecl()->getName() << "\n";
+        break;
+      case TemplateArgumentKind::NullPtr:
+        OS << "NullPtr\n";
+        break;
+      case TemplateArgumentKind::TemplateExpansion:
+        OS << "TemplateExpansion: <template...>\n";
+        break;
+      case TemplateArgumentKind::Pack:
+        OS << "Pack: <" << Arg.getNumPackArguments() << " args>\n";
+        break;
+      case TemplateArgumentKind::Null:
+        OS << "Null\n";
         break;
       }
     }
@@ -942,11 +960,29 @@ void VarTemplateSpecializationDecl::dump(raw_ostream &OS, unsigned Indent) const
         Arg.getAsType().dump(OS);
         OS << "\n";
         break;
-      case TemplateArgumentKind::NonType:
-        OS << "NonType: <expr>\n";
+      case TemplateArgumentKind::Expression:
+        OS << "Expression: <expr>\n";
         break;
       case TemplateArgumentKind::Template:
         OS << "Template: <template>\n";
+        break;
+      case TemplateArgumentKind::Integral:
+        OS << "Integral: " << Arg.getAsIntegral() << "\n";
+        break;
+      case TemplateArgumentKind::Declaration:
+        OS << "Declaration: " << Arg.getAsDecl()->getName() << "\n";
+        break;
+      case TemplateArgumentKind::NullPtr:
+        OS << "NullPtr\n";
+        break;
+      case TemplateArgumentKind::TemplateExpansion:
+        OS << "TemplateExpansion: <template...>\n";
+        break;
+      case TemplateArgumentKind::Pack:
+        OS << "Pack: <" << Arg.getNumPackArguments() << " args>\n";
+        break;
+      case TemplateArgumentKind::Null:
+        OS << "Null\n";
         break;
       }
     }

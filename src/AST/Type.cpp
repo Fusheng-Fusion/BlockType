@@ -21,31 +21,221 @@ using llvm::isa;
 // TemplateArgument Implementation
 //===----------------------------------------------------------------------===//
 
-void TemplateArgument::dump(llvm::raw_ostream &OS) const {
+TemplateArgument::TemplateArgument(const TemplateArgument &Other)
+    : Kind(Other.Kind), IsPackExpansion(Other.IsPackExpansion), Data() {
   switch (Kind) {
-  case TemplateArgumentKind::Type:
-    AsType.dump(OS);
+  case TemplateArgumentKind::Null:
+  case TemplateArgumentKind::NullPtr:
+  case TemplateArgumentKind::Expression:
+    Data.AsExpr = Other.Data.AsExpr;
     break;
-  case TemplateArgumentKind::NonType:
-    if (AsExpr) {
-      AsExpr->dump(OS);
-    } else {
-      OS << "<null-expr>";
-    }
+  case TemplateArgumentKind::Type:
+    Data.AsType = Other.Data.AsType;
+    break;
+  case TemplateArgumentKind::Declaration:
+    Data.AsDecl = Other.Data.AsDecl;
+    break;
+  case TemplateArgumentKind::Integral:
+    ::new (&Data.AsIntegral) llvm::APSInt(Other.Data.AsIntegral);
     break;
   case TemplateArgumentKind::Template:
-    if (AsTemplate) {
-      OS << AsTemplate->getName();
+  case TemplateArgumentKind::TemplateExpansion:
+    Data.AsTemplate = Other.Data.AsTemplate;
+    break;
+  case TemplateArgumentKind::Pack:
+    PackArgs = Other.PackArgs;
+    PackNumArgs = Other.PackNumArgs;
+    break;
+  }
+}
+
+TemplateArgument::TemplateArgument(TemplateArgument &&Other)
+    : Kind(Other.Kind), IsPackExpansion(Other.IsPackExpansion), Data() {
+  switch (Kind) {
+  case TemplateArgumentKind::Null:
+  case TemplateArgumentKind::NullPtr:
+  case TemplateArgumentKind::Expression:
+    Data.AsExpr = Other.Data.AsExpr;
+    break;
+  case TemplateArgumentKind::Type:
+    Data.AsType = std::move(Other.Data.AsType);
+    break;
+  case TemplateArgumentKind::Declaration:
+    Data.AsDecl = Other.Data.AsDecl;
+    break;
+  case TemplateArgumentKind::Integral:
+    ::new (&Data.AsIntegral) llvm::APSInt(std::move(Other.Data.AsIntegral));
+    break;
+  case TemplateArgumentKind::Template:
+  case TemplateArgumentKind::TemplateExpansion:
+    Data.AsTemplate = Other.Data.AsTemplate;
+    break;
+  case TemplateArgumentKind::Pack:
+    PackArgs = Other.PackArgs;
+    PackNumArgs = Other.PackNumArgs;
+    break;
+  }
+}
+
+TemplateArgument &
+TemplateArgument::operator=(const TemplateArgument &Other) {
+  if (this == &Other) return *this;
+
+  // Destroy current value
+  switch (Kind) {
+  case TemplateArgumentKind::Integral:
+    Data.AsIntegral.~APSInt();
+    break;
+  default:
+    break;
+  }
+
+  Kind = Other.Kind;
+  IsPackExpansion = Other.IsPackExpansion;
+
+  switch (Kind) {
+  case TemplateArgumentKind::Null:
+  case TemplateArgumentKind::NullPtr:
+  case TemplateArgumentKind::Expression:
+    Data.AsExpr = Other.Data.AsExpr;
+    break;
+  case TemplateArgumentKind::Type:
+    Data.AsType = Other.Data.AsType;
+    break;
+  case TemplateArgumentKind::Declaration:
+    Data.AsDecl = Other.Data.AsDecl;
+    break;
+  case TemplateArgumentKind::Integral:
+    ::new (&Data.AsIntegral) llvm::APSInt(Other.Data.AsIntegral);
+    break;
+  case TemplateArgumentKind::Template:
+  case TemplateArgumentKind::TemplateExpansion:
+    Data.AsTemplate = Other.Data.AsTemplate;
+    break;
+  case TemplateArgumentKind::Pack:
+    PackArgs = Other.PackArgs;
+    PackNumArgs = Other.PackNumArgs;
+    break;
+  }
+  return *this;
+}
+
+TemplateArgument &TemplateArgument::operator=(TemplateArgument &&Other) {
+  if (this == &Other) return *this;
+
+  // Destroy current value
+  switch (Kind) {
+  case TemplateArgumentKind::Integral:
+    Data.AsIntegral.~APSInt();
+    break;
+  default:
+    break;
+  }
+
+  Kind = Other.Kind;
+  IsPackExpansion = Other.IsPackExpansion;
+
+  switch (Kind) {
+  case TemplateArgumentKind::Null:
+  case TemplateArgumentKind::NullPtr:
+  case TemplateArgumentKind::Expression:
+    Data.AsExpr = Other.Data.AsExpr;
+    break;
+  case TemplateArgumentKind::Type:
+    Data.AsType = std::move(Other.Data.AsType);
+    break;
+  case TemplateArgumentKind::Declaration:
+    Data.AsDecl = Other.Data.AsDecl;
+    break;
+  case TemplateArgumentKind::Integral:
+    ::new (&Data.AsIntegral) llvm::APSInt(std::move(Other.Data.AsIntegral));
+    break;
+  case TemplateArgumentKind::Template:
+  case TemplateArgumentKind::TemplateExpansion:
+    Data.AsTemplate = Other.Data.AsTemplate;
+    break;
+  case TemplateArgumentKind::Pack:
+    PackArgs = Other.PackArgs;
+    PackNumArgs = Other.PackNumArgs;
+    break;
+  }
+  return *this;
+}
+
+TemplateArgument::~TemplateArgument() {
+  switch (Kind) {
+  case TemplateArgumentKind::Integral:
+    Data.AsIntegral.~APSInt();
+    break;
+  default:
+    break;
+  }
+}
+
+void TemplateArgument::dump(llvm::raw_ostream &OS) const {
+  switch (Kind) {
+  case TemplateArgumentKind::Null:
+    OS << "<null-template-arg>";
+    break;
+  case TemplateArgumentKind::Type:
+    Data.AsType.dump(OS);
+    break;
+  case TemplateArgumentKind::Declaration:
+    if (Data.AsDecl) {
+      OS << "decl:" << Data.AsDecl->getName();
+    } else {
+      OS << "<null-decl>";
+    }
+    break;
+  case TemplateArgumentKind::NullPtr:
+    OS << "nullptr";
+    break;
+  case TemplateArgumentKind::Integral:
+    OS << Data.AsIntegral;
+    break;
+  case TemplateArgumentKind::Template:
+    if (Data.AsTemplate) {
+      OS << Data.AsTemplate->getName();
     } else {
       OS << "<null-template>";
     }
     break;
+  case TemplateArgumentKind::TemplateExpansion:
+    if (Data.AsTemplate) {
+      OS << Data.AsTemplate->getName() << "...";
+    } else {
+      OS << "<null-template-expansion>";
+    }
+    break;
+  case TemplateArgumentKind::Expression:
+    if (Data.AsExpr) {
+      Data.AsExpr->dump(OS);
+    } else {
+      OS << "<null-expr>";
+    }
+    break;
+  case TemplateArgumentKind::Pack:
+    OS << "<pack:";
+    for (unsigned I = 0; I < PackNumArgs; ++I) {
+      if (I > 0) OS << ", ";
+      PackArgs[I].dump(OS);
+    }
+    OS << ">";
+    break;
   }
-  
-  // ✅ Show pack expansion flag
-  if (IsPackExpansion) {
+
+  if (IsPackExpansion && Kind != TemplateArgumentKind::Pack &&
+      Kind != TemplateArgumentKind::TemplateExpansion) {
     OS << "...";
   }
+}
+
+void TemplateArgument::dump() const {
+  dump(llvm::outs());
+}
+
+void TemplateArgumentLoc::dump(llvm::raw_ostream &OS) const {
+  Argument.dump(OS);
 }
 
 //===----------------------------------------------------------------------===//
