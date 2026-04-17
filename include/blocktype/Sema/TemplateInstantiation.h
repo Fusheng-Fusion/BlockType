@@ -15,6 +15,7 @@
 
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/Decl.h"
+#include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Type.h"
 #include "blocktype/Sema/SFINAE.h"
 #include "llvm/ADT/SmallVector.h"
@@ -99,12 +100,30 @@ public:
 
   // === Pack Expansion ===
 
-  /// Expand a parameter pack.
+  /// Expand a parameter pack expression.
   /// @param Pattern   The expansion pattern (contains references to pack)
   /// @param Args      Argument list containing Pack-type arguments
   /// @return          Expanded expression list
   llvm::SmallVector<Expr *, 4>
   ExpandPack(Expr *Pattern, const TemplateArgumentList &Args);
+
+  /// Expand a parameter pack type.
+  /// For each element in the pack, substitutes the pattern and returns
+  /// the list of resulting types.
+  /// @param Pattern   The type pattern (contains TemplateTypeParmType for the pack)
+  /// @param Args      Argument list containing Pack-type arguments
+  /// @return          Expanded type list
+  llvm::SmallVector<QualType, 4>
+  ExpandPackType(QualType Pattern, const TemplateArgumentList &Args);
+
+  /// Instantiate a CXXFoldExpr (C++17 fold expression).
+  /// (args + ...) → args[0] + args[1] + ... + args[n-1]
+  Expr *InstantiateFoldExpr(CXXFoldExpr *FE, const TemplateArgumentList &Args);
+
+  /// Instantiate a PackIndexingExpr (C++26 pack indexing).
+  /// Ts...[N] → the Nth element of the Ts pack
+  Expr *InstantiatePackIndexingExpr(PackIndexingExpr *PIE,
+                                    const TemplateArgumentList &Args);
 
   // === Type Substitution ===
 
@@ -133,6 +152,10 @@ public:
 private:
   /// Check if currently in a SFINAE context.
   bool isSFINAEContext() const;
+
+  /// Get the identity element for a fold expression with the given operator.
+  /// Returns nullptr if no identity element is defined for the operator.
+  Expr *getIdentityElement(BinaryOpKind Op, SourceLocation Loc);
 
   /// Substitute TemplateTypeParmType with the corresponding argument type.
   QualType SubstituteTemplateTypeParmType(const TemplateTypeParmType *T,

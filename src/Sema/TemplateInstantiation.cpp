@@ -8,6 +8,7 @@
 
 #include "blocktype/Sema/TemplateInstantiation.h"
 #include "blocktype/Sema/Sema.h"
+#include "blocktype/Sema/ConstantExpr.h"
 #include "blocktype/Basic/Diagnostics.h"
 #include "llvm/Support/Casting.h"
 
@@ -179,6 +180,175 @@ TemplateInstantiator::ExpandPack(Expr *Pattern,
   return Result;
 }
 
+llvm::SmallVector<QualType, 4>
+TemplateInstantiator::ExpandPackType(QualType Pattern,
+                                     const TemplateArgumentList &Args) {
+  llvm::SmallVector<QualType, 4> Result;
+
+  // Find all pack arguments
+  llvm::ArrayRef<TemplateArgument> PackArgs = Args.getPackArgument();
+  if (PackArgs.empty())
+    return Result;
+
+  for (const TemplateArgument &PA : PackArgs) {
+    TemplateArgumentList SingleArg;
+    SingleArg.push_back(PA);
+
+    QualType SubT = SubstituteType(Pattern, SingleArg);
+    if (!SubT.isNull())
+      Result.push_back(SubT);
+  }
+
+  return Result;
+}
+
+//===----------------------------------------------------------------------===//
+// Fold Expression Instantiation
+//===----------------------------------------------------------------------===//
+
+Expr *TemplateInstantiator::getIdentityElement(BinaryOpKind Op,
+                                                SourceLocation Loc) {
+  // Return the identity/neutral element for each operator
+  switch (Op) {
+  case BinaryOpKind::Add:
+    // + → 0
+    return Context.create<IntegerLiteral>(Loc, llvm::APInt(32, 0));
+  case BinaryOpKind::Mul:
+    // * → 1
+    return Context.create<IntegerLiteral>(Loc, llvm::APInt(32, 1));
+  case BinaryOpKind::LAnd:
+    // && → true (represented as integer 1)
+    return Context.create<IntegerLiteral>(Loc, llvm::APInt(1, 1));
+  case BinaryOpKind::LOr:
+    // || → false (represented as integer 0)
+    return Context.create<IntegerLiteral>(Loc, llvm::APInt(1, 0));
+  case BinaryOpKind::And:
+    // & → ~0 (all bits set)
+    return Context.create<IntegerLiteral>(Loc, llvm::APInt(32, ~0U));
+  case BinaryOpKind::Or:
+    // | → 0
+    return Context.create<IntegerLiteral>(Loc, llvm::APInt(32, 0));
+  case BinaryOpKind::Xor:
+    // ^ → 0
+    return Context.create<IntegerLiteral>(Loc, llvm::APInt(32, 0));
+  default:
+    // Comma, comparison operators, etc. have no identity element
+    return nullptr;
+  }
+}
+
+Expr *TemplateInstantiator::InstantiateFoldExpr(
+    CXXFoldExpr *FE, const TemplateArgumentList &Args) {
+  if (!FE)
+    return nullptr;
+
+  // Expand the pack pattern
+  llvm::SmallVector<Expr *, 4> Elems = ExpandPack(FE->getPattern(), Args);
+
+  // Get LHS and RHS (init values for binary folds)
+  Expr *LHS = FE->getLHS() ? SubstituteExpr(FE->getLHS(), Args) : nullptr;
+  Expr *RHS = FE->getRHS() ? SubstituteExpr(FE->getRHS(), Args) : nullptr;
+
+  // Empty pack expansion
+  if (Elems.empty()) {
+    // For unary fold with empty pack, return identity element
+    if (!LHS && !RHS) {
+      Expr *Identity = getIdentityElement(FE->getOperator(), FE->getLocation());
+      if (Identity)
+        return Identity;
+      // No identity element defined → return the pattern as-is (error case)
+      return FE;
+    }
+    // Binary fold with empty pack: return the init value
+    if (LHS)
+      return LHS;
+    if (RHS)
+      return RHS;
+    return FE;
+  }
+
+  Expr *Result = Elems[0];
+  BinaryOpKind Op = FE->getOperator();
+
+  if (FE->isRightFold()) {
+    // Right fold: init op elems[n-1] op ... op elems[1] op elems[0]
+    // Build from right to left: start with last element
+    Result = Elems[Elems.size() - 1];
+    for (int I = static_cast<int>(Elems.size()) - 2; I >= 0; --I) {
+      auto *BO = Context.create<BinaryOperator>(
+          FE->getLocation(), Elems[I], Result, Op);
+      Result = BO;
+    }
+    // Prepend init value (RHS for right fold): init op result
+    if (RHS) {
+      auto *BO = Context.create<BinaryOperator>(
+          FE->getLocation(), RHS, Result, Op);
+      Result = BO;
+    }
+  } else {
+    // Left fold: elems[0] op elems[1] op ... op elems[n-1] op init
+    Result = Elems[0];
+    for (unsigned I = 1; I < Elems.size(); ++I) {
+      auto *BO = Context.create<BinaryOperator>(
+          FE->getLocation(), Result, Elems[I], Op);
+      Result = BO;
+    }
+    // Append init value (LHS for left fold): result op init
+    if (LHS) {
+      auto *BO = Context.create<BinaryOperator>(
+          FE->getLocation(), Result, LHS, Op);
+      Result = BO;
+    }
+  }
+
+  return Result;
+}
+
+//===----------------------------------------------------------------------===//
+// Pack Indexing Expression Instantiation
+//===----------------------------------------------------------------------===//
+
+Expr *TemplateInstantiator::InstantiatePackIndexingExpr(
+    PackIndexingExpr *PIE, const TemplateArgumentList &Args) {
+  if (!PIE)
+    return nullptr;
+
+  // 1. Evaluate the index expression (must be a constant)
+  Expr *IndexExpr = SubstituteExpr(PIE->getIndex(), Args);
+  if (!IndexExpr)
+    return nullptr;
+
+  // Try to evaluate as constant
+  ConstantExprEvaluator Eval(Context);
+  auto Result = Eval.Evaluate(IndexExpr);
+  if (!Result.isSuccess() || !Result.isIntegral())
+    return PIE; // Cannot evaluate index → return as-is
+
+  llvm::APSInt IndexVal = Result.getInt();
+  uint64_t Index = IndexVal.getZExtValue();
+
+  // 2. Get the pack arguments
+  llvm::ArrayRef<TemplateArgument> PackArgs = Args.getPackArgument();
+  if (PackArgs.empty())
+    return PIE;
+
+  // 3. Index into the pack
+  if (Index >= PackArgs.size())
+    return PIE; // Out of bounds → return as-is
+
+  const TemplateArgument &Selected = PackArgs[Index];
+  if (Selected.isType()) {
+    // Return a type expression — for now create a placeholder
+    // In a full implementation, this would create a TypeExpr or similar
+    return PIE;
+  }
+  if (Selected.isExpression()) {
+    return const_cast<Expr *>(Selected.getAsExpr());
+  }
+
+  return PIE;
+}
+
 //===----------------------------------------------------------------------===//
 // Type Substitution
 //===----------------------------------------------------------------------===//
@@ -287,9 +457,73 @@ Expr *TemplateInstantiator::SubstituteExpr(Expr *E,
   if (!E)
     return nullptr;
 
-  // For now, return as-is for non-dependent expressions.
-  // Dependent expressions need full recursive substitution,
-  // which will be expanded in later stages.
+  // Handle various expression kinds
+  // CXXFoldExpr → expand pack
+  if (auto *FE = llvm::dyn_cast<CXXFoldExpr>(E))
+    return InstantiateFoldExpr(FE, Args);
+
+  // PackIndexingExpr → index into pack
+  if (auto *PIE = llvm::dyn_cast<PackIndexingExpr>(E))
+    return InstantiatePackIndexingExpr(PIE, Args);
+
+  // DeclRefExpr → substitute the referenced declaration
+  if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(E)) {
+    // Check if the referenced decl is a template parameter
+    if (auto *TTPD = llvm::dyn_cast<TemplateTypeParmDecl>(DRE->getDecl())) {
+      // For now, return as-is; type substitution handles the actual replacement
+      return E;
+    }
+    // For other DeclRefExprs, return as-is (non-dependent)
+    return E;
+  }
+
+  // BinaryOperator → substitute both operands
+  if (auto *BO = llvm::dyn_cast<BinaryOperator>(E)) {
+    Expr *SubLHS = SubstituteExpr(BO->getLHS(), Args);
+    Expr *SubRHS = SubstituteExpr(BO->getRHS(), Args);
+    if (SubLHS && SubRHS) {
+      auto *NewBO = Context.create<BinaryOperator>(
+          BO->getLocation(),
+          SubLHS == BO->getLHS() ? BO->getLHS() : SubLHS,
+          SubRHS == BO->getRHS() ? BO->getRHS() : SubRHS,
+          BO->getOpcode());
+      NewBO->setType(BO->getType());
+      return NewBO;
+    }
+    return E;
+  }
+
+  // UnaryOperator → substitute operand
+  if (auto *UO = llvm::dyn_cast<UnaryOperator>(E)) {
+    Expr *SubOp = SubstituteExpr(UO->getSubExpr(), Args);
+    if (SubOp) {
+      auto *NewUO = Context.create<UnaryOperator>(
+          UO->getLocation(),
+          SubOp == UO->getSubExpr() ? UO->getSubExpr() : SubOp,
+          UO->getOpcode());
+      NewUO->setType(UO->getType());
+      return NewUO;
+    }
+    return E;
+  }
+
+  // CallExpr → substitute callee and arguments
+  if (auto *CE = llvm::dyn_cast<CallExpr>(E)) {
+    Expr *SubFn = SubstituteExpr(CE->getCallee(), Args);
+    auto OrigArgs = CE->getArgs();
+    llvm::SmallVector<Expr *, 4> SubArgs;
+    for (unsigned I = 0; I < CE->getNumArgs(); ++I) {
+      Expr *SubArg = SubstituteExpr(OrigArgs[I], Args);
+      SubArgs.push_back(SubArg ? SubArg : OrigArgs[I]);
+    }
+    auto *NewCE = Context.create<CallExpr>(
+        CE->getLocation(),
+        SubFn ? SubFn : CE->getCallee(),
+        SubArgs);
+    return NewCE;
+  }
+
+  // For non-dependent expressions, return as-is
   return E;
 }
 
@@ -363,6 +597,28 @@ QualType TemplateInstantiator::SubstituteTemplateTypeParmType(
   // Look up by index in the argument list
   if (Index < Args.size()) {
     const TemplateArgument &Arg = Args[Index];
+
+    // If the argument is a pack and this parameter is a pack parameter,
+    // we are in a pack expansion context. The pack will be handled by
+    // ExpandPackType / ExpandPack which iterate over the pack elements.
+    // Here we return the first element or the whole pack depending on context.
+    if (Arg.isPack()) {
+      // If the template parameter is itself a pack (isParameterPack),
+      // the substitution should expand the pack. For now, return the
+      // pack argument — the caller (ExpandPackType/ExpandPack) handles
+      // the actual expansion element-by-element.
+      if (T->isParameterPack()) {
+        auto PackArgs = Arg.getAsPack();
+        if (!PackArgs.empty() && PackArgs[0].isType())
+          return PackArgs[0].getAsType();
+      }
+      // Non-pack parameter matched to pack argument: use first element
+      auto PackArgs = Arg.getAsPack();
+      if (!PackArgs.empty() && PackArgs[0].isType())
+        return PackArgs[0].getAsType();
+      return QualType(const_cast<TemplateTypeParmType *>(T), Qualifier::None);
+    }
+
     if (Arg.isType())
       return Arg.getAsType();
   }
