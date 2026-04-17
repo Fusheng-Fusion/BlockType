@@ -288,6 +288,31 @@ void LabelDecl::dump(raw_ostream &OS, unsigned Indent) const {
 // CXXRecordDecl
 //===----------------------------------------------------------------------===//
 
+bool CXXRecordDecl::isDerivedFrom(const CXXRecordDecl *Base) const {
+  if (!Base) {
+    return false;
+  }
+
+  // Check direct base classes
+  for (const auto &BaseSpec : Bases) {
+    QualType BaseTy = BaseSpec.getType();
+    if (auto *BaseRT = llvm::dyn_cast_or_null<RecordType>(BaseTy.getTypePtr())) {
+      if (auto *BaseCXXRD = llvm::dyn_cast<CXXRecordDecl>(BaseRT->getDecl())) {
+        // Check if this is the target base class
+        if (BaseCXXRD == Base) {
+          return true;
+        }
+        // Recursively check if the base class is derived from the target
+        if (BaseCXXRD->isDerivedFrom(Base)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 void CXXRecordDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << (isClass() ? "CXXRecordDecl " : "RecordDecl ") << getName() << "\n";

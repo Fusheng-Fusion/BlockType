@@ -476,6 +476,12 @@ public:
   void setCurrentAccess(unsigned Access) { CurrentAccess = Access; }
   bool isDefaultAccessPublic() const { return getTagKind() == TK_struct || getTagKind() == TK_union; }
 
+  /// Check if this class is derived from the given base class.
+  /// Performs a recursive search through the inheritance hierarchy.
+  /// \param Base The potential base class to check.
+  /// \return true if this class inherits from Base (directly or indirectly).
+  bool isDerivedFrom(const CXXRecordDecl *Base) const;
+
   NodeKind getKind() const override { return NodeKind::CXXRecordDeclKind; }
 
   void dump(raw_ostream &OS, unsigned Indent = 0) const override;

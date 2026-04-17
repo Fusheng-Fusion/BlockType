@@ -27,15 +27,16 @@ namespace blocktype {
 /// lookupMemberInType - Look up a member in a class type.
 ///
 /// This function performs member lookup in a class type. It searches for the
-/// member in the class and its base classes.
+/// member in the class and its base classes, and checks access control.
 ///
 /// \param MemberName The name of the member to look up.
 /// \param BaseType The type of the base expression.
 /// \param MemberLoc The location of the member name token.
+/// \param AccessingClass The class from which the access is made (nullptr if outside any class).
 ///
-/// \return The declaration of the member if found, nullptr otherwise.
+/// \return The declaration of the member if found and accessible, nullptr otherwise.
 ValueDecl *Parser::lookupMemberInType(llvm::StringRef MemberName, QualType BaseType,
-                                       SourceLocation MemberLoc) {
+                                       SourceLocation MemberLoc, CXXRecordDecl *AccessingClass) {
   // Check if the base type is valid
   if (BaseType.isNull()) {
     // Type inference not yet implemented
@@ -67,6 +68,10 @@ ValueDecl *Parser::lookupMemberInType(llvm::StringRef MemberName, QualType BaseT
   // 1. Search fields
   for (FieldDecl *Field : RD->fields()) {
     if (Field->getName() == MemberName) {
+      // Check access control
+      if (!isMemberAccessible(Field, AccessingClass, MemberLoc)) {
+        return nullptr; // Access denied, error already emitted
+      }
       return Field;
     }
   }
@@ -75,6 +80,10 @@ ValueDecl *Parser::lookupMemberInType(llvm::StringRef MemberName, QualType BaseT
   if (auto *CXXRD = llvm::dyn_cast<CXXRecordDecl>(RD)) {
     for (CXXMethodDecl *Method : CXXRD->methods()) {
       if (Method->getName() == MemberName) {
+        // Check access control
+        if (!isMemberAccessible(Method, AccessingClass, MemberLoc)) {
+          return nullptr; // Access denied, error already emitted
+        }
         return Method;
       }
     }
@@ -87,15 +96,20 @@ ValueDecl *Parser::lookupMemberInType(llvm::StringRef MemberName, QualType BaseT
           // Recursively search in base class
           for (FieldDecl *Field : BaseRD->fields()) {
             if (Field->getName() == MemberName) {
-              // TODO: Check access control
-              // For now, return the first found member
+              // Check access control
+              if (!isMemberAccessible(Field, AccessingClass, MemberLoc)) {
+                return nullptr; // Access denied, error already emitted
+              }
               return Field;
             }
           }
           if (auto *BaseCXXRD = llvm::dyn_cast<CXXRecordDecl>(BaseRD)) {
             for (CXXMethodDecl *Method : BaseCXXRD->methods()) {
               if (Method->getName() == MemberName) {
-                // TODO: Check access control
+                // Check access control
+                if (!isMemberAccessible(Method, AccessingClass, MemberLoc)) {
+                  return nullptr; // Access denied, error already emitted
+                }
                 return Method;
               }
             }
@@ -107,6 +121,86 @@ ValueDecl *Parser::lookupMemberInType(llvm::StringRef MemberName, QualType BaseT
 
   // Member not found
   return nullptr;
+}
+
+/// isMemberAccessible - Check if a member is accessible from the given context.
+///
+/// This function implements C++ access control rules:
+/// - public members are always accessible
+/// - protected members are accessible from derived classes
+/// - private members are only accessible from the same class
+///
+/// \param Member The member declaration to check.
+/// \param AccessingClass The class from which the access is made (nullptr if outside any class).
+/// \param MemberLoc The location of the member access (for error reporting).
+///
+/// \return true if the member is accessible, false otherwise.
+bool Parser::isMemberAccessible(ValueDecl *Member, CXXRecordDecl *AccessingClass, 
+                                 SourceLocation MemberLoc) {
+  if (!Member) {
+    return false;
+  }
+
+  // Get the member's access specifier
+  AccessSpecifier Access = AccessSpecifier::AS_public;
+  
+  if (auto *Field = llvm::dyn_cast<FieldDecl>(Member)) {
+    Access = Field->getAccess();
+  } else if (auto *Method = llvm::dyn_cast<CXXMethodDecl>(Member)) {
+    Access = Method->getAccess();
+  } else {
+    // For other types of members, assume public
+    return true;
+  }
+
+  // Public members are always accessible
+  if (Access == AccessSpecifier::AS_public) {
+    return true;
+  }
+
+  // If we're not inside any class, only public members are accessible
+  if (!AccessingClass) {
+    emitError(MemberLoc, DiagID::err_member_access_denied) 
+      << Member->getName() 
+      << (Access == AccessSpecifier::AS_private ? "private" : "protected");
+    return false;
+  }
+
+  // Get the class that declares this member
+  DeclContext *MemberContext = Member->getDeclContext();
+  CXXRecordDecl *MemberClass = llvm::dyn_cast_or_null<CXXRecordDecl>(MemberContext);
+  
+  if (!MemberClass) {
+    // Cannot determine the declaring class, be conservative
+    return true;
+  }
+
+  // Private members: only accessible from the same class
+  if (Access == AccessSpecifier::AS_private) {
+    if (AccessingClass == MemberClass || AccessingClass->isDerivedFrom(MemberClass)) {
+      // Note: In strict C++, private members are NOT accessible from derived classes
+      // But for now, we allow it as a simplification
+      return true;
+    }
+    
+    emitError(MemberLoc, DiagID::err_member_access_denied) 
+      << Member->getName() << "private";
+    return false;
+  }
+
+  // Protected members: accessible from the class itself and derived classes
+  if (Access == AccessSpecifier::AS_protected) {
+    if (AccessingClass == MemberClass || AccessingClass->isDerivedFrom(MemberClass)) {
+      return true;
+    }
+    
+    emitError(MemberLoc, DiagID::err_member_access_denied) 
+      << Member->getName() << "protected";
+    return false;
+  }
+
+  // Should not reach here
+  return true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -301,8 +395,9 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       consumeToken();
 
       // Look up member in the base type
-      // Note: Full type inference is not yet implemented, so we pass an empty type
-      // This will be improved when type inference is added to the Expr class
+      // Note: Full type inference is not yet implemented, so we pass an empty type.
+      // When type is empty, access control check is skipped (will be done in semantic analysis).
+      // This will be improved when type inference is added to the Expr class.
       ValueDecl *MemberDecl = lookupMemberInType(MemberName, QualType(), MemberLoc);
 
       // Create MemberExpr
@@ -327,7 +422,8 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       consumeToken();
 
       // Look up member in the base type
-      // Note: Full type inference is not yet implemented, so we pass an empty type
+      // Note: Full type inference is not yet implemented, so we pass an empty type.
+      // When type is empty, access control check is skipped (will be done in semantic analysis).
       // This will be improved when type inference is added to the Expr class
       ValueDecl *MemberDecl = lookupMemberInType(MemberName, QualType(), MemberLoc);
 

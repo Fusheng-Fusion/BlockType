@@ -153,8 +153,20 @@ public:
 
   /// Look up a member in a class type.
   /// Returns nullptr if the member is not found or if the base type is not a class.
+  /// Performs access control checking.
+  /// \param AccessingClass The class from which the access is made (nullptr if outside any class).
   ValueDecl *lookupMemberInType(llvm::StringRef MemberName, QualType BaseType,
-                                 SourceLocation MemberLoc);
+                                 SourceLocation MemberLoc, 
+                                 CXXRecordDecl *AccessingClass = nullptr);
+
+  /// Check if a member is accessible from the given context.
+  /// Implements C++ access control rules (public/protected/private).
+  /// \param Member The member declaration to check.
+  /// \param AccessingClass The class from which the access is made (nullptr if outside any class).
+  /// \param MemberLoc The location of the member access (for error reporting).
+  /// \return true if the member is accessible, false otherwise.
+  bool isMemberAccessible(ValueDecl *Member, CXXRecordDecl *AccessingClass, 
+                          SourceLocation MemberLoc);
 
   /// Returns the number of errors encountered.
   unsigned getErrorCount() const { return ErrorCount; }
