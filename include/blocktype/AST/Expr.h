@@ -146,8 +146,9 @@ class IntegerLiteral : public Expr {
   llvm::APInt Value;
 
 public:
-  IntegerLiteral(SourceLocation Loc, const llvm::APInt &Val)
-      : Expr(Loc), Value(Val) {}
+  IntegerLiteral(SourceLocation Loc, const llvm::APInt &Val,
+                 QualType T = QualType())
+      : Expr(Loc, T), Value(Val) {}
 
   const llvm::APInt &getValue() const { return Value; }
 
@@ -170,8 +171,9 @@ class FloatingLiteral : public Expr {
   llvm::APFloat Value;
 
 public:
-  FloatingLiteral(SourceLocation Loc, const llvm::APFloat &Val)
-      : Expr(Loc), Value(Val) {}
+  FloatingLiteral(SourceLocation Loc, const llvm::APFloat &Val,
+                  QualType T = QualType())
+      : Expr(Loc, T), Value(Val) {}
 
   const llvm::APFloat &getValue() const { return Value; }
 
@@ -196,8 +198,9 @@ class StringLiteral : public Expr {
   llvm::StringRef Value;
 
 public:
-  StringLiteral(SourceLocation Loc, llvm::StringRef Val)
-      : Expr(Loc), Value(Val) {}
+  StringLiteral(SourceLocation Loc, llvm::StringRef Val,
+                QualType T = QualType())
+      : Expr(Loc, T), Value(Val) {}
 
   llvm::StringRef getValue() const { return Value; }
 
@@ -220,8 +223,9 @@ class CharacterLiteral : public Expr {
   uint32_t Value;
 
 public:
-  CharacterLiteral(SourceLocation Loc, uint32_t Val)
-      : Expr(Loc), Value(Val) {}
+  CharacterLiteral(SourceLocation Loc, uint32_t Val,
+                    QualType T = QualType())
+      : Expr(Loc, T), Value(Val) {}
 
   uint32_t getValue() const { return Value; }
 
@@ -244,8 +248,8 @@ class CXXBoolLiteral : public Expr {
   bool Value;
 
 public:
-  CXXBoolLiteral(SourceLocation Loc, bool Val)
-      : Expr(Loc), Value(Val) {}
+  CXXBoolLiteral(SourceLocation Loc, bool Val, QualType T = QualType())
+      : Expr(Loc, T), Value(Val) {}
 
   bool getValue() const { return Value; }
 
@@ -266,7 +270,8 @@ public:
 /// CXXNullPtrLiteral - Null pointer literal (nullptr).
 class CXXNullPtrLiteral : public Expr {
 public:
-  CXXNullPtrLiteral(SourceLocation Loc) : Expr(Loc) {}
+  CXXNullPtrLiteral(SourceLocation Loc, QualType T = QualType())
+      : Expr(Loc, T) {}
 
   NodeKind getKind() const override { return NodeKind::CXXNullPtrLiteralKind; }
 
@@ -292,7 +297,8 @@ class DeclRefExpr : public Expr {
 
 public:
   DeclRefExpr(SourceLocation Loc, ValueDecl *D)
-      : Expr(Loc, QualType(), ExprValueKind::VK_LValue), D(D) {}
+      : Expr(Loc, D ? D->getType() : QualType(), ExprValueKind::VK_LValue),
+        D(D) {}
 
   ValueDecl *getDecl() const { return D; }
 
@@ -374,7 +380,9 @@ class MemberExpr : public Expr {
 
 public:
   MemberExpr(SourceLocation Loc, Expr *Base, ValueDecl *Member, bool IsArrow)
-      : Expr(Loc, QualType(), ExprValueKind::VK_LValue), Base(Base), Member(Member), IsArrow(IsArrow) {}
+      : Expr(Loc, Member ? Member->getType() : QualType(),
+             ExprValueKind::VK_LValue),
+        Base(Base), Member(Member), IsArrow(IsArrow) {}
 
   Expr *getBase() const { return Base; }
   ValueDecl *getMemberDecl() const { return Member; }

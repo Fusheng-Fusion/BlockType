@@ -680,7 +680,7 @@ Expr *Parser::parseIntegerLiteral() {
   }
 
   consumeToken();
-  return Context.create<IntegerLiteral>(Loc, Value);
+  return Context.create<IntegerLiteral>(Loc, Value, Context.getIntType());
 }
 
 Expr *Parser::parseFloatingLiteral() {
@@ -723,7 +723,7 @@ Expr *Parser::parseFloatingLiteral() {
   }
 
   consumeToken();
-  return Context.create<FloatingLiteral>(Loc, Value);
+  return Context.create<FloatingLiteral>(Loc, Value, Context.getDoubleType());
 }
 
 Expr *Parser::parseStringLiteral() {
@@ -736,7 +736,10 @@ Expr *Parser::parseStringLiteral() {
   }
 
   consumeToken();
-  return Context.create<StringLiteral>(Loc, Text.str());
+  // String literal type is const char[] — use char type as approximation.
+  // A full implementation would create a ConstantArrayType(char, N).
+  return Context.create<StringLiteral>(Loc, Text.str(),
+                                       Context.getCharType());
 }
 
 Expr *Parser::parseCharacterLiteral() {
@@ -806,7 +809,7 @@ Expr *Parser::parseCharacterLiteral() {
   }
 
   consumeToken();
-  return Context.create<CharacterLiteral>(Loc, Value);
+  return Context.create<CharacterLiteral>(Loc, Value, Context.getCharType());
 }
 
 Expr *Parser::parseBoolLiteral() {
@@ -814,14 +817,14 @@ Expr *Parser::parseBoolLiteral() {
   bool Value = Tok.is(TokenKind::kw_true);
 
   consumeToken();
-  return Context.create<CXXBoolLiteral>(Loc, Value);
+  return Context.create<CXXBoolLiteral>(Loc, Value, Context.getBoolType());
 }
 
 Expr *Parser::parseNullPtrLiteral() {
   SourceLocation Loc = Tok.getLocation();
 
   consumeToken();
-  return Context.create<CXXNullPtrLiteral>(Loc);
+  return Context.create<CXXNullPtrLiteral>(Loc, Context.getNullPtrType());
 }
 
 Expr *Parser::parseIdentifier() {

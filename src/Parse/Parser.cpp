@@ -371,7 +371,8 @@ Expr *Parser::createRecoveryExpr(SourceLocation Loc) {
 
   // Create a placeholder integer literal for recovery
   // This prevents cascading errors
-  return Context.create<IntegerLiteral>(Loc, llvm::APInt(32, 0));
+  return Context.create<IntegerLiteral>(Loc, llvm::APInt(32, 0),
+                                         Context.getIntType());
 }
 
 //===----------------------------------------------------------------------===//

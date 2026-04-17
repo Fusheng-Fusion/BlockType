@@ -1511,7 +1511,7 @@ AttributeListDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
         consumeToken();
         // Create a StringLiteral expression
         ArgExpr = Context.create<StringLiteral>(
-            SourceLocation(), StrValue);
+            SourceLocation(), StrValue, Context.getCharType());
       } else if (Tok.isNot(TokenKind::r_paren)) {
         // General case: parse as expression
         ArgExpr = parseExpression();
