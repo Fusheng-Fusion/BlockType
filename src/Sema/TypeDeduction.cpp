@@ -66,9 +66,17 @@ QualType TypeDeduction::deduceAutoRefType(QualType DeclaredType, Expr *Init) {
   QualType T = Init->getType();
   if (T.isNull()) return QualType();
 
+  // auto& binds to lvalues only; binding to rvalues is ill-formed
+  // unless the reference is const-qualified (const auto&).
+  if (Init->isRValue() && !DeclaredType.isConstQualified()) {
+    if (Diags) {
+      Diags->report(Init->getLocation(),
+                    DiagID::err_non_const_lvalue_ref_binds_to_rvalue);
+    }
+    return QualType();
+  }
+
   // auto& preserves the type including CV qualifiers
-  // If init is an lvalue, bind to lvalue reference
-  // If init is an rvalue, this is ill-formed (except const auto&)
   return QualType(Context.getLValueReferenceType(T.getTypePtr()),
                   T.getQualifiers());
 }
@@ -81,9 +89,11 @@ QualType TypeDeduction::deduceAutoForwardingRefType(Expr *Init) {
 
   // auto&& (forwarding reference / universal reference)
   // If init is lvalue → deduce as lvalue reference (T&)
-  // If init is rvalue → deduce as rvalue reference (T&&)
-  //
-  // For now, use a simplified model: always deduce as rvalue reference
+  // If init is rvalue (xvalue or prvalue) → deduce as rvalue reference (T&&)
+  if (Init->isLValue()) {
+    return QualType(Context.getLValueReferenceType(T.getTypePtr()),
+                    Qualifier::None);
+  }
   return QualType(Context.getRValueReferenceType(T.getTypePtr()),
                   Qualifier::None);
 }
@@ -125,7 +135,7 @@ QualType TypeDeduction::deduceFromInitList(llvm::ArrayRef<Expr *> Inits) {
   // Verify all elements have the same type
   for (unsigned i = 1; i < Inits.size(); ++i) {
     QualType T = Inits[i]->getType();
-    if (T.isNull() || T.getTypePtr() != FirstType.getTypePtr()) {
+    if (T.isNull() || T.getCanonicalType() != FirstType.getCanonicalType()) {
       // Inconsistent types in initializer list
       return QualType();
     }
@@ -150,9 +160,15 @@ QualType TypeDeduction::deduceDecltypeType(Expr *E) {
   //   - xvalue → T&&
   //   - lvalue → T&
   //   - prvalue → T
-  //
-  // For now, we use the expression's type directly.
-  // Full implementation would need to distinguish value categories.
+  if (E->isLValue()) {
+    return QualType(Context.getLValueReferenceType(T.getTypePtr()),
+                    T.getQualifiers());
+  }
+  if (E->isXValue()) {
+    return QualType(Context.getRValueReferenceType(T.getTypePtr()),
+                    T.getQualifiers());
+  }
+  // prvalue: return T as-is
   return T;
 }
 

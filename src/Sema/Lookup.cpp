@@ -81,10 +81,12 @@ NestedNameSpecifier *NestedNameSpecifier::Create(ASTContext &Ctx,
 NestedNameSpecifier *NestedNameSpecifier::Create(ASTContext &Ctx,
                                                   NestedNameSpecifier *Prefix,
                                                   llvm::StringRef Identifier) {
+  // Persist the string via ASTContext to avoid dangling pointer
+  llvm::StringRef Saved = Ctx.saveString(Identifier);
   void *Mem = Ctx.getAllocator().Allocate(sizeof(NestedNameSpecifier),
                                           alignof(NestedNameSpecifier));
   decltype(Data) D;
-  D.IdentifierStr = Identifier.data();
+  D.IdentifierStr = Saved.data();
   return new (Mem) NestedNameSpecifier(SpecifierKind::Identifier, D, Prefix);
 }
 
@@ -123,15 +125,46 @@ LookupResult Sema::LookupUnqualifiedName(llvm::StringRef Name, Scope *S,
                                           LookupNameKind Kind) {
   LookupResult Result;
 
+  // Member name lookup: only search the immediate scope (no parent walking).
+  // This is used for class member access like obj.member or ptr->member.
+  if (Kind == LookupNameKind::LookupMemberName) {
+    if (S) {
+      if (NamedDecl *D = S->lookupInScope(Name)) {
+        Result.addDecl(D);
+        // Collect function overloads in the same scope
+        for (NamedDecl *ScopeD : S->decls()) {
+          if (ScopeD == D) continue;
+          if (ScopeD->getName() == Name) {
+            if (isa<FunctionDecl>(static_cast<ASTNode *>(ScopeD)) ||
+                isa<CXXMethodDecl>(static_cast<ASTNode *>(ScopeD))) {
+              Result.addDecl(ScopeD);
+            }
+          }
+        }
+      }
+    }
+    if (Result.getNumDecls() > 1)
+      Result.setOverloaded(true);
+    return Result;
+  }
+
+  // Operator name lookup: ordinary lookup is the first phase.
+  // The second phase (ADL) is handled by the caller invoking LookupADL separately.
+  // Fall through to ordinary lookup logic.
+
   // Walk up the scope chain
   for (Scope *Cur = S; Cur; Cur = Cur->getParent()) {
+    bool FoundInScope = false;
+
     if (NamedDecl *D = Cur->lookupInScope(Name)) {
       Result.addDecl(D);
+      FoundInScope = true;
 
       // Tag lookup: only tags, skip non-tags
       if (Kind == LookupNameKind::LookupTagName) {
         if (isa<TagDecl>(static_cast<ASTNode *>(D)))
           return Result;
+        FoundInScope = false;
         continue;
       }
 
@@ -141,6 +174,7 @@ LookupResult Sema::LookupUnqualifiedName(llvm::StringRef Name, Scope *S,
           Result.setTypeName(true);
           return Result;
         }
+        FoundInScope = false;
         continue;
       }
 
@@ -148,10 +182,11 @@ LookupResult Sema::LookupUnqualifiedName(llvm::StringRef Name, Scope *S,
       if (Kind == LookupNameKind::LookupNamespaceName) {
         if (isa<NamespaceDecl>(static_cast<ASTNode *>(D)))
           return Result;
+        FoundInScope = false;
         continue;
       }
 
-      // Non-function declaration: first match wins
+      // Non-function declaration hides everything, stop immediately
       if (!isa<FunctionDecl>(static_cast<ASTNode *>(D)) &&
           !isa<CXXMethodDecl>(static_cast<ASTNode *>(D))) {
         return Result;
@@ -167,22 +202,45 @@ LookupResult Sema::LookupUnqualifiedName(llvm::StringRef Name, Scope *S,
           }
         }
       }
-
-      if (Result.getNumDecls() > 1)
-        Result.setOverloaded(true);
-
-      return Result;
     }
 
-    // Process using directives in this scope
+    // Process using directives in this scope.
+    // Even when a function was found in scope, using directives may provide
+    // additional overload candidates (C++ [namespace.qual]/2).
     for (NamespaceDecl *NS : Cur->getUsingDirectives()) {
-      if (NamedDecl *D = NS->lookup(Name)) {
-        Result.addDecl(D);
-        if (!isa<FunctionDecl>(static_cast<ASTNode *>(D)) &&
-            !isa<CXXMethodDecl>(static_cast<ASTNode *>(D))) {
-          return Result;
+      if (NamedDecl *UD = NS->lookup(Name)) {
+        if (FoundInScope) {
+          // We already found a function in this scope; only add functions
+          // from using directives as overload candidates.
+          if (isa<FunctionDecl>(static_cast<ASTNode *>(UD)) ||
+              isa<CXXMethodDecl>(static_cast<ASTNode *>(UD))) {
+            Result.addDecl(UD);
+            // Also collect overloads from the using-directive namespace
+            for (auto *NSD : NS->decls()) {
+              auto *ND = dyn_cast<NamedDecl>(static_cast<ASTNode *>(NSD));
+              if (ND && ND != UD && ND->getName() == Name) {
+                if (isa<FunctionDecl>(static_cast<ASTNode *>(ND)) ||
+                    isa<CXXMethodDecl>(static_cast<ASTNode *>(ND))) {
+                  Result.addDecl(ND);
+                }
+              }
+            }
+          }
+          // Non-function from using directive is hidden by the scope match
+        } else {
+          Result.addDecl(UD);
+          if (!isa<FunctionDecl>(static_cast<ASTNode *>(UD)) &&
+              !isa<CXXMethodDecl>(static_cast<ASTNode *>(UD))) {
+            return Result;
+          }
         }
       }
+    }
+
+    if (FoundInScope) {
+      if (Result.getNumDecls() > 1)
+        Result.setOverloaded(true);
+      return Result;
     }
   }
 
@@ -218,6 +276,53 @@ LookupResult Sema::LookupUnqualifiedName(llvm::StringRef Name, Scope *S,
 //===----------------------------------------------------------------------===//
 // Qualified Lookup [Task 4.3.3]
 //===----------------------------------------------------------------------===//
+
+namespace {
+
+/// Lookup a name in a CXXRecordDecl and all of its base classes.
+/// Uses a visited set to handle diamond inheritance correctly.
+void lookupInClassAndBases(CXXRecordDecl *Class, llvm::StringRef Name,
+                           LookupResult &Result,
+                           llvm::SmallPtrSetImpl<Decl *> &Visited) {
+  if (!Class || Visited.count(Class))
+    return;
+  Visited.insert(Class);
+
+  DeclContext *DC = static_cast<DeclContext *>(Class);
+
+  // Lookup in this class's own context (not parent contexts).
+  if (NamedDecl *D = DC->lookupInContext(Name)) {
+    Result.addDecl(D);
+
+    // Collect function overloads in the same class.
+    for (auto *ChildD : DC->decls()) {
+      auto *ND = dyn_cast<NamedDecl>(static_cast<ASTNode *>(ChildD));
+      if (ND && ND != D && ND->getName() == Name) {
+        if (isa<FunctionDecl>(static_cast<ASTNode *>(ND)) ||
+            isa<CXXMethodDecl>(static_cast<ASTNode *>(ND))) {
+          Result.addDecl(ND);
+        }
+      }
+    }
+  }
+
+  // Recurse into base classes.
+  for (const auto &Base : Class->bases()) {
+    QualType BaseType = Base.getType();
+    const Type *BT = BaseType.getTypePtr();
+    if (BT && BT->isRecordType()) {
+      auto *RT = static_cast<const RecordType *>(BT);
+      if (auto *RD = RT->getDecl()) {
+        if (auto *BaseCXXRD =
+                dyn_cast<CXXRecordDecl>(static_cast<ASTNode *>(RD))) {
+          lookupInClassAndBases(BaseCXXRD, Name, Result, Visited);
+        }
+      }
+    }
+  }
+}
+
+} // anonymous namespace
 
 LookupResult Sema::LookupQualifiedName(llvm::StringRef Name,
                                          NestedNameSpecifier *NNS) {
@@ -270,17 +375,25 @@ LookupResult Sema::LookupQualifiedName(llvm::StringRef Name,
 
   if (!DC) return Result;
 
-  // Perform lookup in the resolved DeclContext
-  if (NamedDecl *D = DC->lookup(Name)) {
-    Result.addDecl(D);
+  // If DC is a CXXRecordDecl, perform lookup in the class and its base classes.
+  // Non-class contexts (namespace, enum, TU) use simple lookup.
+  if (DC->isCXXRecord()) {
+    auto *Class = static_cast<CXXRecordDecl *>(DC);
+    llvm::SmallPtrSet<Decl *, 8> Visited;
+    lookupInClassAndBases(Class, Name, Result, Visited);
+  } else {
+    // Namespace / enum / TU: direct lookup.
+    if (NamedDecl *D = DC->lookup(Name)) {
+      Result.addDecl(D);
 
-    // Collect function overloads
-    for (auto *ChildD : DC->decls()) {
-      auto *ND = dyn_cast<NamedDecl>(static_cast<ASTNode *>(ChildD));
-      if (ND && ND != D && ND->getName() == Name) {
-        if (isa<FunctionDecl>(static_cast<ASTNode *>(ND)) ||
-            isa<CXXMethodDecl>(static_cast<ASTNode *>(ND))) {
-          Result.addDecl(ND);
+      // Collect function overloads
+      for (auto *ChildD : DC->decls()) {
+        auto *ND = dyn_cast<NamedDecl>(static_cast<ASTNode *>(ChildD));
+        if (ND && ND != D && ND->getName() == Name) {
+          if (isa<FunctionDecl>(static_cast<ASTNode *>(ND)) ||
+              isa<CXXMethodDecl>(static_cast<ASTNode *>(ND))) {
+            Result.addDecl(ND);
+          }
         }
       }
     }
@@ -298,7 +411,8 @@ LookupResult Sema::LookupQualifiedName(llvm::StringRef Name,
 
 namespace {
 
-/// Find the enclosing namespace DeclContext for a given DeclContext.
+/// Find the innermost enclosing namespace DeclContext for a given DeclContext.
+/// Walks up the parent chain starting from DC's parent.
 DeclContext *findEnclosingNamespace(DeclContext *DC) {
   if (!DC) return nullptr;
   DeclContext *Ctx = DC->getParent();
@@ -311,22 +425,43 @@ DeclContext *findEnclosingNamespace(DeclContext *DC) {
 }
 
 /// Find the NamespaceDecl* corresponding to a DeclContext that is a namespace.
-/// This requires walking the parent context's declarations to find the
-/// NamespaceDecl whose DeclContext matches.
+/// Searches the parent's decls, then recursively through ancestors for
+/// robustness with deeply nested namespaces.
 NamespaceDecl *findNamespaceDecl(DeclContext *NSCtx) {
   if (!NSCtx || !NSCtx->isNamespace()) return nullptr;
 
-  // Walk the parent's declarations to find the NamespaceDecl
-  DeclContext *Parent = NSCtx->getParent();
-  if (!Parent) return nullptr;
-
-  for (auto *D : Parent->decls()) {
-    auto *ND = dyn_cast<NamespaceDecl>(static_cast<ASTNode *>(D));
-    if (ND && static_cast<DeclContext *>(ND) == NSCtx) {
-      return ND;
+  // Search up the ancestor chain for the NamespaceDecl.
+  // Typically the immediate parent contains it, but we search ancestors
+  // to handle edge cases.
+  for (DeclContext *Parent = NSCtx->getParent(); Parent;
+       Parent = Parent->getParent()) {
+    for (auto *D : Parent->decls()) {
+      auto *ND = dyn_cast<NamespaceDecl>(static_cast<ASTNode *>(D));
+      if (ND && static_cast<DeclContext *>(ND) == NSCtx) {
+        return ND;
+      }
     }
   }
   return nullptr;
+}
+
+/// Add a namespace DeclContext to the associated namespaces set.
+/// Handles inline namespaces: if the namespace is inline, also adds its
+/// enclosing namespace.
+void addAssociatedNamespace(DeclContext *NSCtx,
+                            llvm::SmallPtrSetImpl<NamespaceDecl *> &Namespaces) {
+  NamespaceDecl *NS = findNamespaceDecl(NSCtx);
+  if (!NS) return;
+  if (!Namespaces.insert(NS).second)
+    return; // Already added
+
+  // If this is an inline namespace, also add the enclosing namespace.
+  if (NS->isInline()) {
+    DeclContext *Enclosing = findEnclosingNamespace(NSCtx);
+    if (Enclosing && Enclosing->isNamespace()) {
+      addAssociatedNamespace(Enclosing, Namespaces);
+    }
+  }
 }
 
 } // anonymous namespace
@@ -350,18 +485,25 @@ void Sema::LookupADL(llvm::StringRef Name,
     }
   }
 
-  // Look up friend functions in associated classes
+  // Look up friend functions in associated classes.
+  // Per C++ ADL rules, only friend functions declared in the class are
+  // visible through ADL. We search FriendDecl nodes in the class.
   for (const RecordType *RT : AssociatedClasses) {
     RecordDecl *RD = RT->getDecl();
     auto *CXXRD = dyn_cast<CXXRecordDecl>(static_cast<ASTNode *>(RD));
     if (!CXXRD) continue;
 
-    DeclContext *DC = CXXRD->getDeclContext();
-    for (auto *D : DC->decls()) {
-      auto *ND = dyn_cast<NamedDecl>(static_cast<ASTNode *>(D));
-      if (!ND || ND->getName() != Name) continue;
-      if (isa<FunctionDecl>(static_cast<ASTNode *>(ND))) {
-        Result.addDecl(ND);
+    DeclContext *ClassDC = static_cast<DeclContext *>(CXXRD);
+    for (auto *D : ClassDC->decls()) {
+      auto *FD = dyn_cast<FriendDecl>(static_cast<ASTNode *>(D));
+      if (!FD || FD->isFriendType()) continue; // Skip friend class decls
+
+      NamedDecl *FriendND = FD->getFriendDecl();
+      if (!FriendND || FriendND->getName() != Name) continue;
+
+      // Only free functions (not member functions) are ADL-visible friends.
+      if (isa<FunctionDecl>(static_cast<ASTNode *>(FriendND))) {
+        Result.addDecl(FriendND);
       }
     }
   }
@@ -387,11 +529,8 @@ void Sema::CollectAssociatedNamespacesAndClasses(
     auto *CXXRD = dyn_cast<CXXRecordDecl>(static_cast<ASTNode *>(RD));
     if (CXXRD) {
       DeclContext *NSCtx = findEnclosingNamespace(CXXRD->getDeclContext());
-      if (NSCtx) {
-        NamespaceDecl *NS = findNamespaceDecl(NSCtx);
-        if (NS)
-          Namespaces.insert(NS);
-      }
+      if (NSCtx)
+        addAssociatedNamespace(NSCtx, Namespaces);
 
       // Process base classes for ADL
       for (const auto &Base : CXXRD->bases()) {
@@ -405,11 +544,8 @@ void Sema::CollectAssociatedNamespacesAndClasses(
           if (BaseCXXRD) {
             DeclContext *BaseNS = findEnclosingNamespace(
                 BaseCXXRD->getDeclContext());
-            if (BaseNS) {
-              NamespaceDecl *NS = findNamespaceDecl(BaseNS);
-              if (NS)
-                Namespaces.insert(NS);
-            }
+            if (BaseNS)
+              addAssociatedNamespace(BaseNS, Namespaces);
           }
         }
       }
@@ -423,10 +559,19 @@ void Sema::CollectAssociatedNamespacesAndClasses(
     if (ED) {
       DeclContext *EnumDC = static_cast<DeclContext *>(ED);
       DeclContext *NSCtx = findEnclosingNamespace(EnumDC);
-      if (NSCtx) {
-        NamespaceDecl *NS = findNamespaceDecl(NSCtx);
-        if (NS)
-          Namespaces.insert(NS);
+      if (NSCtx)
+        addAssociatedNamespace(NSCtx, Namespaces);
+    }
+  }
+
+  // Template specialization type: recurse into template arguments
+  // e.g., std::vector<int> → collect from int's namespace (none) and std.
+  if (Ty->getTypeClass() == TypeClass::TemplateSpecialization) {
+    auto *TST = static_cast<const TemplateSpecializationType *>(Ty);
+    for (const auto &Arg : TST->getTemplateArgs()) {
+      if (Arg.isType()) {
+        CollectAssociatedNamespacesAndClasses(Arg.getAsType(),
+                                               Namespaces, Classes);
       }
     }
   }
@@ -444,6 +589,14 @@ void Sema::CollectAssociatedNamespacesAndClasses(
     auto *RT = static_cast<const ReferenceType *>(Ty);
     CollectAssociatedNamespacesAndClasses(
         QualType(RT->getReferencedType(), Qualifier::None),
+        Namespaces, Classes);
+  }
+
+  // Array type: recurse into element type
+  if (Ty->isArrayType()) {
+    auto *AT = static_cast<const ArrayType *>(Ty);
+    CollectAssociatedNamespacesAndClasses(
+        QualType(AT->getElementType(), Qualifier::None),
         Namespaces, Classes);
   }
 }

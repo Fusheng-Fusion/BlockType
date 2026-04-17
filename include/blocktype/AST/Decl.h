@@ -336,6 +336,7 @@ public:
 
 private:
   TagKind TagKindValue;
+  bool IsCompleteDefinition = false;
 
 protected:
   TagDecl(SourceLocation Loc, llvm::StringRef Name, TagKind TK)
@@ -347,6 +348,11 @@ public:
   bool isClass() const { return TagKindValue == TK_class; }
   bool isUnion() const { return TagKindValue == TK_union; }
   bool isEnum() const { return TagKindValue == TK_enum; }
+
+  /// isCompleteDefinition - Return true if this is a complete definition
+  /// (has a body with '{...}'). Forward declarations like 'class Foo;' are not.
+  bool isCompleteDefinition() const { return IsCompleteDefinition; }
+  void setCompleteDefinition(bool V = true) { IsCompleteDefinition = V; }
 
   static bool classof(const ASTNode *N) {
     return N->getKind() >= NodeKind::TagDeclKind &&

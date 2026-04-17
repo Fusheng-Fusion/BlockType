@@ -15,6 +15,7 @@
 
 #include "blocktype/AST/Decl.h"
 #include "blocktype/Sema/Scope.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 
 namespace blocktype {
@@ -56,6 +57,7 @@ enum class LookupNameKind {
 /// - Ambiguous results (error)
 class LookupResult {
   llvm::SmallVector<NamedDecl *, 4> Decls;
+  llvm::SmallPtrSet<NamedDecl *, 4> FoundDecls; // For deduplication
   bool Ambiguous = false;
   bool TypeName = false;       // Found result is a type name
   bool Overloaded = false;     // Found multiple function declarations
@@ -70,13 +72,16 @@ public:
   // Adding results
   //===------------------------------------------------------------------===//
 
-  /// Add a declaration to the result set.
-  void addDecl(NamedDecl *D) { Decls.push_back(D); }
+  /// Add a declaration to the result set (with deduplication).
+  void addDecl(NamedDecl *D) {
+    if (FoundDecls.insert(D).second)
+      Decls.push_back(D);
+  }
 
-  /// Add all declarations from another result.
+  /// Add all declarations from another result (with deduplication).
   void addAllDecls(const LookupResult &Other) {
     for (auto *D : Other.Decls)
-      Decls.push_back(D);
+      addDecl(D);
   }
 
   /// Mark as ambiguous.
@@ -135,8 +140,14 @@ public:
   /// Resolve to a single tag declaration.
   TagDecl *getAsTagDecl() const;
 
-  /// Clear all results.
-  void clear() { Decls.clear(); Ambiguous = false; }
+  /// Clear all results and reset all flags.
+  void clear() {
+    Decls.clear();
+    FoundDecls.clear();
+    Ambiguous = false;
+    TypeName = false;
+    Overloaded = false;
+  }
 };
 
 /// NestedNameSpecifier - Represents a C++ nested-name-specifier.
@@ -167,6 +178,7 @@ private:
   union {
     NamespaceDecl *Namespace;
     const blocktype::Type *TypeSpec;
+    TemplateDecl *Template;
     const char *IdentifierStr; // Stored as const char* for trivial construction
   } Data;
   NestedNameSpecifier *Prefix;
@@ -197,6 +209,9 @@ public:
   }
   const blocktype::Type *getAsType() const {
     return Kind == TypeSpec || Kind == TemplateTypeSpec ? Data.TypeSpec : nullptr;
+  }
+  TemplateDecl *getAsTemplate() const {
+    return Kind == TemplateTypeSpec ? Data.Template : nullptr;
   }
   llvm::StringRef getAsIdentifier() const {
     return Kind == Identifier ? llvm::StringRef(Data.IdentifierStr)

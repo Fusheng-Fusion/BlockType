@@ -327,16 +327,22 @@ class FunctionType : public Type {
   const Type *ReturnType;
   llvm::SmallVector<const Type *, 4> ParamTypes;
   bool IsVariadic;
+  bool MethodIsConst;      ///< Method qualifier: const (for member functions)
+  bool MethodIsVolatile;   ///< Method qualifier: volatile (for member functions)
 
 public:
   FunctionType(const Type *ReturnType, llvm::ArrayRef<const Type *> ParamTypes,
-               bool IsVariadic = false)
+               bool IsVariadic = false, bool IsConst = false,
+               bool IsVolatile = false)
       : Type(TypeClass::Function), ReturnType(ReturnType),
-        ParamTypes(ParamTypes.begin(), ParamTypes.end()), IsVariadic(IsVariadic) {}
+        ParamTypes(ParamTypes.begin(), ParamTypes.end()), IsVariadic(IsVariadic),
+        MethodIsConst(IsConst), MethodIsVolatile(IsVolatile) {}
 
   const Type *getReturnType() const { return ReturnType; }
   llvm::ArrayRef<const Type *> getParamTypes() const { return ParamTypes; }
   bool isVariadic() const { return IsVariadic; }
+  bool isConst() const { return MethodIsConst; }
+  bool isVolatile() const { return MethodIsVolatile; }
 
   void dump(llvm::raw_ostream &OS) const;
 

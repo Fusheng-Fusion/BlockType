@@ -19,16 +19,36 @@ Task 4.2.1 类型工厂补全
 
 对照 Clang 的 ASTContext::CharTy/ASTContext::IntTy，BlockType 的 BuiltinTypes.def 有 UShort/UInt/ULong/LongLong/ULongLong/Char/SChar/UChar/Short 等，但便捷方法只覆盖了 Void/Bool/Int/Float/Double/Long/NullPtr。不影响当前功能但后续需要补充。
 
+---------------------------------
+修改总结
+🔴 修复 1：getTypeDeclType 绕过缓存
+文件: src/AST/ASTContext.cpp:167-175
+RecordDecl/EnumDecl 分支改为调用 getRecordType()/getEnumType()，不再直接 new，确保通过任何路径获取同一 decl 的类型都指向同一对象
+🟡 修复 2：FunctionType 添加 MethodQualifiers
+文件: include/blocktype/AST/Type.h:326-349
+添加 MethodIsConst/MethodIsVolatile 字段及 isConst()/isVolatile() 访问器
+FunctionType::dump() 输出 const/volatile 后缀
+getFunctionType() 签名扩展 IsConst/IsVolatile 参数（默认 false）
+🟡 修复 3：getMemberFunctionType CVR 语义
+文件: src/AST/ASTContext.cpp:257-273
+const/volatile 现在传入 FunctionType 的 MethodQualifiers，而非附加到 MemberPointerType 的 Qualifier 上
+MemberPointer 的 QualType 不再携带 CV 限定符
+调用方同步更新: src/Parse/Declarator.cpp:60-76, src/Parse/ParseType.cpp:722-732 — 提取 MethodQuals 中的 CV 传入 getFunctionType
+🟡 修复 4：补充便捷类型方法（10 个）
+文件: include/blocktype/AST/ASTContext.h:224-266, src/AST/ASTContext.cpp:253-295
+新增：getCharType(), getSCharType(), getUCharType(), getWCharType(), getShortType(), getUShortType(), getUIntType(), getULongType(), getLongLongType(), getULongLongType()
+
+----------------------------------
 
 Task 4.2.2 类型推导
 
-检查项	文档要求	实现状态	问题
+有问题的项目：
 
-deduceAutoType	✅ E4.2.2.2	✅ 实现	⚠️ 见下
-deduceAutoRefType	✅	✅	⚠️
-deduceAutoForwardingRefType	✅	✅	⚠️
-deduceFromInitList	✅	✅	⚠️
-deduceDecltypeType	✅	✅	⚠️
+deduceAutoType⚠️ 见下
+deduceAutoRefType⚠️
+deduceAutoForwardingRefType	⚠️
+deduceFromInitList⚠️
+deduceDecltypeType⚠️
 
 
 问题清单：
@@ -49,8 +69,31 @@ deduceDecltypeType	✅	✅	⚠️
 🟡 deduceAutoRefType 未检查值类别合法性
 
 auto& x = rvalue; 是非法的（除非 const auto&）。当前无条件返回左值引用，没有诊断错误。不过这属于 Stage 4.5 类型检查的范畴。
+----------------------------------------
+修改总结
 
+1. include/blocktype/AST/Expr.h — 添加 ValueKind 枚举 + Expr 值类别支持
+新增 ExprValueKind 枚举：VK_PRValue / VK_LValue / VK_XValue
+Expr 基类新增 ValueKind 字段（默认 VK_PRValue，向后兼容），以及 getValueKind() / setValueKind() / isLValue() / isXValue() / isPRValue() / isGLValue() / isRValue() 方法
+更新子类构造函数传入正确的值类别：
+LValue: DeclRefExpr, MemberExpr, ArraySubscriptExpr, 赋值类 BinaryOperator, 逗号 BinaryOperator, UnaryOperator(Deref/PreInc/PreDec)
+PRValue: 所有字面量、CallExpr、CastExpr 等保持默认
 
+2. src/Sema/TypeDeduction.cpp — 修复 3 个问题
+函数	修复内容
+deduceAutoForwardingRefType	使用 Init->isLValue() 区分：lvalue → T&，rvalue → T&&
+deduceDecltypeType	根据值类别：lvalue → T&，xvalue → T&&，prvalue → T
+deduceFromInitList	指针比较 → getCanonicalType() 语义比较
+
+3 deduceAutoRefType 未检查值类别合法性
+额外新增的内容：
+
+文件	修改
+DiagnosticSemaKinds.def	新增 err_non_const_lvalue_ref_binds_to_rvalue 诊断（中英双语）
+TypeDeduction.h	构造函数增加可选 DiagnosticsEngine* 参数
+TypeDeduction.cpp deduceAutoRefType	当 init 是右值且声明类型非 const 时，发出诊断并返回空类型
+逻辑：auto& x = 42; → 右值 + 非 const → 报错。const auto& x = 42; → 右值但 const → 合法，延长生命周期。
+----------------------------------------
 
 Task 4.2.3 类型完整性检查
 
@@ -69,7 +112,34 @@ Task 4.2.3 类型完整性检查
 🔴 这是一个严重 BUG：Sema.cpp 中的 stub 定义会导致 Lookup.cpp 的实际实现被忽略，所有名字查找永远返回空结果！
 必须修复：删除 Sema.cpp 中第 327-353 行的 stub 代码。
 
+-----------------------------------------
 
+修改总结
+1. include/blocktype/AST/Decl.h — TagDecl 添加 IsCompleteDefinition
+在 TagDecl（RecordDecl/EnumDecl 的公共基类）中添加：
+
+bool IsCompleteDefinition = false 字段（默认 false，向后兼容）
+isCompleteDefinition() / setCompleteDefinition(bool) 方法
+2. src/Sema/Sema.cpp — 修复 isCompleteType
+Record 类型：从 !RD->members().empty() || RD->getNumBases() > 0 改为 RT->getDecl()->isCompleteDefinition() Enum 类型：从 !ET->getDecl()->enumerators().empty() 改为 ET->getDecl()->isCompleteDefinition()
+
+这修复了两个问题：
+
+空类 class X {}; 不再被误判为不完整
+普通 RecordDecl（C struct/union）不再始终返回 false
+3. src/Parse/ParseClass.cpp — 解析完成后标记完整定义
+在 class/struct/union 的 } 消费后调用 setCompleteDefinition()
+
+4. src/Parse/ParseDecl.cpp — enum 解析完成后标记完整定义
+在 enum 的 } 消费后调用 setCompleteDefinition()
+
+Sema.cpp stub 代码
+已确认 Stage 4.3 的 stub 代码（LookupUnqualifiedName 等）已在之前被移除，只剩一行注释 // Name lookup [Stage 4.3 — implemented in Lookup.cpp]，无需修改。
+
+
+
+
+-----------------------------------------
 Expr 基类增强
 
 问题清单：
@@ -83,9 +153,9 @@ Expr 基类增强
 
 Task 4.3.1 Lookup 基础设施
 
-检查项	文档要求	实现状态	问题
-LookupResult 类	✅	✅	⚠️
-NestedNameSpecifier 类	✅	✅	⚠️
+有问题的项目：
+LookupResult 类	 ⚠️
+NestedNameSpecifier 类	⚠️
 
 问题清单：
 
@@ -112,11 +182,28 @@ Clang 对比：Clang 使用 ASTContext::saveString() 持久化字符串。
 🟡 NestedNameSpecifier 缺少 getAsTemplate() 方法
 文档 E4.3.1.1 规定了 TemplateTypeSpec 种类，但没有提供获取模板信息的接口。
 
+--------------------------------------------------
 
+Task 4.3.1 修改总结
+1. include/blocktype/Sema/Lookup.h — LookupResult 修复
+添加 SmallPtrSet<NamedDecl*, 4> FoundDecls 用于去重
+addDecl()：先检查 FoundDecls.insert(D).second，仅在新声明时才 push_back
+addAllDecls()：改用 addDecl(D) 替代直接 push_back，自动去重
+clear()：同时重置 FoundDecls、TypeName、Overloaded（原来只清 Decls 和 Ambiguous）
+2. include/blocktype/Sema/Lookup.h — NestedNameSpecifier 修复
+Union 扩展：添加 TemplateDecl *Template 成员，支持 TemplateTypeSpec 种类存储模板声明
+添加 getAsTemplate()：返回 Data.Template，仅在 Kind == TemplateTypeSpec 时有效
+修复悬挂指针：Create(Ctx, Prefix, Identifier) 现在使用 Ctx.saveString(Identifier) 持久化字符串
+3. src/Sema/Lookup.cpp — NestedNameSpecifier::Create 修复
+Identifier 版 Create 方法改为 Ctx.saveString(Identifier) 后再取 .data()，避免原始 StringRef 临时失效
+Sema.cpp stub 代码
+已确认 Sema.cpp 第 326-327 行只有注释 // Name lookup [Stage 4.3 — implemented in Lookup.cpp]，无函数定义，不存在覆盖问题。
+
+-------------------------------------------------
 Task 4.3.2 Unqualified Lookup
-检查项	文档要求	实现状态	问题
-函数重载收集	✅	✅	⚠️
-using 指令处理	✅	✅	⚠️
+有问题的项目：
+函数重载收集⚠️
+using 指令处理⚠️
 
 
 问题清单：
@@ -135,12 +222,36 @@ using 指令处理	✅	✅	⚠️
 🟡 LookupOperatorName 和 LookupMemberName 没有特殊处理
 
 文档 E4.3.1.1 定义了 LookupOperatorName 和 LookupMemberName，但 LookupUnqualifiedName 中没有对它们做特殊处理，统一走普通查找逻辑。对 operator 查找，Clang 有 Sema::LookupOperatorName 单独实现，会同时在当前和参数关联作用域中查找。
+------------------------------------------------
 
+Task 4.3.2 修改总结
+src/Sema/Lookup.cpp — LookupUnqualifiedName 重构
+1. LookupMemberName 特殊处理（新增）
+
+在函数开头添加 early return 路径：只搜索当前 scope（不向上遍历父 scope），同时收集同 scope 内的函数重载。适用于 obj.member 式成员访问。
+
+2. LookupOperatorName 处理（注释说明）
+
+添加注释说明 operator 查找分两阶段：第一阶段是 ordinary lookup（当前逻辑），第二阶段 ADL 由调用方单独调用 LookupADL 处理。
+
+3. Using 指令函数重载收集修复（核心修复）
+
+原来的 using 指令处理在 scope 匹配的 else 分支（即只有 scope 中找不到名字时才检查 using 指令）。
+
+重构后的逻辑：
+
+使用 FoundInScope 标志追踪当前 scope 是否找到匹配
+找到函数时：继续处理 using 指令，将 using 命名空间中的同名函数作为重载候选加入（含命名空间内所有重载）
+找到非函数时：跳过 using 指令（非函数声明隐藏 using 中的名字）
+未找到时：正常处理 using 指令，行为与原来一致
+
+
+----------------------------------------------
 
 Task 4.3.3 Qualified Lookup
 
-检查项	文档要求	实现状态	问题
-TypeSpec Class:: 查找	✅	✅	⚠️
+有问题的项目：
+TypeSpec Class:: 查找⚠️
 
 
 问题清单：
@@ -155,11 +266,31 @@ Clang 对比：Clang 的 Sema::ComputeDeclContext 对于 TypeSpec 直接返回 c
 🟡 Qualified Lookup 不处理基类查找
 
 Class::name 应在类及其基类中查找。当前只在指定类中查找。这是 C++ 的基本语义。
+-------------------------------------------
+Task 4.3.3 修复完成，编译通过。总结修改内容：
+
+修改文件：src/Sema/Lookup.cpp
+问题 1（TypeSpec DeclContext）：已确认当前代码正确（第 355-356 行 DC = static_cast<DeclContext *>(CXXRD)），无需修改。
+
+问题 2（基类查找）：核心修改如下：
+
+新增辅助函数 lookupInClassAndBases（第 280-323 行）：
+
+递归在 CXXRecordDecl 及其所有基类中查找成员
+使用 lookupInContext（而非 lookup）仅在类自身上下文查找，避免穿透到父命名空间
+使用 SmallPtrSet<Decl*, 8> 防止菱形继承重复访问
+每个类中都收集同名函数重载
+修改 LookupQualifiedName（第 378-399 行）：
+
+当 DC 是 CXXRecordDecl 时，调用 lookupInClassAndBases 进行类+基类查找
+非类上下文（命名空间、枚举、TU）仍使用原有简单 lookup 逻辑
+-------------------------------------------
+
 Task 4.3.4 ADL
-检查项	文档要求	实现状态	问题
-关联命名空间收集	✅ E4.3.4.1	✅	⚠️
-关联类收集	✅	✅	⚠️
-友元函数查找	✅	✅	⚠️
+有问题的项目：
+关联命名空间收集⚠️
+关联类收集⚠️
+友元函数查找⚠️
 
 
 问题清单：
@@ -180,7 +311,30 @@ std::vector<int> 的关联命名空间应包含 std。当前不处理 TemplateSp
 🟡 没有处理 inline 命名空间
 
 C++ 的 inline namespace 的成员自动暴露在外围命名空间中。当前没有处理 NamespaceDecl::isInline()。
+-------------------------------------------
 
+Task 4.3.4 ADL 修复完成，编译通过。修改总结：
+
+修改文件：src/Sema/Lookup.cpp（第 408-602 行）
+修复 1 — 关联命名空间收集（findNamespaceDecl + addAssociatedNamespace）
+
+findNamespaceDecl（第 430-446 行）：从仅搜索直接父级的 decls 改为沿祖先链递归搜索，增强嵌套命名空间的鲁棒性
+新增 addAssociatedNamespace（第 451-465 行）：统一添加关联命名空间，并处理 inline 命名空间 — 当添加的命名空间是 inline 时，递归添加其外围命名空间
+修复 2 — 友元函数查找（LookupADL 第 488-508 行）
+
+旧代码遍历 CXXRD->getDeclContext()->decls() 查找所有同名 FunctionDecl（错误地包括了类中定义的普通成员函数）
+新代码遍历 CXXRD 自身的 decls 中的 FriendDecl 节点，通过 FD->getFriendDecl() 获取友元函数声明，并跳过 isFriendType() 为 true 的情况（friend class 声明）
+修复 3 — 模板特化类型处理（CollectAssociatedNamespacesAndClasses 第 567-577 行）
+
+新增 TemplateSpecializationType 检测，遍历模板参数，对每个类型参数递归调用 CollectAssociatedNamespacesAndClasses
+例如 std::vector<int> 会从 int（无关联命名空间）和模板自身的上下文收集
+修复 4 — inline 命名空间 + ArrayType 处理
+
+inline 命名空间通过 addAssociatedNamespace 自动添加外围命名空间
+新增 ArrayType 处理（第 595-601 行），递归收集元素类型的关联命名空间和类
+
+
+-------------------------------------------
 
 三、总结：按严重程度排序
 🔴 必须立即修复（3 项）

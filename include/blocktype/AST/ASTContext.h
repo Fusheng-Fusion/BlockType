@@ -180,9 +180,13 @@ public:
   MemberPointerType *getMemberPointerType(const Type *ClassType, const Type *PointeeType);
   
   /// Gets or creates a function type.
+  /// \param IsConst Method qualifier (for member functions): R (C::*)(Args...) const
+  /// \param IsVolatile Method qualifier (for member functions): R (C::*)(Args...) volatile
   FunctionType *getFunctionType(const Type *ReturnType,
                                 llvm::ArrayRef<const Type *> ParamTypes,
-                                bool IsVariadic = false);
+                                bool IsVariadic = false,
+                                bool IsConst = false,
+                                bool IsVolatile = false);
   
   /// Gets the type for a type declaration.
   QualType getTypeDeclType(const TypeDecl *D);
@@ -220,6 +224,36 @@ public:
 
   /// Gets the nullptr_t type.
   QualType getNullPtrType();
+
+  /// Gets the built-in char type.
+  QualType getCharType();
+
+  /// Gets the built-in signed char type.
+  QualType getSCharType();
+
+  /// Gets the built-in unsigned char type.
+  QualType getUCharType();
+
+  /// Gets the built-in wchar_t type.
+  QualType getWCharType();
+
+  /// Gets the built-in short type.
+  QualType getShortType();
+
+  /// Gets the built-in unsigned short type.
+  QualType getUShortType();
+
+  /// Gets the built-in unsigned int type.
+  QualType getUIntType();
+
+  /// Gets the built-in unsigned long type.
+  QualType getULongType();
+
+  /// Gets the built-in long long type.
+  QualType getLongLongType();
+
+  /// Gets the built-in unsigned long long type.
+  QualType getULongLongType();
 
   /// Gets a qualified type with the given CVR qualifiers.
   QualType getQualifiedType(const Type *T, Qualifier Q);

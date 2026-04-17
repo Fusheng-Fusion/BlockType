@@ -16,9 +16,12 @@
 #include "blocktype/AST/Type.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/ASTContext.h"
+#include "blocktype/Basic/Diagnostics.h"
 #include "llvm/ADT/SmallVector.h"
 
 namespace blocktype {
+
+class DiagnosticsEngine;
 
 /// TypeDeduction - Handles auto and decltype type deduction.
 ///
@@ -28,9 +31,11 @@ namespace blocktype {
 /// - decltype(auto) deduction: [dcl.spec.auto]
 class TypeDeduction {
   ASTContext &Context;
+  DiagnosticsEngine *Diags = nullptr;
 
 public:
-  explicit TypeDeduction(ASTContext &C) : Context(C) {}
+  explicit TypeDeduction(ASTContext &C, DiagnosticsEngine *D = nullptr)
+      : Context(C), Diags(D) {}
 
   //===------------------------------------------------------------------===//
   // auto deduction

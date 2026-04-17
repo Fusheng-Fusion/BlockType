@@ -400,6 +400,10 @@ void FunctionType::dump(llvm::raw_ostream &OS) const {
     OS << "...";
   }
   OS << ")";
+  if (MethodIsConst)
+    OS << " const";
+  if (MethodIsVolatile)
+    OS << " volatile";
 }
 
 //===----------------------------------------------------------------------===//

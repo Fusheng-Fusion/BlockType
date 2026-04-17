@@ -157,27 +157,26 @@ MemberPointerType *ASTContext::getMemberPointerType(const Type *ClassType, const
 
 FunctionType *ASTContext::getFunctionType(const Type *ReturnType,
                                           llvm::ArrayRef<const Type *> ParamTypes,
-                                          bool IsVariadic) {
+                                          bool IsVariadic,
+                                          bool IsConst,
+                                          bool IsVolatile) {
   // Create new function type
   void *Mem = Allocator.Allocate(sizeof(FunctionType), alignof(FunctionType));
-  auto *Func = new (Mem) FunctionType(ReturnType, ParamTypes, IsVariadic);
+  auto *Func = new (Mem) FunctionType(ReturnType, ParamTypes, IsVariadic,
+                                       IsConst, IsVolatile);
   return Func;
 }
 
 QualType ASTContext::getTypeDeclType(const TypeDecl *D) {
   // Check the specific type of TypeDecl
   if (auto *RD = dyn_cast<RecordDecl>(D)) {
-    // Create RecordType
-    void *Mem = Allocator.Allocate(sizeof(RecordType), alignof(RecordType));
-    auto *RT = new (Mem) RecordType(const_cast<RecordDecl*>(RD));
-    return QualType(RT, Qualifier::None);
+    // Use cached getRecordType to ensure type uniqueness
+    return getRecordType(const_cast<RecordDecl*>(RD));
   }
   
   if (auto *ED = dyn_cast<EnumDecl>(D)) {
-    // Create EnumType
-    void *Mem = Allocator.Allocate(sizeof(EnumType), alignof(EnumType));
-    auto *ET = new (Mem) EnumType(const_cast<EnumDecl*>(ED));
-    return QualType(ET, Qualifier::None);
+    // Use cached getEnumType to ensure type uniqueness
+    return getEnumType(const_cast<EnumDecl*>(ED));
   }
   
   if (auto *TND = dyn_cast<TypedefNameDecl>(D)) {
@@ -250,6 +249,46 @@ QualType ASTContext::getNullPtrType() {
   return QualType(getBuiltinType(BuiltinKind::NullPtr), Qualifier::None);
 }
 
+QualType ASTContext::getCharType() {
+  return QualType(getBuiltinType(BuiltinKind::Char), Qualifier::None);
+}
+
+QualType ASTContext::getSCharType() {
+  return QualType(getBuiltinType(BuiltinKind::SignedChar), Qualifier::None);
+}
+
+QualType ASTContext::getUCharType() {
+  return QualType(getBuiltinType(BuiltinKind::UnsignedChar), Qualifier::None);
+}
+
+QualType ASTContext::getWCharType() {
+  return QualType(getBuiltinType(BuiltinKind::WChar), Qualifier::None);
+}
+
+QualType ASTContext::getShortType() {
+  return QualType(getBuiltinType(BuiltinKind::Short), Qualifier::None);
+}
+
+QualType ASTContext::getUShortType() {
+  return QualType(getBuiltinType(BuiltinKind::UnsignedShort), Qualifier::None);
+}
+
+QualType ASTContext::getUIntType() {
+  return QualType(getBuiltinType(BuiltinKind::UnsignedInt), Qualifier::None);
+}
+
+QualType ASTContext::getULongType() {
+  return QualType(getBuiltinType(BuiltinKind::UnsignedLong), Qualifier::None);
+}
+
+QualType ASTContext::getLongLongType() {
+  return QualType(getBuiltinType(BuiltinKind::LongLong), Qualifier::None);
+}
+
+QualType ASTContext::getULongLongType() {
+  return QualType(getBuiltinType(BuiltinKind::UnsignedLongLong), Qualifier::None);
+}
+
 QualType ASTContext::getQualifiedType(const Type *T, Qualifier Q) {
   return QualType(T, Q);
 }
@@ -259,17 +298,15 @@ QualType ASTContext::getMemberFunctionType(const Type *ReturnType,
                                             const Type *ClassType,
                                             bool IsConst, bool IsVolatile,
                                             bool IsVariadic) {
-  // Create the function type first
-  FunctionType *FT = getFunctionType(ReturnType, ParamTypes, IsVariadic);
+  // Create the function type with method qualifiers (const/volatile belong to
+  // the function type per C++ semantics: R (C::*)(Args...) const)
+  FunctionType *FT = getFunctionType(ReturnType, ParamTypes, IsVariadic,
+                                      IsConst, IsVolatile);
 
-  // Wrap in MemberPointerType
+  // Wrap in MemberPointerType — no CVR qualifiers on the member pointer itself
   MemberPointerType *MPT = getMemberPointerType(ClassType, FT);
 
-  Qualifier Q = Qualifier::None;
-  if (IsConst)    Q = Q | Qualifier::Const;
-  if (IsVolatile) Q = Q | Qualifier::Volatile;
-
-  return QualType(MPT, Q);
+  return QualType(MPT, Qualifier::None);
 }
 
 ASTContext::~ASTContext() {

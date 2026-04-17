@@ -105,6 +105,7 @@ CXXRecordDecl *Parser::parseClassDeclaration(SourceLocation ClassLoc,
   }
 
   consumeToken(); // consume '}'
+  Class->setCompleteDefinition();
   return Class;
 }
 
@@ -179,9 +180,9 @@ CXXRecordDecl *Parser::parseStructDeclaration(SourceLocation StructLoc,
   }
 
   consumeToken(); // consume '}'
+  Struct->setCompleteDefinition();
   return Struct;
 }
-
 /// parseUnionDeclaration - Parse a union declaration.
 ///
 /// union-specifier ::= 'union' identifier? '{' member-specification? '}'

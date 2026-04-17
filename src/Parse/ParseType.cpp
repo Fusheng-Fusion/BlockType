@@ -719,9 +719,17 @@ QualType Parser::parseFunctionDeclarator(QualType ReturnType) {
     consumeToken();
   }
   
-  // Create function type
-  FunctionType *FT = Context.getFunctionType(ReturnType.getTypePtr(), ParamTypes, IsVariadic);
-  return QualType(FT, Quals);
+  // Create function type — const/volatile method qualifiers go into FunctionType
+  bool IsConst = hasQualifier(Quals, Qualifier::Const);
+  bool IsVolatile = hasQualifier(Quals, Qualifier::Volatile);
+  FunctionType *FT = Context.getFunctionType(ReturnType.getTypePtr(), ParamTypes,
+                                              IsVariadic, IsConst, IsVolatile);
+  // Strip const/volatile from QualType — they're now in FunctionType
+  unsigned CVMask = static_cast<unsigned>(Qualifier::Const) |
+                    static_cast<unsigned>(Qualifier::Volatile);
+  Qualifier RemainingQuals = static_cast<Qualifier>(
+      static_cast<unsigned>(Quals) & ~CVMask);
+  return QualType(FT, RemainingQuals);
 }
 
 /// parseTrailingReturnType - Parse a trailing return type.

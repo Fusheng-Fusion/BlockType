@@ -1038,6 +1038,7 @@ EnumDecl *Parser::parseEnumDeclaration(SourceLocation EnumLoc) {
   }
 
   consumeToken(); // consume '}'
+  Enum->setCompleteDefinition();
 
   // Expect optional semicolon
   if (Tok.is(TokenKind::semicolon)) {

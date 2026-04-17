@@ -75,6 +75,17 @@ enum class CastKind {
 };
 
 //===----------------------------------------------------------------------===//
+// Value Kind (expression value category)
+//===----------------------------------------------------------------------===//
+
+/// ExprValueKind - The categorization of expression values per C++ [basic.lval].
+enum class ExprValueKind {
+  VK_PRValue, ///< A prvalue (pure rvalue): temporary, literal, etc.
+  VK_LValue,  ///< An lvalue: refers to an object or function
+  VK_XValue   ///< An xvalue: expiring glvalue (e.g., move result)
+};
+
+//===----------------------------------------------------------------------===//
 // Expr - Base class for all expressions
 //===----------------------------------------------------------------------===//
 
@@ -82,9 +93,11 @@ enum class CastKind {
 class Expr : public ASTNode {
 protected:
   QualType ExprTy;
+  ExprValueKind ValueKind = ExprValueKind::VK_PRValue;
 
-  Expr(SourceLocation Loc, QualType T = QualType())
-      : ASTNode(Loc), ExprTy(T) {}
+  Expr(SourceLocation Loc, QualType T = QualType(),
+       ExprValueKind VK = ExprValueKind::VK_PRValue)
+      : ASTNode(Loc), ExprTy(T), ValueKind(VK) {}
 
 public:
   /// getType - Returns the type of this expression.
@@ -92,6 +105,27 @@ public:
 
   /// Set the type of this expression (used by Sema during type checking).
   void setType(QualType T) { ExprTy = T; }
+
+  /// getValueKind - Returns the value category of this expression.
+  ExprValueKind getValueKind() const { return ValueKind; }
+
+  /// setValueKind - Sets the value category of this expression.
+  void setValueKind(ExprValueKind VK) { ValueKind = VK; }
+
+  /// isLValue - Returns true if this expression is an lvalue.
+  bool isLValue() const { return ValueKind == ExprValueKind::VK_LValue; }
+
+  /// isXValue - Returns true if this expression is an xvalue.
+  bool isXValue() const { return ValueKind == ExprValueKind::VK_XValue; }
+
+  /// isPRValue - Returns true if this expression is a prvalue.
+  bool isPRValue() const { return ValueKind == ExprValueKind::VK_PRValue; }
+
+  /// isGLValue - Returns true if this expression is a glvalue (lvalue or xvalue).
+  bool isGLValue() const { return isLValue() || isXValue(); }
+
+  /// isRValue - Returns true if this expression is an rvalue (prvalue or xvalue).
+  bool isRValue() const { return isPRValue() || isXValue(); }
 
   /// isTypeDependent - Determine whether this expression is type-dependent.
   /// An expression is type-dependent if its type depends on a template parameter.
@@ -258,7 +292,7 @@ class DeclRefExpr : public Expr {
 
 public:
   DeclRefExpr(SourceLocation Loc, ValueDecl *D)
-      : Expr(Loc), D(D) {}
+      : Expr(Loc, QualType(), ExprValueKind::VK_LValue), D(D) {}
 
   ValueDecl *getDecl() const { return D; }
 
@@ -340,7 +374,7 @@ class MemberExpr : public Expr {
 
 public:
   MemberExpr(SourceLocation Loc, Expr *Base, ValueDecl *Member, bool IsArrow)
-      : Expr(Loc), Base(Base), Member(Member), IsArrow(IsArrow) {}
+      : Expr(Loc, QualType(), ExprValueKind::VK_LValue), Base(Base), Member(Member), IsArrow(IsArrow) {}
 
   Expr *getBase() const { return Base; }
   ValueDecl *getMemberDecl() const { return Member; }
@@ -369,7 +403,7 @@ class ArraySubscriptExpr : public Expr {
 
 public:
   ArraySubscriptExpr(SourceLocation Loc, Expr *Base, Expr *Index)
-      : Expr(Loc), Base(Base), Index(Index) {
+      : Expr(Loc, QualType(), ExprValueKind::VK_LValue), Base(Base), Index(Index) {
     if (Index)
       Indices.push_back(Index);
   }
@@ -377,7 +411,7 @@ public:
   /// C++23 multi-index constructor
   ArraySubscriptExpr(SourceLocation Loc, Expr *Base,
                      llvm::ArrayRef<Expr *> Indices)
-      : Expr(Loc), Base(Base),
+      : Expr(Loc, QualType(), ExprValueKind::VK_LValue), Base(Base),
         Index(Indices.empty() ? nullptr : Indices[0]),
         Indices(Indices.begin(), Indices.end()) {}
 
@@ -413,7 +447,22 @@ class BinaryOperator : public Expr {
 public:
   BinaryOperator(SourceLocation Loc, Expr *LHS, Expr *RHS,
                  BinaryOpKind Opcode)
-      : Expr(Loc), LHS(LHS), RHS(RHS), Opcode(Opcode) {}
+      : Expr(Loc, QualType(),
+             (Opcode == BinaryOpKind::Assign ||
+              Opcode == BinaryOpKind::MulAssign ||
+              Opcode == BinaryOpKind::DivAssign ||
+              Opcode == BinaryOpKind::RemAssign ||
+              Opcode == BinaryOpKind::AddAssign ||
+              Opcode == BinaryOpKind::SubAssign ||
+              Opcode == BinaryOpKind::ShlAssign ||
+              Opcode == BinaryOpKind::ShrAssign ||
+              Opcode == BinaryOpKind::AndAssign ||
+              Opcode == BinaryOpKind::OrAssign ||
+              Opcode == BinaryOpKind::XorAssign ||
+              Opcode == BinaryOpKind::Comma)
+                 ? ExprValueKind::VK_LValue
+                 : ExprValueKind::VK_PRValue),
+        LHS(LHS), RHS(RHS), Opcode(Opcode) {}
 
   Expr *getLHS() const { return LHS; }
   Expr *getRHS() const { return RHS; }
@@ -440,7 +489,12 @@ class UnaryOperator : public Expr {
 
 public:
   UnaryOperator(SourceLocation Loc, Expr *SubExpr, UnaryOpKind Opcode)
-      : Expr(Loc), SubExpr(SubExpr), Opcode(Opcode) {}
+      : Expr(Loc, QualType(),
+             (Opcode == UnaryOpKind::Deref || Opcode == UnaryOpKind::PreInc ||
+              Opcode == UnaryOpKind::PreDec)
+                 ? ExprValueKind::VK_LValue
+                 : ExprValueKind::VK_PRValue),
+        SubExpr(SubExpr), Opcode(Opcode) {}
 
   Expr *getSubExpr() const { return SubExpr; }
   UnaryOpKind getOpcode() const { return Opcode; }

@@ -62,9 +62,17 @@ QualType Declarator::buildType(ASTContext &Ctx) const {
       llvm::SmallVector<const Type *, 8> ParamTypes;
       for (auto *P : FI.Params)
         ParamTypes.push_back(P->getType().getTypePtr());
+      // Extract method qualifiers (const/volatile) for FunctionType;
+      // remaining qualifiers (restrict, ref-qualifiers) stay on QualType.
+      bool IsConst = hasQualifier(FI.MethodQuals, Qualifier::Const);
+      bool IsVolatile = hasQualifier(FI.MethodQuals, Qualifier::Volatile);
       auto *FT = Ctx.getFunctionType(Result.getTypePtr(), ParamTypes,
-                                      FI.IsVariadic);
-      Result = QualType(FT, FI.MethodQuals);
+                                      FI.IsVariadic, IsConst, IsVolatile);
+      unsigned CVMask = static_cast<unsigned>(Qualifier::Const) |
+                        static_cast<unsigned>(Qualifier::Volatile);
+      Qualifier RemainingQuals = static_cast<Qualifier>(
+          static_cast<unsigned>(FI.MethodQuals) & ~CVMask);
+      Result = QualType(FT, RemainingQuals);
       break;
     }
     case DeclaratorChunk::MemberPointer: {

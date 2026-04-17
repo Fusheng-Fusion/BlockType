@@ -251,18 +251,16 @@ bool Sema::isCompleteType(QualType T) const {
   // Function types are always complete
   if (Ty->isFunctionType()) return true;
 
-  // Record types: must have a definition
+  // Record types: must have a complete definition
   if (Ty->isRecordType()) {
     auto *RT = static_cast<const RecordType *>(Ty);
-    if (auto *RD = dyn_cast<CXXRecordDecl>(RT->getDecl()))
-      return !RD->members().empty() || RD->getNumBases() > 0;
-    return false;
+    return RT->getDecl()->isCompleteDefinition();
   }
 
-  // Enum types: must have a definition
+  // Enum types: must have a complete definition
   if (Ty->isEnumType()) {
     auto *ET = static_cast<const EnumType *>(Ty);
-    return !ET->getDecl()->enumerators().empty();
+    return ET->getDecl()->isCompleteDefinition();
   }
 
   // Typedef: check the underlying type

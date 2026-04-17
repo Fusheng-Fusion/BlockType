@@ -60,6 +60,9 @@ DIAG(err_void_expr_not_allowed,  Error, \
 DIAG(err_non_constexpr_in_constant_context, Error, \
   "expression is not a constant expression",     \
   "表达式不是常量表达式")
+DIAG(err_non_const_lvalue_ref_binds_to_rvalue, Error, \
+  "non-const lvalue reference to type '%0' cannot bind to a temporary of type '%1'", \
+  "非 const 左值引用无法绑定到右值")
 
 //===----------------------------------------------------------------------===//
 // Overload resolution errors
