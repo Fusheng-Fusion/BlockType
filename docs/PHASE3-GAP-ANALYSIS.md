@@ -10,11 +10,11 @@
 
 | Stage | 名称 | 完成度 | 关键问题 |
 |-------|------|--------|----------|
-| **Stage 3.1** | 声明 AST 节点定义 | **75%** | 缺少模板特化声明类、DeclContext 基础设施 |
-| **Stage 3.2** | 基础声明解析 | **80%** | 核心功能完整,结构化设计不足 |
-| **Stage 3.3** | 类与模板解析 | **70%** | 缺少模板特化/偏特化解析 |
-| **Stage 3.4** | C++26 特性 + 测试 | **50%** | 缺少 C++23/26 新特性、Lit 回归测试 |
-| **总计** | **Phase 3** | **~69%** | **关键路径功能基本完成,高级特性待实现** |
+| **Stage 3.1** | 声明 AST 节点定义 | **95%** | ~~DeclContext 基础设施~~ ✅、~~模板特化声明类~~ ✅ |
+| **Stage 3.2** | 基础声明解析 | **85%** | 核心功能完整,结构化设计不足 |
+| **Stage 3.3** | 类与模板解析 | **85%** | ~~模板特化/偏特化解析~~ ✅、类型约束 ✅ |
+| **Stage 3.4** | C++26 特性 + 测试 | **70%** | ~~Lit 回归测试~~ ✅、缺少 C++23/26 新特性 |
+| **总计** | **Phase 3** | **~84%** | **关键路径功能已基本完成,高级特性待实现** |
 
 ---
 
@@ -79,55 +79,38 @@
 
 ### ❌ Stage 3.1 缺失功能 (25%)
 
-#### 1. DeclContext 基础设施缺失 🔴
+#### 1. ~~DeclContext 基础设施缺失~~ ✅ 已实现
 
-**规划要求:**
-```cpp
-class DeclContext {
-  Decl *Parent;
-  std::vector<Decl*> Declarations;
-  Decl::Kind ContextKind;
-public:
-  void addDecl(Decl *D);
-  Decl* lookup(DeclarationName Name);  // 名称查找
-  DeclContext* getParent() const;
-};
-```
-
-**现状:**
-- ❌ 没有独立的 `DeclContext` 类
-- ❌ 各容器类 (如 `TranslationUnitDecl`, `NamespaceDecl`) 使用各自的 `Decls` 向量
-- ❌ 缺少统一的 `lookup()` 名称查找机制
-- ❌ 缺少声明上下文迭代器支持
-
-**影响:**
-- 名称查找分散在各处,难以维护
-- 无法统一处理嵌套作用域
-- 后续语义分析阶段会受影响
+**已完成 (commit: 874ecf3):**
+- ✅ 创建独立的 `DeclContext` 类 (`include/blocktype/AST/DeclContext.h`)
+  - 父子上下文层级关系
+  - 名称查找 (`lookup` / `lookupInContext`)
+  - 声明迭代器
+  - `DeclContextKind` 枚举
+- ✅ `TranslationUnitDecl` 继承 `DeclContext`
+- ✅ `NamespaceDecl` 继承 `DeclContext`
+- ✅ `CXXRecordDecl` 继承 `DeclContext`
+- ✅ `EnumDecl` 继承 `DeclContext`
+- ✅ `LinkageSpecDecl` 继承 `DeclContext`
 
 ---
 
-#### 2. 模板特化声明类缺失 🔴
+#### 2. ~~模板特化声明类缺失~~ ✅ 已实现
 
-**缺失的类:**
-- ❌ `ClassTemplateSpecializationDecl` - 类模板全特化
-- ❌ `ClassTemplatePartialSpecializationDecl` - 类模板偏特化
-- ❌ `VarTemplateDecl` - 变量模板
-- ❌ `VarTemplateSpecializationDecl` - 变量模板全特化
-- ❌ `VarTemplatePartialSpecializationDecl` - 变量模板偏特化
-- ❌ `FunctionTemplateDecl` - 函数模板 (独立类)
-- ❌ `ClassTemplateDecl` - 类模板 (独立类)
-- ❌ `TypeAliasTemplateDecl` - 别名模板
+**已实现的类 (commit: 1ca9ee2 + 874ecf3):**
+- ✅ `ClassTemplateSpecializationDecl` - 类模板全特化
+- ✅ `ClassTemplatePartialSpecializationDecl` - 类模板偏特化
+- ✅ `VarTemplateDecl` - 变量模板
+- ✅ `VarTemplateSpecializationDecl` - 变量模板全特化
+- ✅ `VarTemplatePartialSpecializationDecl` - 变量模板偏特化
+- ✅ `FunctionTemplateDecl` - 函数模板
+- ✅ `ClassTemplateDecl` - 类模板
+- ✅ `TypeAliasTemplateDecl` - 别名模板
 
-**现状:**
-- 只有通用的 `TemplateDecl` 包装类,没有针对不同类型的特化声明类
-- 无法区分函数模板、类模板、变量模板
-- 无法表示模板特化和偏特化
-
-**影响:**
-- 无法正确表示 `template<> class Vector<int>` 这样的特化
-- 语义分析阶段无法进行模板实例化
-- 阻塞 Phase 5 模板系统开发
+**解析支持 (commit: 874ecf3):**
+- ✅ 显式特化检测 (`template<>`)
+- ✅ 偏特化检测（通过作用域查找主模板）
+- ✅ 创建正确的特化声明节点
 
 ---
 
@@ -288,33 +271,29 @@ struct DeclaratorChunk {
 
 ---
 
-#### 2. 模板特化/偏特化解析缺失 🔴
+#### 2. ~~模板特化/偏特化解析缺失~~ ✅ 已改进
 
-**缺失的解析函数:**
-- ❌ `parseExplicitSpecialization()` - 显式特化 `template<> class X<int>`
-- ❌ `parsePartialSpecialization()` - 偏特化 `template<typename T> class X<T*>`
+**已实现 (commit: 874ecf3):**
+- ✅ 显式特化检测: `template<>` 后创建正确的特化声明节点
+- ✅ 偏特化检测: 通过作用域查找同名主模板自动创建偏特化
+- ✅ 类型约束解析: `parseTypeConstraint()` 支持 C++20 约束模板参数
+- ✅ `parseTemplateParameter()` 支持约束参数 (`ConceptName T`)
 
-**现状:**
-- 可以解析模板特化表达式 (如 `Vector<int>`)
-- 但无法创建特化声明节点
-- 无法表示 `template<> class Vector<int> { ... };`
-
-**影响:**
-- 无法完整支持模板系统
-- 阻塞 Phase 5 模板实例化
+**已知局限:**
+- ⚠️ `class Vector<int>` 中的模板参数解析需要解析器更大规模改进
+  - 当 `class` 关键字后跟 `Name<Args>` 时，`<` 被歧义为比较运算符
 
 ---
 
-#### 3. Requires 子句和类型约束解析不完整 ⚠️
+#### 3. ~~Requires 子句和类型约束解析不完整~~ ✅ 已改进
 
-**缺失:**
-- ❌ `parseRequiresClause()` - requires 子句解析
-- ❌ `parseTypeConstraint()` - 类型约束解析 (如 `template<Sortable T>`)
-- ❌ 约束表达式的高级语法 (合取、析取)
+**已实现:**
+- ✅ `parseRequiresClause()` - requires 子句解析
+- ✅ `parseTypeConstraint()` - 类型约束解析 (如 `template<Sortable T>`)
+- ✅ 约束模板参数支持 (`ConceptName ParamName`)
 
-**现状:**
-- 基本的 Concept 定义支持
-- 但复杂的约束语法可能不支持
+**已知局限:**
+- ⚠️ 约束表达式的高级语法（合取 `&&`、析取 `||`）尚未测试
 
 ---
 
@@ -379,26 +358,27 @@ struct DeclaratorChunk {
 
 ---
 
-#### 2. LLVM Lit 回归测试完全缺失 🔴
+#### 2. ~~LLVM Lit 回归测试完全缺失~~ ✅ 已补充
 
-**规划要求:**
-```
-tests/lit/
-├── lit.cfg
-├── parse/
-│   ├── basic.test
-│   ├── class.test
-│   ├── template.test
-│   └── errors.test
-└── ast-dump/
-    ├── expressions.test
-    └── declarations.test
-```
+**现有 Lit 测试 (21 个测试文件):**
 
-**现状:**
-- ❌ 完全没有 parser 的 Lit 测试
-- ❌ 只有 lexer/preprocessor 的 8 个 Lit 测试
-- ❌ 没有 AST dump 测试
+| 目录 | 文件 | 覆盖内容 |
+|------|------|---------|
+| `basic/` | `help.test`, `version.test` | 基础命令行 |
+| `lex/` | `keywords.test`, `literals.test`, `operators.test`, `chinese-keywords.test` | 词法分析 |
+| `preprocess/` | `macros.test`, `predefined-macros.test` | 预处理 |
+| `parser/` | `basic.test`, `class.test`, `template.test`, `errors.test` | 基础解析 |
+| `parser/` | `namespace.test` ✨ | 命名空间 |
+| `parser/` | `using.test` ✨ | using/typedef/static_assert |
+| `parser/` | `enum.test` ✨ | 枚举/friend |
+| `parser/` | `concept.test` ✨ | Concept/requires |
+| `parser/` | `declarations.test` ✨ | 基本声明 |
+| `ast-dump/` | `expressions.test` ✨ | 表达式 AST |
+| `ast-dump/` | `class-declarations.test` ✨ | 类声明 AST |
+| `ast-dump/` | `template-declarations.test` ✨ | 模板声明 AST |
+| `ast-dump/` | `statements.test` ✨ | 语句 AST |
+
+✨ = 本次新增 (commit: 874ecf3)
 
 **影响:**
 - 无法进行回归测试
@@ -437,29 +417,21 @@ tests/lit/
 
 ### 🔴 高优先级 (阻塞后续开发)
 
-1. **模板特化声明类缺失**
-   - 影响: 阻塞 Phase 5 模板实例化
-   - 工作量: 中等 (需添加 8+ 个新类)
-   - 建议: 立即实现
+1. **~~模板特化声明类缺失~~** ✅ 已实现
+   - 已完成: 8 个特化声明类 + TemplateParameterList 重构
 
-2. **DeclContext 基础设施缺失**
-   - 影响: 名称查找混乱,影响语义分析
-   - 工作量: 较大 (需重构现有代码)
-   - 建议: Phase 4 前完成
+2. **~~DeclContext 基础设施缺失~~** ✅ 已实现
+   - 已完成: DeclContext 类 + 5 个容器类集成
 
-3. **LLVM Lit 回归测试缺失**
-   - 影响: 无法保证解析器稳定性
-   - 工作量: 中等
-   - 建议: 尽快补充
+3. **~~LLVM Lit 回归测试缺失~~** ✅ 已补充
+   - 已完成: 21 个测试文件覆盖解析器和 AST dump
 
 ---
 
 ### ⚠️ 中优先级 (影响功能完整性)
 
-4. **模板特化/偏特化解析缺失**
-   - 影响: 无法解析完整的模板代码
-   - 工作量: 中等
-   - 建议: 与模板特化声明类一起实现
+4. **~~模板特化/偏特化解析缺失~~** ✅ 已改进
+   - 已完成: 显式特化和偏特化检测 + parseTypeConstraint
 
 5. **结构化 DeclSpec/Declarator 架构**
    - 影响: 代码可维护性
@@ -475,7 +447,7 @@ tests/lit/
 
 ### 💡 低优先级 (可选优化)
 
-7. **解析文件组织优化**
+7. **~~解析文件组织优化~~** 可选 (不影响功能)
    - 影响: 代码组织结构
    - 工作量: 小 (主要是移动代码)
    - 建议: 有时间再做
@@ -554,7 +526,7 @@ tests/lit/
 
 ## 📊 结论
 
-**Phase 3 当前完成度: ~69%**
+**Phase 3 当前完成度: ~84%** (从 69% 提升)
 
 **核心功能状态:**
 - ✅ 基础声明 AST 节点: 完整
@@ -562,24 +534,25 @@ tests/lit/
 - ✅ 类定义解析: 完整
 - ✅ 模板参数解析: 完整
 - ✅ Concept 支持: 基本完整
+- ✅ 模板特化声明类: **已实现**
+- ✅ DeclContext 基础设施: **已实现**
+- ✅ Lit 回归测试: **21 个测试文件**
 
 **关键缺失:**
-- 🔴 模板特化声明类和解析
-- 🔴 DeclContext 基础设施
-- 🔴 LLVM Lit 回归测试
-- ⚠️ C++23/26 新特性
+- ⚠️ 模板特化表达式在类声明中的歧义解析
+- ⚠️ C++23/26 新特性 (Deducing this, Contracts)
+- ⚠️ 结构化 DeclSpec/Declarator 架构
 
 **对后续阶段的影响:**
-- Phase 4 (语义分析): 受 DeclContext 缺失影响,但可以开始
-- Phase 5 (模板实例化): **严重受阻**,必须先实现模板特化声明
+- Phase 4 (语义分析): ✅ 可以开始, DeclContext 已就绪
+- Phase 5 (模板实例化): ⚠️ 基本就绪, 类声明中的特化解析需改进
 - Phase 6 (IR 生成): 暂不受影响
 - Phase 7 (C++26 特性): 需要补充新特性实现
 
 **建议:**
-1. **立即**实现模板特化声明类和解析 (阻塞 Phase 5)
-2. **尽快**实现 DeclContext 基础设施 (支撑 Phase 4)
-3. **补充** LLVM Lit 回归测试 (保证质量)
-4. C++23/26 特性可以延后到 Phase 7 统一实现
+1. Phase 4 可以启动, DeclContext 已提供名称查找基础设施
+2. 模板特化解析歧义需要 DeclSpec/Declarator 架构改进来解决
+3. C++23/26 特性可以延后到 Phase 7 统一实现
 
 ---
 
