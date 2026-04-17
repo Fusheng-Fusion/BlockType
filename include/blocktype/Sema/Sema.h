@@ -203,10 +203,11 @@ public:
   ExprResult ActOnMemberExpr(Expr *Base, llvm::StringRef Member,
                              SourceLocation MemberLoc, bool IsArrow);
 
-  ExprResult ActOnBinaryOperator(Expr *LHS, Expr *RHS,
+  ExprResult ActOnBinaryOperator(BinaryOpKind Op, Expr *LHS, Expr *RHS,
                                  SourceLocation OpLoc);
 
-  ExprResult ActOnUnaryOperator(Expr *Operand, SourceLocation OpLoc);
+  ExprResult ActOnUnaryOperator(UnaryOpKind Op, Expr *Operand,
+                                 SourceLocation OpLoc);
 
   ExprResult ActOnCastExpr(QualType TargetType, Expr *E,
                            SourceLocation LParenLoc,

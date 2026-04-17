@@ -146,6 +146,35 @@ void Sema::ActOnFinishOfFunctionDef(FunctionDecl *FD) {
 ExprResult Sema::ActOnExpr(Expr *E) {
   if (!E)
     return ExprResult::getInvalid();
+
+  // Type-check already-constructed BinaryOperator/UnaryOperator nodes
+  // that the Parser created directly (rather than through ActOn* methods).
+  if (auto *BO = llvm::dyn_cast<BinaryOperator>(E)) {
+    if (BO->getType().isNull()) {
+      QualType LHSType = BO->getLHS() ? BO->getLHS()->getType() : QualType();
+      QualType RHSType = BO->getRHS() ? BO->getRHS()->getType() : QualType();
+      QualType ResultType = TC.getBinaryOperatorResultType(
+          BO->getOpcode(), LHSType, RHSType);
+      if (ResultType.isNull()) {
+        Diags.report(BO->getLocation(), DiagID::err_type_mismatch);
+        return ExprResult::getInvalid();
+      }
+      BO->setType(ResultType);
+    }
+  } else if (auto *UO = llvm::dyn_cast<UnaryOperator>(E)) {
+    if (UO->getType().isNull()) {
+      QualType OperandType =
+          UO->getSubExpr() ? UO->getSubExpr()->getType() : QualType();
+      QualType ResultType =
+          TC.getUnaryOperatorResultType(UO->getOpcode(), OperandType);
+      if (ResultType.isNull()) {
+        Diags.report(UO->getLocation(), DiagID::err_type_mismatch);
+        return ExprResult::getInvalid();
+      }
+      UO->setType(ResultType);
+    }
+  }
+
   return ExprResult(E);
 }
 
@@ -247,18 +276,45 @@ ExprResult Sema::ActOnMemberExpr(Expr *Base, llvm::StringRef Member,
   return ExprResult(ME);
 }
 
-ExprResult Sema::ActOnBinaryOperator(Expr *LHS, Expr *RHS,
+ExprResult Sema::ActOnBinaryOperator(BinaryOpKind Op, Expr *LHS, Expr *RHS,
                                       SourceLocation OpLoc) {
-  // NOTE: The BinaryOperator node is typically created by the parser with
-  // the opcode already set. Sema's role is to type-check it via ActOnExpr.
-  // This method exists for completeness but returns invalid since we don't
-  // have the opcode. The parser should call ActOnExpr on the pre-built node.
-  return ExprResult::getInvalid();
+  if (!LHS || !RHS)
+    return ExprResult::getInvalid();
+
+  QualType LHSType = LHS->getType();
+  QualType RHSType = RHS->getType();
+
+  // Compute the result type via TypeCheck
+  QualType ResultType = TC.getBinaryOperatorResultType(Op, LHSType, RHSType);
+  if (ResultType.isNull()) {
+    Diags.report(OpLoc, DiagID::err_type_mismatch);
+    return ExprResult::getInvalid();
+  }
+
+  // Create the BinaryOperator node and set its result type
+  auto *BO = Context.create<BinaryOperator>(OpLoc, LHS, RHS, Op);
+  BO->setType(ResultType);
+  return ExprResult(BO);
 }
 
-ExprResult Sema::ActOnUnaryOperator(Expr *Operand, SourceLocation OpLoc) {
-  // NOTE: Similar to ActOnBinaryOperator — the opcode is set by the parser.
-  return ExprResult::getInvalid();
+ExprResult Sema::ActOnUnaryOperator(UnaryOpKind Op, Expr *Operand,
+                                     SourceLocation OpLoc) {
+  if (!Operand)
+    return ExprResult::getInvalid();
+
+  QualType OperandType = Operand->getType();
+
+  // Compute the result type via TypeCheck
+  QualType ResultType = TC.getUnaryOperatorResultType(Op, OperandType);
+  if (ResultType.isNull()) {
+    Diags.report(OpLoc, DiagID::err_type_mismatch);
+    return ExprResult::getInvalid();
+  }
+
+  // Create the UnaryOperator node and set its result type
+  auto *UO = Context.create<UnaryOperator>(OpLoc, Operand, Op);
+  UO->setType(ResultType);
+  return ExprResult(UO);
 }
 
 ExprResult Sema::ActOnCastExpr(QualType TargetType, Expr *E,
