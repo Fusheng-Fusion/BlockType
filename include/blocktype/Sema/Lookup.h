@@ -61,6 +61,7 @@ class LookupResult {
   bool Ambiguous = false;
   bool TypeName = false;       // Found result is a type name
   bool Overloaded = false;     // Found multiple function declarations
+  bool Dependent = false;      // Lookup occurred in a dependent (template) context
 
 public:
   LookupResult() = default;
@@ -93,6 +94,9 @@ public:
   /// Mark that the result is overloaded.
   void setOverloaded(bool O = true) { Overloaded = O; }
 
+  /// Mark that the lookup happened in a dependent (template) context.
+  void setDependent(bool D = true) { Dependent = D; }
+
   //===------------------------------------------------------------------===//
   // Result queries
   //===------------------------------------------------------------------===//
@@ -108,6 +112,10 @@ public:
 
   /// Is this an overloaded result (multiple functions)?
   bool isOverloaded() const { return Overloaded; }
+
+  /// Was this lookup performed in a dependent (template) context?
+  /// When true and result is empty, the name may resolve at instantiation time.
+  bool isDependent() const { return Dependent; }
 
   /// Is the result a type name?
   bool isTypeName() const { return TypeName; }
@@ -147,6 +155,7 @@ public:
     Ambiguous = false;
     TypeName = false;
     Overloaded = false;
+    Dependent = false;
   }
 };
 

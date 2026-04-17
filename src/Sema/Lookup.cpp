@@ -154,8 +154,16 @@ LookupResult Sema::LookupUnqualifiedName(llvm::StringRef Name, Scope *S,
   // The second phase (ADL) is handled by the caller invoking LookupADL separately.
   // Fall through to ordinary lookup logic.
 
+  // Detect if we are inside a template scope.  If so, names that are not
+  // found may be dependent names that will resolve at instantiation time.
+  bool InTemplateScope = false;
+
   // Walk up the scope chain
   for (Scope *Cur = S; Cur; Cur = Cur->getParent()) {
+    // Track whether any enclosing scope is a template scope.
+    if (!InTemplateScope && Cur->hasFlags(ScopeFlags::TemplateScope))
+      InTemplateScope = true;
+
     bool FoundInScope = false;
 
     if (NamedDecl *D = Cur->lookupInScope(Name)) {
@@ -285,6 +293,11 @@ LookupResult Sema::LookupUnqualifiedName(llvm::StringRef Name, Scope *S,
 
   if (Result.getNumDecls() > 1)
     Result.setOverloaded(true);
+
+  // If we are inside a template scope and nothing was found, mark the
+  // result as dependent so callers know the name may resolve later.
+  if (InTemplateScope && Result.empty())
+    Result.setDependent(true);
 
   return Result;
 }
