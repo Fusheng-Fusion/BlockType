@@ -18,6 +18,7 @@
 #include "blocktype/Basic/Diagnostics.h"
 #include "blocktype/Lex/Preprocessor.h"
 #include "blocktype/Lex/Token.h"
+#include "blocktype/Parse/Declarator.h"
 #include "blocktype/Parse/OperatorPrecedence.h"
 #include "blocktype/Sema/Scope.h"
 #include "llvm/ADT/SmallVector.h"
@@ -347,8 +348,26 @@ public:
   /// Parses a builtin type.
   QualType parseBuiltinType();
 
-  /// Parses a declarator (pointers, references, arrays).
+  /// Parses a declarator (pointers, references, arrays) — old API.
   QualType parseDeclarator(QualType Base);
+
+  /// Parses a declarator into a structured Declarator object.
+  void parseDeclarator(Declarator &D);
+
+  /// Parses pointer/reference operators into chunks.
+  void parsePointerOperators(Declarator &D);
+
+  /// Parses direct-declarator (name or paren group + suffixes).
+  void parseDirectDeclarator(Declarator &D);
+
+  /// Parses array and function suffixes.
+  void parseArrayAndFunctionSuffixes(Declarator &D);
+
+  /// Parses function parameter list into FunctionInfo.
+  DeclaratorChunk::FunctionInfo parseFunctionDeclaratorInfo();
+
+  /// Parses declaration specifiers into a DeclSpec.
+  void parseDeclSpecifierSeq(DeclSpec &DS);
 
   /// Parses an array dimension.
   QualType parseArrayDimension(QualType Base);
@@ -383,19 +402,14 @@ public:
   Decl *parseDeclaration(
     llvm::SmallVector<TemplateArgument, 4> *ParsedTemplateArgs = nullptr);
 
-  /// Parses a variable declaration.
-  VarDecl *parseVariableDeclaration(QualType Type, llvm::StringRef Name,
-                                    SourceLocation Loc, bool IsStatic = false,
-                                    bool IsConstexpr = false);
-
-  /// Parses a function declaration.
-  FunctionDecl *parseFunctionDeclaration(QualType ReturnType,
-                                         llvm::StringRef Name,
-                                         SourceLocation Loc, bool IsStatic = false,
-                                         bool IsConstexpr = false, bool IsInline = false);
-
   /// Parses a parameter declaration.
-  ParmVarDecl *parseParameterDeclaration(unsigned Index = 0);
+  ParmVarDecl *parseParameterDeclaration(unsigned Index);
+
+  /// Builds a VarDecl from a parsed Declarator.
+  VarDecl *buildVarDecl(Declarator &D);
+
+  /// Builds a FunctionDecl from a parsed Declarator.
+  FunctionDecl *buildFunctionDecl(Declarator &D);
 
   /// Parses a class declaration.
   /// \param ParsedTemplateArgs If non-null, receives the parsed template

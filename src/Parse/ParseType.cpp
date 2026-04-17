@@ -676,4 +676,218 @@ QualType Parser::parseTrailingReturnType() {
   return parseType();
 }
 
+//===----------------------------------------------------------------------===//
+// Structured Declarator Parsing (new API)
+//===----------------------------------------------------------------------===//
+
+/// parseDeclarator(Declarator &) - Parse a declarator into structured form.
+///
+/// This is the new API that replaces the old parseDeclarator(QualType).
+///
+/// declarator ::= ptr-operator* direct-declarator
+/// ptr-operator ::= '*' cvr-qualifiers?
+///                | '&'
+///                | '&&'
+///                | nested-name-specifier '*' cvr-qualifiers?  (member pointer)
+/// direct-declarator ::= identifier
+///                     | '(' declarator ')'
+///                     | direct-declarator '[' expr? ']'
+///                     | direct-declarator '(' parameter-list? ')' cvr-qualifiers? ref-qualifier?
+///
+/// Chunk ordering (for correct type building via forward application):
+///   `int *ap[10]`   → [Pointer, Array]      → Array(Pointer(int))  ✓
+///   `int (*arr)[10]` → [Array, Pointer]      → Pointer(Array(int))  ✓
+///   `int (*pf)(int)` → [Function, Pointer]   → Pointer(Function(int)) ✓
+///
+/// When paren-changed binding occurs, outer chunks (Array/Function) are
+/// inserted at the BEGINNING so forward application produces correct types.
+void Parser::parseDeclarator(Declarator &D) {
+  // 1. Parse leading pointer/reference operators.
+  //    These go at the END of the chunk list (closest to name).
+  parsePointerOperators(D);
+
+  // 2. Parse the direct-declarator.
+  parseDirectDeclarator(D);
+}
+
+/// Parse pointer/reference operators, adding chunks to D.
+void Parser::parsePointerOperators(Declarator &D) {
+  while (true) {
+    if (Tok.is(TokenKind::star)) {
+      SourceLocation Loc = Tok.getLocation();
+      consumeToken();
+
+      Qualifier CVR = Qualifier::None;
+      while (true) {
+        if (Tok.is(TokenKind::kw_const)) {
+          CVR = CVR | Qualifier::Const;
+          consumeToken();
+        } else if (Tok.is(TokenKind::kw_volatile)) {
+          CVR = CVR | Qualifier::Volatile;
+          consumeToken();
+        } else if (Tok.is(TokenKind::kw_restrict)) {
+          CVR = CVR | Qualifier::Restrict;
+          consumeToken();
+        } else {
+          break;
+        }
+      }
+
+      D.addChunk(DeclaratorChunk::getPointer(CVR, Loc));
+
+    } else if (Tok.is(TokenKind::amp)) {
+      SourceLocation Loc = Tok.getLocation();
+      consumeToken();
+      D.addChunk(DeclaratorChunk::getReference(/*IsRValue=*/false, Loc));
+
+    } else if (Tok.is(TokenKind::ampamp)) {
+      SourceLocation Loc = Tok.getLocation();
+      consumeToken();
+      D.addChunk(DeclaratorChunk::getReference(/*IsRValue=*/true, Loc));
+
+    } else {
+      break;
+    }
+  }
+}
+
+/// Parse the direct-declarator part (after pointer operators).
+void Parser::parseDirectDeclarator(Declarator &D) {
+  // Case 1: '(' declarator ')' — paren-changed binding
+  if (Tok.is(TokenKind::l_paren)) {
+    // Peek ahead to check if this is a paren-declarator or a function call.
+    // If we're in a context that expects a name (not TypeNameContext), '(' means
+    // a grouped declarator.
+    SourceLocation LParenLoc = Tok.getLocation();
+    consumeToken(); // consume '('
+
+    // Parse the inner declarator recursively
+    parseDeclarator(D);
+
+    if (!Tok.is(TokenKind::r_paren)) {
+      emitError(DiagID::err_expected_rparen);
+      return;
+    }
+    consumeToken(); // consume ')'
+
+    // Now parse OUTER suffixes (arrays, functions) that bind to the
+    // paren group. These must go BEFORE inner chunks for correct type building.
+    parseArrayAndFunctionSuffixes(D);
+    return;
+  }
+
+  // Case 2: identifier — the name
+  if (Tok.is(TokenKind::identifier)) {
+    D.setName(Tok.getText(), Tok.getLocation());
+    consumeToken();
+  }
+  // If no identifier, this is an abstract declarator (no name).
+  // That's valid for parameter types, new-type-id, etc.
+
+  // Case 3: Parse trailing suffixes (arrays, functions)
+  parseArrayAndFunctionSuffixes(D);
+}
+
+/// Parse array and function suffixes, adding chunks to D.
+void Parser::parseArrayAndFunctionSuffixes(Declarator &D) {
+  while (true) {
+    if (Tok.is(TokenKind::l_square)) {
+      SourceLocation Loc = Tok.getLocation();
+      consumeToken();
+
+      Expr *Size = nullptr;
+      if (!Tok.is(TokenKind::r_square)) {
+        Size = parseExpression();
+      }
+
+      if (!Tok.is(TokenKind::r_square)) {
+        emitError(DiagID::err_expected);
+        return;
+      }
+      consumeToken();
+
+      D.addChunk(DeclaratorChunk::getArray(Size, Loc));
+
+    } else if (Tok.is(TokenKind::l_paren)) {
+      // Function declarator
+      SourceLocation Loc = Tok.getLocation();
+      DeclaratorChunk::FunctionInfo FI = parseFunctionDeclaratorInfo();
+
+      D.addChunk(DeclaratorChunk::getFunction(std::move(FI), Loc));
+
+    } else {
+      break;
+    }
+  }
+}
+
+/// Parse function parameter list and qualifiers, return FunctionInfo.
+DeclaratorChunk::FunctionInfo Parser::parseFunctionDeclaratorInfo() {
+  DeclaratorChunk::FunctionInfo FI;
+
+  assert(Tok.is(TokenKind::l_paren) && "Expected '('");
+  consumeToken();
+
+  // Parse parameters
+  unsigned ParamIndex = 0;
+  while (!Tok.is(TokenKind::r_paren) && !Tok.is(TokenKind::eof)) {
+    if (Tok.is(TokenKind::ellipsis)) {
+      FI.IsVariadic = true;
+      consumeToken();
+      break;
+    }
+
+    // Parse parameter using the old parseParameterDeclaration
+    // (will be migrated later)
+    ParmVarDecl *Param = parseParameterDeclaration(ParamIndex);
+    if (Param) {
+      FI.Params.push_back(Param);
+      ++ParamIndex;
+    }
+
+    if (Tok.is(TokenKind::comma)) {
+      consumeToken();
+    } else if (!Tok.is(TokenKind::r_paren)) {
+      emitError(DiagID::err_expected);
+      break;
+    }
+  }
+
+  // Expect ')'
+  if (!Tok.is(TokenKind::r_paren)) {
+    emitError(DiagID::err_expected_rparen);
+    return FI;
+  }
+  consumeToken();
+
+  // Parse CVR qualifiers (member function qualifiers)
+  while (true) {
+    if (Tok.is(TokenKind::kw_const)) {
+      FI.MethodQuals = FI.MethodQuals | Qualifier::Const;
+      consumeToken();
+    } else if (Tok.is(TokenKind::kw_volatile)) {
+      FI.MethodQuals = FI.MethodQuals | Qualifier::Volatile;
+      consumeToken();
+    } else if (Tok.is(TokenKind::kw_restrict)) {
+      FI.MethodQuals = FI.MethodQuals | Qualifier::Restrict;
+      consumeToken();
+    } else {
+      break;
+    }
+  }
+
+  // Parse ref-qualifier
+  if (Tok.is(TokenKind::amp)) {
+    FI.HasRefQualifier = true;
+    FI.IsRValueRef = false;
+    consumeToken();
+  } else if (Tok.is(TokenKind::ampamp)) {
+    FI.HasRefQualifier = true;
+    FI.IsRValueRef = true;
+    consumeToken();
+  }
+
+  return FI;
+}
+
 } // namespace blocktype

@@ -577,8 +577,13 @@ Stmt *Parser::parseForStatement() {
       Tok.is(TokenKind::kw_void) || Tok.is(TokenKind::kw_long) ||
       Tok.is(TokenKind::kw_short) || Tok.is(TokenKind::kw_signed) ||
       Tok.is(TokenKind::kw_unsigned) || Tok.is(TokenKind::identifier)) {
-    // Try to parse type
-    QualType Type = parseType();
+    // Try to parse type using DeclSpec + Declarator
+    DeclSpec TmpDS;
+    parseDeclSpecifierSeq(TmpDS);
+    QualType Type;
+    if (TmpDS.hasTypeSpecifier()) {
+      Type = TmpDS.Type;
+    }
 
     // Check for identifier
     if (Tok.is(TokenKind::identifier)) {
@@ -597,7 +602,9 @@ Stmt *Parser::parseForStatement() {
   if (IsRangeBased) {
     // Parse range-based for: for (decl : range)
     // Parse full declaration with complete type specifier
-    QualType VarType = parseType();
+    DeclSpec RangeDS;
+    parseDeclSpecifierSeq(RangeDS);
+    QualType VarType = RangeDS.Type;
     if (VarType.isNull()) {
       emitError(DiagID::err_expected_type);
       VarType = Context.getAutoType(); // Recovery
@@ -707,8 +714,14 @@ Stmt *Parser::parseCXXForRangeStatement() {
     consumeToken();
     VarType = Context.getAutoType();
   } else {
-    // Parse type
-    VarType = parseType();
+    // Parse type using DeclSpec + Declarator
+    DeclSpec DS;
+    parseDeclSpecifierSeq(DS);
+    if (DS.hasTypeSpecifier()) {
+      Declarator D(DS, DeclaratorContext::ConditionContext);
+      parseDeclarator(D);
+      VarType = D.buildType(Context);
+    }
   }
 
   if (!Tok.is(TokenKind::identifier)) {

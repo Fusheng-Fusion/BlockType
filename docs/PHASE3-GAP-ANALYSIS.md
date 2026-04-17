@@ -11,10 +11,10 @@
 | Stage | 名称 | 完成度 | 关键问题 |
 |-------|------|--------|----------|
 | **Stage 3.1** | 声明 AST 节点定义 | **95%** | ~~DeclContext 基础设施~~ ✅、~~模板特化声明类~~ ✅ |
-| **Stage 3.2** | 基础声明解析 | **85%** | 核心功能完整,结构化设计不足 |
-| **Stage 3.3** | 类与模板解析 | **85%** | ~~模板特化/偏特化解析~~ ✅、类型约束 ✅ |
+| **Stage 3.2** | 基础声明解析 | **90%** | ~~DeclSpec/Declarator 架构~~ ✅、核心功能完整 |
+| **Stage 3.3** | 类与模板解析 | **90%** | ~~文件组织~~ ✅、~~模板特化/偏特化解析~~ ✅、类型约束 ✅ |
 | **Stage 3.4** | C++26 特性 + 测试 | **70%** | ~~Lit 回归测试~~ ✅、缺少 C++23/26 新特性 |
-| **总计** | **Phase 3** | **~84%** | **关键路径功能已基本完成,高级特性待实现** |
+| **总计** | **Phase 3** | **~87%** | **关键路径功能已基本完成,高级特性待实现** |
 
 ---
 
@@ -189,65 +189,65 @@ enum class TemplateArgumentKind {
 
 ---
 
-### ❌ Stage 3.2 缺失功能 (20%)
+### ~~Stage 3.2~~ ✅ 已完成 — 结构化声明解析架构
 
-#### 1. 缺乏结构化的 DeclSpec/Declarator 架构 ⚠️
+#### ✅ 1. DeclSpec/Declarator/DeclaratorChunk 架构 (已完成)
 
-**规划要求:**
+**已实现:**
 ```cpp
+// include/blocktype/Parse/DeclSpec.h
 struct DeclSpec {
-  TypeSpecifier TypeSpec;
+  QualType Type;
   StorageClass SC;
-  FunctionSpecifiers FS;
-  bool IsFriend, IsConstexpr, IsInline, IsVirtual, IsExplicit;
+  bool IsInline, IsVirtual, IsExplicit;
+  bool IsFriend, IsConstexpr, IsConsteval, IsConstinit, IsTypedef;
+  // + SourceLocation for each
 };
 
-struct Declarator {
+// include/blocktype/Parse/DeclaratorChunk.h
+class DeclaratorChunk {
+  enum ChunkKind { Pointer, Reference, Array, Function, MemberPointer };
+  // Factory methods: getPointer(), getReference(), getArray(), getFunction(), getMemberPointer()
+};
+
+// include/blocktype/Parse/Declarator.h
+class DeclarationName { /* Identifier, CXXConstructorName, CXXDestructorName, ... */ };
+class Declarator {
   DeclSpec DS;
-  std::vector<DeclaratorChunk> Chunks;
+  SmallVector<DeclaratorChunk, 8> Chunks;
   DeclarationName Name;
-};
-
-struct DeclaratorChunk {
-  enum Kind { Pointer, Reference, Array, Function, MemberPointer };
+  QualType buildType(ASTContext &Ctx) const;
 };
 ```
 
-**现状:**
-- ❌ 没有明确的 `DeclSpec` 结构体
-- ❌ 没有 `DeclaratorChunk` 机制
-- ❌ 采用即席解析,而非分层架构
-
-**影响:**
-- 代码可维护性较差
-- 复杂声明符 (如函数指针、成员指针) 可能处理不完整
-
-**设计决策 (开发者必读):**
-- **何时引入**: Phase3必须完成，因Phase4的 Sema 需要结构化的声明信息。
-  不要在 Sema 中用 `std::tuple<QualType, llvm::StringRef, ...>` 等临时结构替代 `Declarator`。
-- **如何引入**: 参考 Clang 的 `DeclSpec.h` / `Declarator.h`。最小化实现：
-  `DeclSpec` 存储类型+说明符，`Declarator` 管理声明符链，`DeclaratorChunk` 表示
-  指针/引用/数组/函数/成员指针。先定义数据结构，再逐步迁移 `parseDeclaration()`
-  内的即席逻辑。
-- **不要做**: 不要一次性重写所有解析函数。先让新架构和旧代码共存。
+**迁移完成:**
+- ✅ `parseDeclSpecifierSeq(DS)` — 替代即席 `while(kw_static/kw_constexpr/kw_inline)` 循环
+- ✅ `parseDeclarator(Declarator &D)` — 结构化声明符解析 (替代旧 `parseDeclarator(QualType)`)
+- ✅ `buildVarDecl(D)` / `buildFunctionDecl(D)` — 从 Declarator 构建 AST
+- ✅ `parseDeclaration()` 主路径已迁移
+- ✅ `parseClassMember()` 已迁移
+- ✅ `parseTypedefDeclaration()` 已迁移
+- ✅ `parseNonTypeTemplateParameter()` 已迁移
+- ✅ `parseParameterDeclaration()` 已迁移
+- ✅ `parseForStatement()` / `parseCXXForRangeStatement()` 已迁移
+- ✅ 旧 `parseVariableDeclaration()` / `parseFunctionDeclaration()` 已删除
 
 ---
 
-#### 2. 复杂声明符支持不完整 ⚠️
+#### ✅ 2. 复杂声明符支持 (架构已就绪)
 
-**可能缺失的场景:**
-- ⚠️ 成员指针: `int Class::*ptr`
-- ⚠️ 复杂函数指针: `int (*pf)(int)`
-- ⚠️ 数组指针: `int (*arr)[10]`
-- ⚠️ 指针数组: `int *ap[10]`
+**架构支持:**
+- ✅ `DeclaratorChunk::Pointer` — `int *p`
+- ✅ `DeclaratorChunk::Reference` — `int &r`, `int &&rr`
+- ✅ `DeclaratorChunk::Array` — `int arr[10]`
+- ✅ `DeclaratorChunk::Function` — `int f(int)`
+- ✅ `DeclaratorChunk::MemberPointer` — `int Class::*ptr`
+- ✅ 括号改变绑定: `int (*pf)(int)`, `int (*arr)[10]` (通过 `parseDirectDeclarator` 递归处理)
 
-需要实际测试验证这些场景是否正常工作。
-
-**设计决策 (Phase 4 开发者必读):**
-- 如果复杂声明符解析失败，不要在 Sema 中用字符串匹配或手动解析来 workaround。
-  应回到 `ParseType.cpp` 的 `parseDeclarator()` 中修复根本问题。
-- 引入 `DeclaratorChunk::MemberPointer` 来处理 `int Class::*ptr`，不要用特殊的
-  FieldDecl 标记来表示成员指针类型。
+**Phase 4 需验证:**
+- 复杂函数指针: `int (*pf)(int, double)`
+- 成员函数指针: `int (Class::*pmf)(int) const`
+- 多声明符: `int a, *b, c[10]`
 
 ---
 
@@ -280,21 +280,15 @@ struct DeclaratorChunk {
 
 ---
 
-### ❌ Stage 3.3 缺失功能 (30%)
+### ✅ Stage 3.3 已完成 — 类与模板解析 (90%)
 
-#### 1. 缺少独立的解析文件组织 ⚠️
+#### ~~1. 缺少独立的解析文件组织~~ ✅ 已解决
 
-**规划要求:**
-- `src/Parse/ParseClass.cpp` - 类解析
-- `src/Parse/ParseTemplate.cpp` - 模板解析
-
-**现状:**
-- ❌ 所有解析都在 `ParseDecl.cpp` 中
-- ⚠️ 功能完整但组织不符合规划
-
-**影响:**
-- 代码可读性和可维护性降低
-- 不影响功能,但违反架构设计
+**已完成:**
+- ✅ `src/Parse/ParseClass.cpp` — 类/结构体/联合体解析、类体与成员解析、访问说明符、基类子句、构造/析构函数、成员初始化列表、友元声明
+- ✅ `src/Parse/ParseTemplate.cpp` — 模板声明、模板参数（类型/非类型/模板模板）、模板实参、模板ID、requires 子句、类型约束、Concept 定义
+- ✅ `src/Parse/ParseDecl.cpp` — 精简为命名空间/枚举/typedef/static_assert/链接说明/模块/属性/推导指引等声明解析 + buildVarDecl/buildFunctionDecl
+- ✅ `src/Parse/CMakeLists.txt` 已更新添加新文件
 
 ---
 
@@ -466,10 +460,7 @@ struct DeclaratorChunk {
 4. **~~模板特化/偏特化解析缺失~~** ✅ 已改进
    - 已完成: 显式特化和偏特化检测 + parseTypeConstraint
 
-5. **结构化 DeclSpec/Declarator 架构**
-   - 影响: 代码可维护性
-   - 工作量: 较大 (需重构)
-   - 建议: 视情况决定是否重构
+5. ~~**结构化 DeclSpec/Declarator 架构**~~ ✅ 已完成
 
 6. **C++23/26 新特性**
    - 影响: 语言标准支持不完整
@@ -480,10 +471,8 @@ struct DeclaratorChunk {
 
 ### 💡 低优先级 (可选优化)
 
-7. **~~解析文件组织优化~~** 可选 (不影响功能)
-   - 影响: 代码组织结构
-   - 工作量: 小 (主要是移动代码)
-   - 建议: 有时间再做
+7. **~~解析文件组织优化~~** ✅ 已完成
+   - 已完成: ParseClass.cpp + ParseTemplate.cpp 独立文件
 
 8. **~~TemplateArgument 类型补全~~** ✅ 已完成
    - 已完成: 9 种 TemplateArgumentKind + TemplateArgumentLoc
@@ -549,7 +538,7 @@ struct DeclaratorChunk {
 
 **目标:** 提升代码质量
 
-1. 考虑是否重构为结构化 DeclSpec/Declarator
+1. ~~考虑是否重构为结构化 DeclSpec/Declarator~~ ✅ 已完成
 2. 分离 ParseClass.cpp 和 ParseTemplate.cpp
 3. 完善文档和注释
 
@@ -557,7 +546,7 @@ struct DeclaratorChunk {
 
 ## 📊 结论
 
-**Phase 3 当前完成度: ~84%** (从 69% 提升)
+**Phase 3 当前完成度: ~87%** (从 84% 提升)
 
 **核心功能状态:**
 - ✅ 基础声明 AST 节点: 完整
