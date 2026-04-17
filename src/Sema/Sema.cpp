@@ -327,20 +327,64 @@ QualType Sema::getCanonicalType(QualType T) const {
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// Overload resolution [Stage 4.4 stub]
+// Overload resolution [Stage 4.4]
 //===----------------------------------------------------------------------===//
 
-// TODO: Stage 4.4 - Implement overload resolution
 FunctionDecl *Sema::ResolveOverload(llvm::StringRef Name,
                                      llvm::ArrayRef<Expr *> Args,
                                      const LookupResult &Candidates) {
+  // 1. Build the overload candidate set
+  SourceLocation CallLoc;
+  OverloadCandidateSet OCS(CallLoc);
+
+  // 2. Add all candidates from the lookup result
+  OCS.addCandidates(Candidates);
+
+  // 3. If no candidates, report error
+  if (OCS.empty()) {
+    Diags.report(SourceLocation(), DiagID::err_ovl_no_viable_function, Name);
+    return nullptr;
+  }
+
+  // 4. Resolve the overload
+  auto [Result, Best] = OCS.resolve(Args);
+
+  if (Result == OverloadResult::Success)
+    return Best;
+
+  if (Result == OverloadResult::Deleted) {
+    // Best candidate is a deleted function
+    Diags.report(SourceLocation(), DiagID::err_ovl_deleted_function,
+                 Best->getName());
+    return nullptr;
+  }
+
+  if (Result == OverloadResult::NoViable) {
+    // No viable candidates: report error with candidate notes
+    Diags.report(SourceLocation(), DiagID::err_ovl_no_viable_function, Name);
+    for (auto &C : OCS.getCandidates()) {
+      Diags.report(SourceLocation(), DiagID::note_ovl_candidate_not_viable,
+                   C.getFailureReason());
+    }
+    return nullptr;
+  }
+
+  // Ambiguous: report error
+  auto Viable = OCS.getViableCandidates();
+  Diags.report(SourceLocation(), DiagID::err_ovl_ambiguous_call, Name);
+  for (auto *C : Viable) {
+    Diags.report(SourceLocation(), DiagID::note_ovl_candidate);
+  }
   return nullptr;
+
+  return Best;
 }
 
 void Sema::AddOverloadCandidate(FunctionDecl *F,
                                  llvm::ArrayRef<Expr *> Args,
                                  OverloadCandidateSet &Set) {
-  // TODO: Stage 4.4 - Implement overload candidate addition
+  OverloadCandidate &C = Set.addCandidate(F);
+  // Note: viability is checked during resolve()
 }
 
 //===----------------------------------------------------------------------===//

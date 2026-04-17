@@ -18,6 +18,7 @@
 #include "blocktype/AST/Type.h"
 #include "blocktype/Sema/Conversion.h"
 #include "llvm/ADT/SmallVector.h"
+#include <utility>
 
 namespace blocktype {
 
@@ -60,6 +61,18 @@ public:
   int compare(const OverloadCandidate &Other) const;
 };
 
+/// Result of overload resolution.
+enum class OverloadResult {
+  /// A single best viable function was found.
+  Success,
+  /// No viable candidates.
+  NoViable,
+  /// Multiple candidates are equally good (ambiguous).
+  Ambiguous,
+  /// The best candidate is a deleted function.
+  Deleted,
+};
+
 /// OverloadCandidateSet - A set of candidates for overload resolution.
 class OverloadCandidateSet {
   SourceLocation CallLoc;
@@ -81,8 +94,10 @@ public:
   llvm::SmallVector<OverloadCandidate *, 4> getViableCandidates() const;
 
   /// Resolve overload: find the best matching function.
-  /// Returns nullptr if no match or ambiguous.
-  FunctionDecl *resolve(llvm::ArrayRef<Expr *> Args);
+  /// Returns a pair of (result kind, best function).
+  /// Function is non-null only when result is Success or Deleted.
+  std::pair<OverloadResult, FunctionDecl *>
+  resolve(llvm::ArrayRef<Expr *> Args);
 
   /// Get the number of candidates.
   unsigned size() const { return Candidates.size(); }
