@@ -13,6 +13,7 @@
 #pragma once
 
 #include "blocktype/AST/ASTNode.h"
+#include "blocktype/AST/Decl.h"  // For ValueDecl, ParmVarDecl
 #include "blocktype/AST/Type.h"  // For QualType
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
@@ -21,9 +22,6 @@
 #include "llvm/ADT/StringRef.h"
 
 namespace blocktype {
-
-class ValueDecl;    // Forward declaration
-class ParmVarDecl;  // Forward declaration
 
 //===----------------------------------------------------------------------===//
 // Operator Kinds
@@ -310,7 +308,7 @@ public:
         if (Arg.getAsType()->isDependentType()) {
           return true;
         }
-      } else if (Arg.isExpression()) {
+      } else if (Arg.isNonType()) {
         if (Arg.getAsExpr()->isTypeDependent()) {
           return true;
         }
@@ -1041,6 +1039,44 @@ public:
 
   void dump(raw_ostream &OS, unsigned Indent = 0) const override;
 };
+
+//===----------------------------------------------------------------------===//
+// Requirement type casting helpers
+//===----------------------------------------------------------------------===//
+
+/// dyn_cast for Requirement hierarchy
+template <typename T>
+inline T *dyn_cast(Requirement *Req) {
+  if (!Req) return nullptr;
+  // Check if the requirement kind matches the target type
+  bool matches = false;
+  if constexpr (std::is_same_v<T, TypeRequirement>) {
+    matches = Req->getKind() == Requirement::RequirementKind::Type;
+  } else if constexpr (std::is_same_v<T, ExprRequirement>) {
+    matches = Req->getKind() == Requirement::RequirementKind::SimpleExpr;
+  } else if constexpr (std::is_same_v<T, CompoundRequirement>) {
+    matches = Req->getKind() == Requirement::RequirementKind::Compound;
+  } else if constexpr (std::is_same_v<T, NestedRequirement>) {
+    matches = Req->getKind() == Requirement::RequirementKind::Nested;
+  }
+  return matches ? static_cast<T *>(Req) : nullptr;
+}
+
+template <typename T>
+inline const T *dyn_cast(const Requirement *Req) {
+  if (!Req) return nullptr;
+  bool matches = false;
+  if constexpr (std::is_same_v<T, TypeRequirement>) {
+    matches = Req->getKind() == Requirement::RequirementKind::Type;
+  } else if constexpr (std::is_same_v<T, ExprRequirement>) {
+    matches = Req->getKind() == Requirement::RequirementKind::SimpleExpr;
+  } else if constexpr (std::is_same_v<T, CompoundRequirement>) {
+    matches = Req->getKind() == Requirement::RequirementKind::Compound;
+  } else if constexpr (std::is_same_v<T, NestedRequirement>) {
+    matches = Req->getKind() == Requirement::RequirementKind::Nested;
+  }
+  return matches ? static_cast<const T *>(Req) : nullptr;
+}
 
 /// RequiresExpr - C++20 requires expression.
 class RequiresExpr : public Expr {

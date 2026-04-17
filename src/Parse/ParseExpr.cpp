@@ -160,15 +160,25 @@ bool Parser::isMemberAccessible(ValueDecl *Member, CXXRecordDecl *AccessingClass
 
   // If we're not inside any class, only public members are accessible
   if (!AccessingClass) {
-    emitError(MemberLoc, DiagID::err_member_access_denied) 
-      << Member->getName() 
-      << (Access == AccessSpecifier::AS_private ? "private" : "protected");
+    emitError(MemberLoc, DiagID::err_member_access_denied);
     return false;
   }
 
-  // Get the class that declares this member
-  DeclContext *MemberContext = Member->getDeclContext();
-  CXXRecordDecl *MemberClass = llvm::dyn_cast_or_null<CXXRecordDecl>(MemberContext);
+  // For now, we assume the member is declared in a class context
+  // TODO: Add proper DeclContext support to track which class declares each member
+  CXXRecordDecl *MemberClass = nullptr;
+  
+  // Try to find the parent class from the member's type or other means
+  // This is a simplified approach - in full C++ implementation, 
+  // we would track the declaring context for each declaration
+  if (auto *Field = llvm::dyn_cast<FieldDecl>(Member)) {
+    // Fields are always declared in a class, but we don't track it yet
+    // For now, we'll be permissive and allow access
+    return true;
+  } else if (auto *Method = llvm::dyn_cast<CXXMethodDecl>(Member)) {
+    // Methods have their parent class
+    MemberClass = Method->getParent();
+  }
   
   if (!MemberClass) {
     // Cannot determine the declaring class, be conservative
@@ -183,8 +193,7 @@ bool Parser::isMemberAccessible(ValueDecl *Member, CXXRecordDecl *AccessingClass
       return true;
     }
     
-    emitError(MemberLoc, DiagID::err_member_access_denied) 
-      << Member->getName() << "private";
+    emitError(MemberLoc, DiagID::err_member_access_denied);
     return false;
   }
 
@@ -194,8 +203,7 @@ bool Parser::isMemberAccessible(ValueDecl *Member, CXXRecordDecl *AccessingClass
       return true;
     }
     
-    emitError(MemberLoc, DiagID::err_member_access_denied) 
-      << Member->getName() << "protected";
+    emitError(MemberLoc, DiagID::err_member_access_denied);
     return false;
   }
 
