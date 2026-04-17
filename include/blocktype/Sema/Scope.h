@@ -22,6 +22,7 @@ namespace blocktype {
 
 class NamedDecl;
 class Decl;
+class NamespaceDecl;
 class ASTContext;
 
 /// ScopeFlags - Flags that control the behavior of a scope.
@@ -186,6 +187,15 @@ public:
   /// Finds the nearest enclosing translation unit scope.
   /// Returns nullptr if not found.
   Scope *getEnclosingTranslationUnitScope();
+
+  /// Using directives in this scope (using namespace X).
+  llvm::SmallVector<NamespaceDecl *, 4> UsingDirectives;
+
+  /// Add a using directive.
+  void addUsingDirective(NamespaceDecl *NS) { UsingDirectives.push_back(NS); }
+
+  /// Get using directives.
+  llvm::ArrayRef<NamespaceDecl *> getUsingDirectives() const { return UsingDirectives; }
   
   /// Dumps this scope to the given stream for debugging.
   void dump(llvm::raw_ostream &OS, unsigned Indent = 0) const;

@@ -1,0 +1,132 @@
+//===--- DiagnosticSemaKinds.def - Semantic Analysis Diagnostics -*- C++ -*-===//
+//
+// Part of the BlockType Project, under the Apache License v2.0 with LLVM
+// Exceptions. See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// This file defines diagnostic IDs for semantic analysis.
+// Format: DIAG(ID, Level, English_Message, Chinese_Message)
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef DIAG
+#define DIAG(ID, Level, EnText, ZhText)
+#endif
+
+//===----------------------------------------------------------------------===//
+// Name lookup errors
+//===----------------------------------------------------------------------===//
+
+DIAG(err_undeclared_var,         Error, \
+  "use of undeclared identifier '%0'",           \
+  "使用了未声明的标识符 '%0'")
+DIAG(err_undeclared_identifier,  Error, \
+  "unknown identifier '%0'",                    \
+  "未知标识符 '%0'")
+DIAG(err_redefinition,           Error, \
+  "redefinition of '%0'",                       \
+  "'%0' 的重定义")
+DIAG(note_previous_definition,   Note, \
+  "previous definition is here",                \
+  "前一个定义在此处")
+DIAG(err_not_a_type,             Error, \
+  "'%0' is not a type name",                    \
+  "'%0' 不是一个类型名")
+DIAG(err_not_a_template,         Error, \
+  "'%0' is not a template",                     \
+  "'%0' 不是一个模板")
+DIAG(err_not_a_namespace,        Error, \
+  "'%0' is not a namespace name",               \
+  "'%0' 不是一个命名空间名")
+
+//===----------------------------------------------------------------------===//
+// Type checking errors
+//===----------------------------------------------------------------------===//
+
+DIAG(err_type_mismatch,          Error, \
+  "cannot initialize a variable of type '%0' with an expression of type '%1'", \
+  "无法用类型为 '%1' 的表达式初始化类型为 '%0' 的变量")
+DIAG(err_assigning_to_const,     Error, \
+  "cannot assign to a variable that is const qualified", \
+  "不能对 const 限定的变量赋值")
+DIAG(err_incomplete_type,        Error, \
+  "incomplete type '%0' is not allowed",         \
+  "不允许使用不完整类型 '%0'")
+DIAG(err_void_expr_not_allowed,  Error, \
+  "expression of type void is not allowed here", \
+  "此处不允许 void 类型的表达式")
+DIAG(err_non_constexpr_in_constant_context, Error, \
+  "expression is not a constant expression",     \
+  "表达式不是常量表达式")
+
+//===----------------------------------------------------------------------===//
+// Overload resolution errors
+//===----------------------------------------------------------------------===//
+
+DIAG(err_ovl_no_viable_function, Error, \
+  "no matching function for call to '%0'",       \
+  "没有匹配的函数可调用 '%0'")
+DIAG(err_ovl_ambiguous_call,     Error, \
+  "call to '%0' is ambiguous",                   \
+  "对 '%0' 的调用是歧义的")
+DIAG(err_ovl_deleted_function,   Error, \
+  "call to deleted function '%0'",               \
+  "调用了已删除的函数 '%0'")
+DIAG(note_ovl_candidate,         Note, \
+  "candidate function",                           \
+  "候选函数")
+DIAG(note_ovl_candidate_not_viable, Note, \
+  "candidate function not viable: %0",           \
+  "候选函数不可行: %0")
+
+//===----------------------------------------------------------------------===//
+// Access control errors
+//===----------------------------------------------------------------------===//
+
+DIAG(err_access_private,         Error, \
+  "'%0' is a private member of '%1'",            \
+  "'%0' 是 '%1' 的 private 成员")
+DIAG(err_access_protected,       Error, \
+  "'%0' is a protected member of '%1'",          \
+  "'%0' 是 '%1' 的 protected 成员")
+DIAG(note_access_declared,       Note, \
+  "declared here",                               \
+  "在此处声明")
+
+//===----------------------------------------------------------------------===//
+// Statement checking errors
+//===----------------------------------------------------------------------===//
+
+DIAG(err_return_type_mismatch,   Error, \
+  "return type mismatch: expected '%0', got '%1'", \
+  "返回类型不匹配: 期望 '%0'，实际 '%1'")
+DIAG(err_break_outside_loop,     Error, \
+  "'break' statement not in loop or switch",      \
+  "'break' 语句不在循环或 switch 中")
+DIAG(err_continue_outside_loop,  Error, \
+  "'continue' statement not in loop",            \
+  "'continue' 语句不在循环中")
+DIAG(err_case_not_in_switch,     Error, \
+  "'case' statement not in switch",              \
+  "'case' 语句不在 switch 中")
+
+//===----------------------------------------------------------------------===//
+// Warnings
+//===----------------------------------------------------------------------===//
+
+DIAG(warn_unused_variable,       Warning, \
+  "unused variable '%0'",                        \
+  "未使用的变量 '%0'")
+DIAG(warn_unused_function,       Warning, \
+  "unused function '%0'",                        \
+  "未使用的函数 '%0'")
+DIAG(warn_unreachable_code,      Warning, \
+  "unreachable code",                            \
+  "不可达代码")
+DIAG(warn_implicit_conversion,   Warning, \
+  "implicit conversion from '%0' to '%1'",       \
+  "从 '%0' 到 '%1' 的隐式转换")
+
+#undef DIAG

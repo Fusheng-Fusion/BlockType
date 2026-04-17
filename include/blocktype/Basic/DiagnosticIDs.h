@@ -6,6 +6,7 @@ namespace blocktype {
 enum class DiagID {
 #define DIAG(ENUM, LEVEL, EN_TEXT, ZH_TEXT) ENUM,
 #include "blocktype/Basic/DiagnosticIDs.def"
+#include "blocktype/Basic/DiagnosticSemaKinds.def"
 #undef DIAG
   NUM_DIAGNOSTICS
 };

@@ -202,5 +202,3 @@ DIAG(err_unknown, Error, \
 DIAG(err_not_implemented, Error, \
   "feature not implemented", \
   "功能未实现")
-
-#undef DIAG
