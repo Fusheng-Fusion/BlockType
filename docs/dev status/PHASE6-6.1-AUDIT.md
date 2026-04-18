@@ -70,8 +70,8 @@ Audit Findings
 --委托给 GetRecordType（已处理 vptr）
 
 8.✅ GetFieldIndex(FieldDecl *) — 已实现
---⚠️ 实现通过遍历 RecordTypeCache，这是 O(n) 的，因为 FieldDecl 没有父指针
---效率低但功能正确（P2 待改进）
+--✅ [已修复] 新增 FieldIndexCache（DenseMap<FieldDecl*, unsigned>），O(1) 查找
+--GetRecordType/GetCXXRecordType 构建 struct 时同步填充缓存
 
 9.✅ GetTypeSize/GetTypeAlign — 委托到 TargetInfo
 
@@ -79,8 +79,8 @@ Audit Findings
 --返回 llvm::ConstantInt（i64 类型）
 
 11✅ 所有 22 种 BuiltinType 映射 — 已实现
---⚠️ WChar 映射到 i32（平台相关，AArch64/x86_64 macOS 上是 i32，正确）
---⚠️ LongDouble 映射到 FP128 — macOS 上应为 double（P2 平台相关问题）
+--✅ WChar 映射到 i32（AArch64/x86_64 macOS 上 wchar_t 为 4 字节，正确）
+--✅ [已修复] LongDouble 平台适配：Darwin → double（8 字节），Linux → FP128（16 字节）
 
 12✅ ConvertBuiltinType — 所有 22 种覆盖
 
@@ -283,7 +283,9 @@ C. 关联关系错误
 
 3. ✅ PointerType::getPointeeType() 返回 const Type* — 代码中使用 QualType(PT->getPointeeType(), Qualifier::None) 正确
 
-4. ✅ [已确认] TargetInfo 构造函数使用 DataLayout(StringRef) — getDataLayoutForTriple() 有 64-bit fallback，无效三元组默认使用 64-bit 布局（风险可控，P2 不需立即修复）
+4. ⚠️ [遗留] TargetInfo 构造函数使用 DataLayout(StringRef) — 如果传入无效三元组，DataLayout 字符串为空，`llvm::DataLayout("")` 会生成空布局（所有大小为 0）
+--风险：当前 `getDataLayoutForTriple()` 有 64-bit fallback 兜底，但若绕过该函数直接构造 DataLayout 则无保护
+--建议：在 TargetInfo 构造函数中增加 triple 有效性校验，或在 DataLayout 为空时 assert（P2）
 
 
 ## ---------------------------------------------------------------
