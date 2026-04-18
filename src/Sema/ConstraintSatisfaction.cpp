@@ -23,6 +23,7 @@
 #include "blocktype/Sema/ConstantExpr.h"
 #include "blocktype/Sema/SFINAE.h"
 #include "blocktype/Sema/Conversion.h"
+#include "blocktype/Sema/SymbolTable.h"
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/Type.h"
 #include "blocktype/Basic/Diagnostics.h"
@@ -303,22 +304,83 @@ ConstraintSatisfaction::EvaluateConstraintExpr(Expr *E) {
     return IL->getValue().getBoolValue();
   }
 
-  // CallExpr or DeclRefExpr — try constant evaluation
-  // For concept-id expressions like Integral<T>, the result should be
-  // a boolean constant after substitution.
-  ConstantExprEvaluator Eval(SemaRef.getASTContext());
+  // DeclRefExpr — check if it references a concept by name lookup.
+  // NOTE: ConceptDecl inherits from TypeDecl (not ValueDecl), so
+  // dyn_cast<ConceptDecl>(DRE->getDecl()) will never succeed since
+  // DeclRefExpr stores ValueDecl*. Instead, we do a name-based lookup.
+  // A bare concept name without template args is not a valid constraint
+  // (concepts require template arguments), so we just try constant eval.
+  if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(E)) {
+    // Try constant evaluation for enum constants, constexpr vars, etc.
+    ConstantExprEvaluator Eval(SemaRef.getASTContext());
+    auto Result = Eval.Evaluate(E);
+    if (Result.isSuccess() && Result.isIntegral())
+      return Result.getInt().getBoolValue();
+    return std::nullopt;
+  }
 
-  // Try EvaluateAsBooleanCondition first (handles more cases)
+  // CallExpr — check if callee name resolves to a concept.
+  // Concept usage like ConceptName(args...) is unusual but possible.
+  // The typical form ConceptName<Args> is a TemplateSpecializationExpr.
+  if (auto *CE = llvm::dyn_cast<CallExpr>(E)) {
+    Expr *Callee = CE->getCallee();
+    if (Callee) {
+      // Check if the callee is a DeclRefExpr whose name matches a concept
+      if (auto *CalleeDRE = llvm::dyn_cast<DeclRefExpr>(Callee)) {
+        if (CalleeDRE->getDecl()) {
+          llvm::StringRef Name = CalleeDRE->getDecl()->getName();
+          if (ConceptDecl *CD =
+                  SemaRef.getSymbolTable().lookupConcept(Name)) {
+            // Build type args from call expression arguments
+            llvm::SmallVector<TemplateArgument, 4> ConceptArgs;
+            for (unsigned I = 0; I < CE->getNumArgs(); ++I) {
+              QualType ArgType = CE->getArgs()[I]->getType();
+              if (!ArgType.isNull())
+                ConceptArgs.push_back(TemplateArgument(ArgType));
+            }
+            return CheckConceptSatisfaction(CD, ConceptArgs);
+          }
+        }
+      }
+    }
+
+    // Not a concept call — try constant evaluation
+    ConstantExprEvaluator Eval(SemaRef.getASTContext());
+    auto Result = Eval.Evaluate(E);
+    if (Result.isSuccess() && Result.isIntegral())
+      return Result.getInt().getBoolValue();
+    return std::nullopt;
+  }
+
+  // TemplateSpecializationExpr — concept-id like Integral<int>
+  // This is the primary form of concept usage in constraints.
+  // The template name (e.g., "Integral") is looked up in the symbol table
+  // to find the corresponding ConceptDecl.
+  // NOTE: TemplateSpecializationExpr::getTemplateName() returns StringRef
+  // (not TemplateDecl*), and getTemplateDecl() returns ValueDecl* which
+  // can never be a ConceptDecl (ConceptDecl : TypeDecl, not ValueDecl).
+  if (auto *TSE = llvm::dyn_cast<TemplateSpecializationExpr>(E)) {
+    llvm::StringRef Name = TSE->getTemplateName();
+    if (ConceptDecl *CD = SemaRef.getSymbolTable().lookupConcept(Name)) {
+      llvm::SmallVector<TemplateArgument, 4> Args;
+      for (const auto &Arg : TSE->getTemplateArgs())
+        Args.push_back(Arg);
+      return CheckConceptSatisfaction(CD, Args);
+    }
+    return std::nullopt;
+  }
+
+  // Fallback: try general constant evaluation
+  ConstantExprEvaluator Eval(SemaRef.getASTContext());
   auto BoolResult = Eval.EvaluateAsBooleanCondition(E);
   if (BoolResult.has_value())
     return BoolResult.value();
 
-  // Fallback: try general evaluation
   auto Result = Eval.Evaluate(E);
   if (Result.isSuccess() && Result.isIntegral())
     return Result.getInt().getBoolValue();
 
-  // Could not evaluate → assume satisfied (for forward compatibility)
+  // Could not evaluate → not satisfied
   return std::nullopt;
 }
 

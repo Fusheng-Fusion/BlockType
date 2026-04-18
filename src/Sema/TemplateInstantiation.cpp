@@ -658,6 +658,34 @@ Expr *TemplateInstantiator::SubstituteExpr(Expr *E,
     return NewCE;
   }
 
+  // TemplateSpecializationExpr → substitute template arguments.
+  // This is critical for concept-id expressions like Integral<T> where T
+  // needs to be replaced with the actual template argument.
+  if (auto *TSE = llvm::dyn_cast<TemplateSpecializationExpr>(E)) {
+    bool Changed = false;
+    llvm::SmallVector<TemplateArgument, 4> NewArgs;
+    for (const auto &Arg : TSE->getTemplateArgs()) {
+      if (Arg.isType()) {
+        QualType OrigType = Arg.getAsType();
+        QualType SubType = SubstituteType(OrigType, Args);
+        if (!SubType.isNull() && SubType.getTypePtr() != OrigType.getTypePtr()) {
+          NewArgs.push_back(TemplateArgument(SubType));
+          Changed = true;
+        } else {
+          NewArgs.push_back(Arg);
+        }
+      } else {
+        NewArgs.push_back(Arg);
+      }
+    }
+    if (Changed) {
+      return Context.create<TemplateSpecializationExpr>(
+          TSE->getLocation(), TSE->getTemplateName(), NewArgs,
+          TSE->getTemplateDecl());
+    }
+    return E;
+  }
+
   // For non-dependent expressions, return as-is
   return E;
 }
