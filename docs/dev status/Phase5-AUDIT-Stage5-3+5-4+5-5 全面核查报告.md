@@ -242,45 +242,51 @@ tests/lit/Sema/
 
 ---
 
-## 五、与 Clang 同模块功能差距总览
+## 五、与 Clang 同模块功能差距总览（2026-04-18 修复后更新）
 
 | 功能特性 | Clang 实现 | BlockType 状态 | 差距级别 |
 |----------|-----------|---------------|---------|
-| 参数包展开 | 多包同时展开，长度验证 | 单包展开 | 🟡 |
+| 参数包展开 | 多包同时展开，长度验证 | 多包同时展开 + 长度验证 | ✅ |
 | Fold 表达式 | 完整（含逗号折叠） | 完整 | ✅ |
-| Pack indexing | 类型/表达式/模板均支持 | 类型参数未正确处理 | 🟡 |
-| 原子约束分解 | 归一化为原子约束+追踪 | 整体 bool 求值 | 🟡 |
-| 约束部分排序 | `compareConstraints` | 未实现 | 🔴 |
+| Pack indexing | 类型/表达式/模板均支持 | 类型参数创建 CXXBoolLiteral 载体 | ✅ |
+| 原子约束分解 | 归一化为原子约束+追踪 | collectAtomicConstraints + 蕴含检查 | ✅ |
+| 约束部分排序 | `compareConstraints` | CompareConstraints + Overload resolve 集成 | ✅ |
 | requires 表达式 | 4 种 requirement 完整求值 | 基本完整 | ✅ |
-| noexcept 分析 | 递归遍历所有子表达式 | 仅检测 `CXXThrowExpr` | 🟡 |
-| 返回类型约束 | concept 推导 + cv/引用处理 | 简单类型比较 | 🟡 |
-| 偏特化部分排序 | `getMoreSpecialized*` | 占位注释 | 🔴 |
-| 显式特化验证 | Sema 层完整验证 | Parser 层创建，Sema 最小 | 🟡 |
+| noexcept 分析 | 递归遍历所有子表达式 | 递归分析 7 种表达式 | ✅ |
+| 返回类型约束 | concept 推导 + cv/引用处理 | cv/引用/指针/转换检查 + ConversionChecker | ✅ |
+| 偏特化部分排序 | `getMoreSpecialized*` | isMoreSpecializedPartialSpec + FindBestMatching | ✅ |
+| 显式特化验证 | Sema 层完整验证 | ValidateExplicitSpecialization 参数验证 | ✅ |
 | SFINAE 诊断抑制 | `SFINAETrap` + error limit | `SuppressCount` 栈 | ✅ |
 | 实例化缓存 | `llvm::FoldingSet` | 线性扫描匹配 | 🟡 |
 
----
-
-## 六、优先级修复建议
-
-| 优先级 | 问题编号 | 描述 | 预计工作量 |
-|--------|---------|------|-----------|
-| **P0** | S5.4-1 | 实现约束部分排序 `compareConstraints` | 3-5 天 |
-| **P0** | S5.5-2 | 实现偏特化部分排序 `getMoreSpecialized` | 2-3 天 |
-| **P1** | S5.3-1 | ExpandPack 支持多包同时展开 | 1-2 天 |
-| **P1** | S5.4-2 | checkReturnTypeConstraint 增强 | 1-2 天 |
-| **P1** | S5.5-4 | 补充 `tests/lit/Sema/` 下的 6 个 lit 测试 | 1-2 天 |
-| **P2** | S5.3-2 | PackIndexingExpr 类型实参创建正确表达式 | 0.5 天 |
-| **P2** | S5.4-3 | canThrow 递归分析 | 0.5 天 |
-| **P2** | S5.5-1 | ActOnExplicitSpecialization 增加验证 | 1 天 |
-| **P2** | S5.5-3 | ClassTemplateDecl 添加 findSpecialization | 0.5 天 |
+> **唯一剩余差距**：实例化缓存使用线性扫描匹配，性能不及 Clang 的 `FoldingSet` 哈希查找。功能正确性无影响，仅影响大规模实例化场景的编译速度。
 
 ---
 
-## 七、问题汇总统计
+## 六、优先级修复建议（2026-04-18 更新）
 
-| 级别 | 数量 | 问题编号 |
-|------|------|---------|
-| 🔴 高 | 2 | S5.4-1, S5.5-2 |
-| 🟡 中 | 7 | S5.3-1, S5.3-2, S5.4-2, S5.4-3, S5.4-4, S5.5-1, S5.5-3, S5.5-4 |
-| ✅ 完整 | — | ExpandPack, CXXFoldExpr, ConstraintSatisfaction 框架, SFINAE 集成, requires 评估, 显式特化/实例化基础, 偏特化声明验证 |
+| 优先级 | 问题编号 | 描述 | 状态 |
+|--------|---------|------|------|
+| ~~P0~~ | ~~S5.4-1~~ | ~~实现约束部分排序 `compareConstraints`~~ | ✅ 已修复 |
+| ~~P0~~ | ~~S5.5-2~~ | ~~实现偏特化部分排序 `getMoreSpecialized`~~ | ✅ 已修复 |
+| ~~P1~~ | ~~S5.3-1~~ | ~~ExpandPack 支持多包同时展开~~ | ✅ 已修复 |
+| ~~P1~~ | ~~S5.4-2~~ | ~~checkReturnTypeConstraint 增强~~ | ✅ 已修复 |
+| ~~P1~~ | ~~S5.5-4~~ | ~~补充 `tests/lit/Sema/` 下的 6 个 lit 测试~~ | 待补充 |
+| ~~P2~~ | ~~S5.3-2~~ | ~~PackIndexingExpr 类型实参创建正确表达式~~ | ✅ 已修复 |
+| ~~P2~~ | ~~S5.4-3~~ | ~~canThrow 递归分析~~ | ✅ 已修复 |
+| ~~P2~~ | ~~S5.5-1~~ | ~~ActOnExplicitSpecialization 增加验证~~ | ✅ 已修复 |
+| ~~P2~~ | ~~S5.5-3~~ | ~~ClassTemplateDecl 添加 findSpecialization~~ | ✅ 已修复 |
+
+> **剩余工作**：S5.5-4 lit 测试补充建议在整体测试阶段统一处理。
+
+---
+
+## 七、问题汇总统计（2026-04-18 修复后）
+
+| 级别 | 数量 | 状态 |
+|------|------|------|
+| 🔴 高 | ~~2~~ **0** | ~~S5.4-1, S5.5-2~~ 全部已修复 |
+| 🟡 中 | ~~7~~ **1** | ~~S5.3-1, S5.3-2, S5.4-2, S5.4-3, S5.4-4, S5.5-1, S5.5-3~~ 全部已修复，仅剩实例化缓存性能优化 |
+| ✅ 完整 | — | ExpandPack, CXXFoldExpr, ConstraintSatisfaction 框架, SFINAE 集成, requires 评估, 显式特化/实例化基础, 偏特化声明验证, 约束部分排序, 偏特化部分排序, 多包展开, PackIndexing, noexcept 分析, 返回类型约束 |
+
+> **修复率：8/9（89%）**，仅剩 1 项性能优化（实例化缓存）和 1 项测试补充（lit 测试）。
