@@ -16,6 +16,7 @@
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Stmt.h"
 #include "blocktype/AST/Decl.h"
+#include "blocktype/Sema/Sema.h"
 
 using namespace blocktype;
 
@@ -26,18 +27,21 @@ protected:
   SourceManager SM;
   DiagnosticsEngine Diags;
   ASTContext Context;
+  std::unique_ptr<Sema> S;
   std::unique_ptr<Preprocessor> PP;
   std::unique_ptr<Parser> P;
 
   void TearDown() override {
     P.reset();
     PP.reset();
+    S.reset();
   }
 
   void parse(StringRef Code) {
     PP = std::make_unique<Preprocessor>(SM, Diags);
     PP->enterSourceFile("test.cpp", Code);
-    P = std::make_unique<Parser>(*PP, Context);
+    S = std::make_unique<Sema>(Context, Diags);
+    P = std::make_unique<Parser>(*PP, Context, *S);
   }
   
   bool hasErrors() {

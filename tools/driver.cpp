@@ -197,33 +197,35 @@ int main(int argc, char *argv[]) {
     Preprocessor PP(SM, Diags);
     PP.enterSourceFile(File, SourceCode);
     
-    // 5. 创建解析器并解析翻译单元
-    Parser P(PP, Context);
-    
+    // 5. 创建 Sema 实例（在 Parser 之前，以便 Parser 可以委托 Sema 创建节点）
+    Sema S(Context, Diags);
+
+    // 6. 创建解析器并解析翻译单元
+    Parser P(PP, Context, S);
+
     if (Verbose) {
       outs() << "  Parsing...\n";
     }
-    
+
     TranslationUnitDecl *TU = P.parseTranslationUnit();
-    
-    // 6. 报告错误
+
+    // 7. 报告错误
     if (P.hasErrors()) {
       errs() << "Error: Parsing failed for '" << File << "'\n";
       continue;
     }
-    
-    // 7. 语义分析
-    Sema S(Context, Diags);
+
+    // 8. 语义分析后处理（仅处理 Parser 未委托 Sema 创建的节点）
     S.ProcessAST(TU);
 
-    // 8. 可选：输出 AST
+    // 9. 可选：输出 AST
     if (ASTDump && TU) {
       outs() << "\n=== AST Dump for " << File << " ===\n";
       TU->dump(outs());
       outs() << "=== End AST Dump ===\n\n";
     }
     
-    // 9. AI 辅助分析（可选）
+    // 10. AI 辅助分析（可选）
     if (AIAssist && Orchestrator) {
       AIRequest Request;
       Request.TaskType = AITaskType::SecurityCheck;

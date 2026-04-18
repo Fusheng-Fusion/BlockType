@@ -13,6 +13,7 @@
 #include "blocktype/Parse/Parser.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Stmt.h"
+#include "blocktype/Sema/Sema.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace blocktype {
@@ -199,11 +200,12 @@ Stmt *Parser::parseCompoundStatement() {
     }
   }
 
+  SourceLocation RBraceLoc = Tok.getLocation();
   if (!tryConsumeToken(TokenKind::r_brace)) {
     emitError(DiagID::err_expected_rbrace);
   }
 
-  return Context.create<CompoundStmt>(LBraceLoc, Body);
+  return Actions.ActOnCompoundStmt(Body, LBraceLoc, RBraceLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -228,7 +230,7 @@ Stmt *Parser::parseReturnStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  return Context.create<ReturnStmt>(ReturnLoc, RetVal);
+  return Actions.ActOnReturnStmt(RetVal, ReturnLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -239,7 +241,7 @@ Stmt *Parser::parseNullStatement() {
   SourceLocation Loc = Tok.getLocation();
   consumeToken(); // consume ';'
 
-  return Context.create<NullStmt>(Loc);
+  return Actions.ActOnNullStmt(Loc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -260,7 +262,7 @@ Stmt *Parser::parseExpressionStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  return Context.create<ExprStmt>(Loc, E);
+  return Actions.ActOnExprStmt(Loc, E).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -280,10 +282,8 @@ Stmt *Parser::parseLabelStatement() {
     SubStmt = Context.create<NullStmt>(LabelLoc);
   }
 
-  // Create LabelDecl
-  LabelDecl *Label = Context.create<LabelDecl>(LabelLoc, LabelName);
-
-  return Context.create<LabelStmt>(LabelLoc, Label, SubStmt);
+  // Create label statement via Sema
+  return Actions.ActOnLabelStmt(LabelLoc, LabelName, SubStmt).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -311,7 +311,7 @@ Stmt *Parser::parseCaseStatement() {
     SubStmt = Context.create<NullStmt>(CaseLoc);
   }
 
-  return Context.create<CaseStmt>(CaseLoc, CaseVal, nullptr, SubStmt);
+  return Actions.ActOnCaseStmt(CaseVal, SubStmt, CaseLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -332,7 +332,7 @@ Stmt *Parser::parseDefaultStatement() {
     SubStmt = Context.create<NullStmt>(DefaultLoc);
   }
 
-  return Context.create<DefaultStmt>(DefaultLoc, SubStmt);
+  return Actions.ActOnDefaultStmt(SubStmt, DefaultLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -347,7 +347,7 @@ Stmt *Parser::parseBreakStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  return Context.create<BreakStmt>(BreakLoc);
+  return Actions.ActOnBreakStmt(BreakLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -362,7 +362,7 @@ Stmt *Parser::parseContinueStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  return Context.create<ContinueStmt>(ContinueLoc);
+  return Actions.ActOnContinueStmt(ContinueLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -389,10 +389,8 @@ Stmt *Parser::parseGotoStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  // Create LabelDecl
-  LabelDecl *Label = Context.create<LabelDecl>(LabelLoc, LabelName);
-
-  return Context.create<GotoStmt>(GotoLoc, Label);
+  // Create goto statement via Sema (also creates LabelDecl)
+  return Actions.ActOnGotoStmt(LabelName, GotoLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -451,8 +449,8 @@ Stmt *Parser::parseIfStatement() {
     }
   }
 
-  return Context.create<IfStmt>(IfLoc, Cond, ThenStmt, ElseStmt, nullptr,
-                                IsConsteval, IsNegated);
+  return Actions.ActOnIfStmt(Cond, ThenStmt, ElseStmt, IfLoc,
+                             nullptr, IsConsteval, IsNegated).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -485,7 +483,7 @@ Stmt *Parser::parseSwitchStatement() {
     Body = Context.create<NullStmt>(SwitchLoc);
   }
 
-  return Context.create<SwitchStmt>(SwitchLoc, Cond, Body);
+  return Actions.ActOnSwitchStmt(Cond, Body, SwitchLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -518,7 +516,7 @@ Stmt *Parser::parseWhileStatement() {
     Body = Context.create<NullStmt>(WhileLoc);
   }
 
-  return Context.create<WhileStmt>(WhileLoc, Cond, Body);
+  return Actions.ActOnWhileStmt(Cond, Body, WhileLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -560,7 +558,7 @@ Stmt *Parser::parseDoStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  return Context.create<DoStmt>(DoLoc, Body, Cond);
+  return Actions.ActOnDoStmt(Cond, Body, DoLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -657,11 +655,11 @@ Stmt *Parser::parseForStatement() {
       Body = Context.create<NullStmt>(ForLoc);
     }
 
-    // Create range variable declaration
+    // Create range variable declaration (Phase 2D will migrate VarDecl)
     VarDecl *RangeVar = Context.create<VarDecl>(VarLoc, VarName, VarType, nullptr);
 
     // Create CXXForRangeStmt
-    return Context.create<CXXForRangeStmt>(ForLoc, RangeVar, Range, Body);
+    return Actions.ActOnCXXForRangeStmt(ForLoc, RangeVar, Range, Body).get();
   }
 
   // Parse traditional for loop
@@ -676,7 +674,7 @@ Stmt *Parser::parseForStatement() {
       SourceLocation InitLoc = Tok.getLocation();
       Expr *InitExpr = parseExpression();
       if (InitExpr) {
-        Init = Context.create<ExprStmt>(InitLoc, InitExpr);
+        Init = Actions.ActOnExprStmt(InitLoc, InitExpr).get();
       }
     }
   }
@@ -709,7 +707,7 @@ Stmt *Parser::parseForStatement() {
     Body = Context.create<NullStmt>(ForLoc);
   }
 
-  return Context.create<ForStmt>(ForLoc, Init, Cond, Inc, Body);
+  return Actions.ActOnForStmt(Init, Cond, Inc, Body, ForLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -776,11 +774,11 @@ Stmt *Parser::parseCXXForRangeStatement() {
     Body = Context.create<NullStmt>(ForLoc);
   }
 
-  // Create range variable declaration
+  // Create range variable declaration (Phase 2D will migrate VarDecl)
   VarDecl *RangeVar = Context.create<VarDecl>(VarLoc, VarName, VarType, nullptr);
 
   // Create CXXForRangeStmt
-  return Context.create<CXXForRangeStmt>(ForLoc, RangeVar, Range, Body);
+  return Actions.ActOnCXXForRangeStmt(ForLoc, RangeVar, Range, Body).get();
 }
 
 } // namespace blocktype

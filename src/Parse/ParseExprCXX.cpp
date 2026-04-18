@@ -13,6 +13,7 @@
 #include "blocktype/Parse/Parser.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
+#include "blocktype/Sema/Sema.h"
 #include "blocktype/AST/Type.h"
 #include "blocktype/AST/TemplateParameterList.h"
 
@@ -64,7 +65,7 @@ Expr *Parser::parseCXXNewExpression() {
       // Parse initializer arguments
       auto Args = parseCallArguments();
       // Create CXXConstructExpr for direct initialization
-      Initializer = Context.create<CXXConstructExpr>(NewLoc, Args);
+      Initializer = Actions.ActOnCXXConstructExpr(NewLoc, Args).get();
     }
     if (!tryConsumeToken(TokenKind::r_paren)) {
       emitError(DiagID::err_expected_rparen);
@@ -74,8 +75,8 @@ Expr *Parser::parseCXXNewExpression() {
     Initializer = parseInitializerList();
   }
 
-  // Create CXXNewExpr
-  return Context.create<CXXNewExpr>(NewLoc, ArraySize, Initializer, Type);
+  // Create CXXNewExpr via Sema
+  return Actions.ActOnCXXNewExprFactory(NewLoc, ArraySize, Initializer, Type).get();
 }
 
 Expr *Parser::parseCXXDeleteExpression() {
@@ -107,9 +108,9 @@ Expr *Parser::parseCXXDeleteExpression() {
     }
   }
 
-  // Create CXXDeleteExpr with AllocatedType
-  return Context.create<CXXDeleteExpr>(DeleteLoc, Argument, IsArrayDelete,
-                                       AllocatedType);
+  // Create CXXDeleteExpr via Sema
+  return Actions.ActOnCXXDeleteExprFactory(DeleteLoc, Argument, IsArrayDelete,
+                                           AllocatedType).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -120,7 +121,7 @@ Expr *Parser::parseCXXThisExpr() {
   SourceLocation ThisLoc = Tok.getLocation();
   consumeToken(); // consume 'this'
 
-  return Context.create<CXXThisExpr>(ThisLoc);
+  return Actions.ActOnCXXThisExpr(ThisLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -137,7 +138,7 @@ Expr *Parser::parseCXXThrowExpr() {
     Operand = parseExpression();
   }
 
-  return Context.create<CXXThrowExpr>(ThrowLoc, Operand);
+  return Actions.ActOnCXXThrowExpr(ThrowLoc, Operand).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -252,9 +253,9 @@ Expr *Parser::parseLambdaExpression() {
   }
   SourceLocation RBraceLoc = Tok.getLocation();
 
-  return Context.create<LambdaExpr>(LambdaLoc, Captures, Params, Body,
-                                     IsMutable, ReturnType, LBraceLoc, RBraceLoc,
-                                     TemplateParams, Attrs);
+  return Actions.ActOnLambdaExpr(LambdaLoc, Captures, Params, Body,
+                                 IsMutable, ReturnType, LBraceLoc, RBraceLoc,
+                                 TemplateParams, Attrs).get();
 }
 
 llvm::SmallVector<LambdaCapture, 4> Parser::parseLambdaCaptureList() {
@@ -361,7 +362,8 @@ Expr *Parser::parseFoldExpression() {
     emitError(DiagID::err_expected_rparen);
   }
 
-  return Context.create<CXXFoldExpr>(FoldLoc, LHS, RHS, Pattern, Operator, IsRightFold);
+  return Actions.ActOnCXXFoldExpr(FoldLoc, LHS, RHS, Pattern, Operator,
+                                   IsRightFold).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -507,7 +509,8 @@ Expr *Parser::parseRequiresExpression() {
     emitError(DiagID::err_expected_rbrace);
   }
 
-  return Context.create<RequiresExpr>(RequiresLoc, Requirements, RequiresLoc, RBraceLoc);
+  return Actions.ActOnRequiresExpr(RequiresLoc, Requirements, RequiresLoc,
+                                   RBraceLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -536,7 +539,7 @@ Expr *Parser::parseCStyleCastExpr() {
     SubExpr = createRecoveryExpr(LParenLoc);
   }
 
-  return Context.create<CStyleCastExpr>(LParenLoc, SubExpr);
+  return Actions.ActOnCastExpr(CastType, SubExpr, LParenLoc, LParenLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -583,7 +586,7 @@ Expr *Parser::parseCXXStaticCastExpr() {
     emitError(DiagID::err_expected_rparen);
   }
 
-  return Context.create<CXXStaticCastExpr>(CastLoc, SubExpr);
+  return Actions.ActOnCXXNamedCastExpr(CastLoc, SubExpr, "static_cast").get();
 }
 
 Expr *Parser::parseCXXDynamicCastExpr() {
@@ -626,7 +629,8 @@ Expr *Parser::parseCXXDynamicCastExpr() {
     emitError(DiagID::err_expected_rparen);
   }
 
-  return Context.create<CXXDynamicCastExpr>(CastLoc, SubExpr, CastType);
+  return Actions.ActOnCXXNamedCastExprWithType(CastLoc, SubExpr, CastType,
+                                               "dynamic_cast").get();
 }
 
 Expr *Parser::parseCXXConstCastExpr() {
@@ -669,7 +673,7 @@ Expr *Parser::parseCXXConstCastExpr() {
     emitError(DiagID::err_expected_rparen);
   }
 
-  return Context.create<CXXConstCastExpr>(CastLoc, SubExpr);
+  return Actions.ActOnCXXNamedCastExpr(CastLoc, SubExpr, "const_cast").get();
 }
 
 Expr *Parser::parseCXXReinterpretCastExpr() {
@@ -712,7 +716,7 @@ Expr *Parser::parseCXXReinterpretCastExpr() {
     emitError(DiagID::err_expected_rparen);
   }
 
-  return Context.create<CXXReinterpretCastExpr>(CastLoc, SubExpr);
+  return Actions.ActOnCXXNamedCastExpr(CastLoc, SubExpr, "reinterpret_cast").get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -750,7 +754,7 @@ Expr *Parser::parsePackIndexingExpr() {
     emitError(DiagID::err_expected);
   }
 
-  return Context.create<PackIndexingExpr>(PackLoc, Pack, Index);
+  return Actions.ActOnPackIndexingExpr(PackLoc, Pack, Index).get();
 }
 
 Expr *Parser::parseReflexprExpr() {
@@ -776,7 +780,7 @@ Expr *Parser::parseReflexprExpr() {
     emitError(DiagID::err_expected_rparen);
   }
 
-  return Context.create<ReflexprExpr>(ReflexprLoc, Arg);
+  return Actions.ActOnReflexprExpr(ReflexprLoc, Arg).get();
 }
 
 } // namespace blocktype

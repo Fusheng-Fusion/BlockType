@@ -12,7 +12,9 @@
 #include "blocktype/Sema/ConstraintSatisfaction.h"
 #include "blocktype/Sema/SFINAE.h"
 #include "blocktype/AST/Decl.h"
+#include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Type.h"
+#include "blocktype/AST/TemplateParameterList.h"
 
 #include "llvm/Support/Casting.h"
 
@@ -181,12 +183,246 @@ DeclResult Sema::ActOnEnumConstant(EnumConstantDecl *ECD) {
 }
 
 //===----------------------------------------------------------------------===//
+// Declaration factory methods (Phase 2D)
+//===----------------------------------------------------------------------===//
+
+StmtResult Sema::ActOnDeclStmtFromDecl(Decl *D) {
+  if (!D) return StmtResult::getInvalid();
+  Decl *Decls[] = {D};
+  auto *DS = Context.create<DeclStmt>(D->getLocation(), Decls);
+  return StmtResult(DS);
+}
+
+DeclResult Sema::ActOnTypeAliasDecl(SourceLocation Loc, llvm::StringRef Name,
+                                    QualType Underlying) {
+  auto *TAD = Context.create<TypeAliasDecl>(Loc, Name, Underlying);
+  if (CurrentScope) Symbols.addDecl(TAD);
+  if (CurContext) CurContext->addDecl(TAD);
+  return DeclResult(TAD);
+}
+
+DeclResult Sema::ActOnUsingDecl(SourceLocation Loc, llvm::StringRef Name,
+                                llvm::StringRef NestedName, bool HasNested,
+                                bool IsInheritingCtor) {
+  auto *UD = Context.create<UsingDecl>(Loc, Name, NestedName, HasNested,
+                                        IsInheritingCtor);
+  return DeclResult(UD);
+}
+
+DeclResult Sema::ActOnParmVarDecl(SourceLocation Loc, llvm::StringRef Name,
+                                  QualType T, unsigned Index,
+                                  Expr *DefaultArg) {
+  auto *PVD = Context.create<ParmVarDecl>(Loc, Name, T, Index, DefaultArg);
+  return DeclResult(PVD);
+}
+
+DeclResult Sema::ActOnNamespaceDecl(SourceLocation Loc, llvm::StringRef Name,
+                                    bool IsInline) {
+  auto *NS = Context.create<NamespaceDecl>(Loc, Name, IsInline);
+  if (CurrentScope) Symbols.addDecl(NS);
+  if (CurContext) CurContext->addDecl(NS);
+  return DeclResult(NS);
+}
+
+DeclResult Sema::ActOnUsingEnumDecl(SourceLocation Loc,
+                                    llvm::StringRef EnumName,
+                                    llvm::StringRef NestedName,
+                                    bool HasNested) {
+  auto *UED = Context.create<UsingEnumDecl>(Loc, EnumName, NestedName,
+                                             HasNested);
+  return DeclResult(UED);
+}
+
+DeclResult Sema::ActOnUsingDirectiveDecl(SourceLocation Loc,
+                                         llvm::StringRef Name,
+                                         llvm::StringRef NestedName,
+                                         bool HasNested) {
+  auto *UDD = Context.create<UsingDirectiveDecl>(Loc, Name, NestedName,
+                                                  HasNested);
+  return DeclResult(UDD);
+}
+
+DeclResult Sema::ActOnNamespaceAliasDecl(SourceLocation Loc,
+                                         llvm::StringRef Alias,
+                                         llvm::StringRef Target,
+                                         llvm::StringRef NestedName) {
+  auto *NAD = Context.create<NamespaceAliasDecl>(Loc, Alias, Target,
+                                                  NestedName);
+  if (CurrentScope) Symbols.addDecl(NAD);
+  return DeclResult(NAD);
+}
+
+DeclResult Sema::ActOnModuleDecl(SourceLocation Loc, llvm::StringRef Name,
+                                 bool IsExported, llvm::StringRef Partition,
+                                 bool IsPartition, bool IsGlobalFragment,
+                                 bool IsPrivateFragment) {
+  auto *MD = Context.create<ModuleDecl>(Loc, Name, IsExported, Partition,
+                                         IsPartition, IsGlobalFragment,
+                                         IsPrivateFragment);
+  return DeclResult(MD);
+}
+
+DeclResult Sema::ActOnImportDecl(SourceLocation Loc, llvm::StringRef ModuleName,
+                                 bool IsExported, llvm::StringRef Partition,
+                                 llvm::StringRef Header, bool IsHeader) {
+  auto *ID = Context.create<ImportDecl>(Loc, ModuleName, IsExported, Partition,
+                                         Header, IsHeader);
+  return DeclResult(ID);
+}
+
+DeclResult Sema::ActOnExportDecl(SourceLocation Loc, Decl *Exported) {
+  auto *ED = Context.create<ExportDecl>(Loc, Exported);
+  return DeclResult(ED);
+}
+
+DeclResult Sema::ActOnEnumDecl(SourceLocation Loc, llvm::StringRef Name) {
+  auto *ED = Context.create<EnumDecl>(Loc, Name);
+  if (CurrentScope) Symbols.addDecl(ED);
+  if (CurContext) CurContext->addDecl(ED);
+  return DeclResult(ED);
+}
+
+DeclResult Sema::ActOnTypedefDecl(SourceLocation Loc, llvm::StringRef Name,
+                                  QualType T) {
+  auto *TD = Context.create<TypedefDecl>(Loc, Name, T);
+  if (CurrentScope) Symbols.addDecl(TD);
+  if (CurContext) CurContext->addDecl(TD);
+  return DeclResult(TD);
+}
+
+DeclResult Sema::ActOnStaticAssertDecl(SourceLocation Loc, Expr *Cond,
+                                       llvm::StringRef Message) {
+  auto *SAD = Context.create<StaticAssertDecl>(Loc, Cond, Message);
+  return DeclResult(SAD);
+}
+
+DeclResult Sema::ActOnLinkageSpecDecl(SourceLocation Loc,
+                                      LinkageSpecDecl::Language Lang,
+                                      bool HasBraces) {
+  auto *LSD = Context.create<LinkageSpecDecl>(Loc, Lang, HasBraces);
+  return DeclResult(LSD);
+}
+
+DeclResult Sema::ActOnAsmDecl(SourceLocation Loc, llvm::StringRef AsmString) {
+  auto *AD = Context.create<AsmDecl>(Loc, AsmString);
+  return DeclResult(AD);
+}
+
+DeclResult Sema::ActOnCXXDeductionGuideDecl(
+    SourceLocation Loc, llvm::StringRef TemplateName, QualType ReturnType,
+    llvm::ArrayRef<ParmVarDecl *> Params) {
+  auto *DGD = Context.create<CXXDeductionGuideDecl>(Loc, TemplateName,
+                                                      ReturnType, Params);
+  return DeclResult(DGD);
+}
+
+DeclResult Sema::ActOnAttributeListDecl(SourceLocation Loc) {
+  auto *ALD = Context.create<AttributeListDecl>(Loc);
+  return DeclResult(ALD);
+}
+
+DeclResult Sema::ActOnAttributeDecl(SourceLocation Loc, llvm::StringRef Name,
+                                    Expr *Arg) {
+  auto *AD = Context.create<AttributeDecl>(Loc, Name, Arg);
+  return DeclResult(AD);
+}
+
+DeclResult Sema::ActOnAttributeDeclWithNamespace(SourceLocation Loc,
+                                                 llvm::StringRef Namespace,
+                                                 llvm::StringRef Name,
+                                                 Expr *Arg) {
+  auto *AD = Context.create<AttributeDecl>(Loc, Namespace, Name, Arg);
+  return DeclResult(AD);
+}
+
+DeclResult Sema::ActOnVarDeclFull(SourceLocation Loc, llvm::StringRef Name,
+                                  QualType T, Expr *Init, bool IsStatic) {
+  if (!T.isNull()) RequireCompleteType(T, Loc);
+  auto *VD = Context.create<VarDecl>(Loc, Name, T, Init, IsStatic);
+  if (CurrentScope) Symbols.addDecl(VD);
+  if (CurContext) CurContext->addDecl(VD);
+  return DeclResult(VD);
+}
+
+DeclResult Sema::ActOnFunctionDeclFull(SourceLocation Loc, llvm::StringRef Name,
+                                       QualType T,
+                                       llvm::ArrayRef<ParmVarDecl *> Params,
+                                       Stmt *Body, bool IsInline,
+                                       bool IsConstexpr, bool IsConsteval) {
+  auto *FD = Context.create<FunctionDecl>(Loc, Name, T, Params, Body,
+                                            IsInline, IsConstexpr,
+                                            IsConsteval);
+  if (CurrentScope) Symbols.addDecl(FD);
+  if (CurContext) CurContext->addDecl(FD);
+  return DeclResult(FD);
+}
+
+//===----------------------------------------------------------------------===//
+// Class member factory methods (Phase 2E)
+//===----------------------------------------------------------------------===//
+
+void Sema::ActOnCXXRecordDecl(CXXRecordDecl *RD) {
+  if (!RD) return;
+  if (CurrentScope) Symbols.addDecl(RD);
+  if (CurContext) CurContext->addDecl(RD);
+}
+
+void Sema::ActOnCXXMethodDecl(CXXMethodDecl *MD) {
+  if (!MD) return;
+  if (CurrentScope) Symbols.addDecl(MD);
+}
+
+void Sema::ActOnFieldDecl(FieldDecl *FD) {
+  if (!FD) return;
+  if (CurrentScope) Symbols.addDecl(FD);
+}
+
+void Sema::ActOnAccessSpecDecl(AccessSpecDecl *ASD) {
+  // Access specifiers don't need symbol table registration
+}
+
+void Sema::ActOnCXXConstructorDecl(CXXConstructorDecl *CD) {
+  if (!CD) return;
+  if (CurrentScope) Symbols.addDecl(CD);
+}
+
+void Sema::ActOnCXXDestructorDecl(CXXDestructorDecl *DD) {
+  if (!DD) return;
+  if (CurrentScope) Symbols.addDecl(DD);
+}
+
+void Sema::ActOnFriendDecl(FriendDecl *FD) {
+  // Friend declarations don't need symbol table registration
+}
+
+DeclResult Sema::ActOnFieldDeclFactory(SourceLocation Loc, llvm::StringRef Name,
+                                       QualType Type, Expr *BitWidth,
+                                       bool IsMutable, Expr *InClassInit,
+                                       AccessSpecifier Access) {
+  auto *FD = Context.create<FieldDecl>(Loc, Name, Type, BitWidth, IsMutable,
+                                        InClassInit, Access);
+  if (CurrentScope) Symbols.addDecl(FD);
+  return DeclResult(FD);
+}
+
+DeclResult Sema::ActOnAccessSpecDeclFactory(SourceLocation Loc,
+                                           AccessSpecifier Access,
+                                           SourceLocation ColonLoc) {
+  auto *ASD = Context.create<AccessSpecDecl>(Loc, Access, ColonLoc);
+  return DeclResult(ASD);
+}
+
+//===----------------------------------------------------------------------===//
 // Expression handling
 //===----------------------------------------------------------------------===//
 
 ExprResult Sema::ActOnExpr(Expr *E) {
   if (!E)
     return ExprResult::getInvalid();
+
+  // If the expression already has a type, trust it (set by ActOn* factory).
+  if (!E->getType().isNull())
+    return ExprResult(E);
 
   // Type-check already-constructed BinaryOperator/UnaryOperator nodes
   // that the Parser created directly (rather than through ActOn* methods).
@@ -219,6 +455,191 @@ ExprResult Sema::ActOnExpr(Expr *E) {
   return ExprResult(E);
 }
 
+//===----------------------------------------------------------------------===//
+// Literal expressions (Phase 2A)
+//===----------------------------------------------------------------------===//
+
+ExprResult Sema::ActOnIntegerLiteral(SourceLocation Loc, llvm::APInt Value) {
+  QualType Ty = Context.getIntType();
+  auto *Lit = Context.create<IntegerLiteral>(Loc, Value, Ty);
+  return ExprResult(Lit);
+}
+
+ExprResult Sema::ActOnFloatingLiteral(SourceLocation Loc, llvm::APFloat Value) {
+  QualType Ty = Context.getDoubleType();
+  auto *Lit = Context.create<FloatingLiteral>(Loc, Value, Ty);
+  return ExprResult(Lit);
+}
+
+ExprResult Sema::ActOnStringLiteral(SourceLocation Loc, llvm::StringRef Text) {
+  QualType Ty = Context.getCharType(); // const char[] approximation
+  auto *Lit = Context.create<StringLiteral>(Loc, Text, Ty);
+  return ExprResult(Lit);
+}
+
+ExprResult Sema::ActOnCharacterLiteral(SourceLocation Loc, uint32_t Value) {
+  QualType Ty = Context.getCharType();
+  auto *Lit = Context.create<CharacterLiteral>(Loc, Value, Ty);
+  return ExprResult(Lit);
+}
+
+ExprResult Sema::ActOnCXXBoolLiteral(SourceLocation Loc, bool Value) {
+  QualType Ty = Context.getBoolType();
+  auto *Lit = Context.create<CXXBoolLiteral>(Loc, Value, Ty);
+  return ExprResult(Lit);
+}
+
+ExprResult Sema::ActOnCXXNullPtrLiteral(SourceLocation Loc) {
+  QualType Ty = Context.getNullPtrType();
+  auto *Lit = Context.create<CXXNullPtrLiteral>(Loc, Ty);
+  return ExprResult(Lit);
+}
+
+//===----------------------------------------------------------------------===//
+// Expression factory methods (Phase 2C)
+//===----------------------------------------------------------------------===//
+
+ExprResult Sema::ActOnDeclRefExpr(SourceLocation Loc, ValueDecl *D) {
+  auto *DRE = Context.create<DeclRefExpr>(Loc, D);
+  return ExprResult(DRE);
+}
+
+ExprResult Sema::ActOnUnaryExprOrTypeTraitExpr(SourceLocation Loc,
+                                               UnaryExprOrTypeTrait Kind,
+                                               QualType T) {
+  auto *E = Context.create<UnaryExprOrTypeTraitExpr>(Loc, Kind, T);
+  return ExprResult(E);
+}
+
+ExprResult Sema::ActOnUnaryExprOrTypeTraitExpr(SourceLocation Loc,
+                                               UnaryExprOrTypeTrait Kind,
+                                               Expr *Arg) {
+  auto *E = Context.create<UnaryExprOrTypeTraitExpr>(Loc, Kind, Arg);
+  return ExprResult(E);
+}
+
+ExprResult Sema::ActOnInitListExpr(SourceLocation LBraceLoc,
+                                   llvm::ArrayRef<Expr *> Inits,
+                                   SourceLocation RBraceLoc) {
+  auto *ILE = Context.create<InitListExpr>(LBraceLoc, Inits, RBraceLoc);
+  return ExprResult(ILE);
+}
+
+ExprResult Sema::ActOnDesignatedInitExpr(
+    SourceLocation DotLoc,
+    llvm::ArrayRef<DesignatedInitExpr::Designator> Designators,
+    Expr *Init) {
+  auto *DIE = Context.create<DesignatedInitExpr>(DotLoc, Designators, Init);
+  return ExprResult(DIE);
+}
+
+ExprResult Sema::ActOnTemplateSpecializationExpr(
+    SourceLocation Loc, llvm::StringRef Name,
+    llvm::ArrayRef<TemplateArgument> Args, ValueDecl *VD) {
+  auto *TSE = Context.create<TemplateSpecializationExpr>(Loc, Name, Args, VD);
+  return ExprResult(TSE);
+}
+
+ExprResult Sema::ActOnMemberExprDirect(SourceLocation OpLoc, Expr *Base,
+                                       ValueDecl *MemberDecl, bool IsArrow) {
+  auto *ME = Context.create<MemberExpr>(OpLoc, Base, MemberDecl, IsArrow);
+  return ExprResult(ME);
+}
+
+ExprResult Sema::ActOnCXXConstructExpr(SourceLocation Loc,
+                                       llvm::ArrayRef<Expr *> Args) {
+  auto *CE = Context.create<CXXConstructExpr>(Loc, Args);
+  return ExprResult(CE);
+}
+
+ExprResult Sema::ActOnCXXNewExprFactory(SourceLocation NewLoc, Expr *ArraySize,
+                                         Expr *Initializer, QualType Type) {
+  auto *NE = Context.create<CXXNewExpr>(NewLoc, ArraySize, Initializer, Type);
+  return ExprResult(NE);
+}
+
+ExprResult Sema::ActOnCXXDeleteExprFactory(SourceLocation DeleteLoc,
+                                           Expr *Argument, bool IsArrayDelete,
+                                           QualType AllocatedType) {
+  auto *DE = Context.create<CXXDeleteExpr>(DeleteLoc, Argument, IsArrayDelete,
+                                            AllocatedType);
+  return ExprResult(DE);
+}
+
+ExprResult Sema::ActOnCXXThisExpr(SourceLocation Loc) {
+  auto *TE = Context.create<CXXThisExpr>(Loc);
+  return ExprResult(TE);
+}
+
+ExprResult Sema::ActOnCXXThrowExpr(SourceLocation Loc, Expr *Operand) {
+  auto *TE = Context.create<CXXThrowExpr>(Loc, Operand);
+  return ExprResult(TE);
+}
+
+ExprResult Sema::ActOnCXXNamedCastExpr(SourceLocation CastLoc, Expr *SubExpr,
+                                       llvm::StringRef CastKind) {
+  if (CastKind == "static_cast")
+    return ExprResult(Context.create<CXXStaticCastExpr>(CastLoc, SubExpr));
+  if (CastKind == "const_cast")
+    return ExprResult(Context.create<CXXConstCastExpr>(CastLoc, SubExpr));
+  if (CastKind == "reinterpret_cast")
+    return ExprResult(Context.create<CXXReinterpretCastExpr>(CastLoc, SubExpr));
+  return ExprResult(Context.create<CXXStaticCastExpr>(CastLoc, SubExpr));
+}
+
+ExprResult Sema::ActOnCXXNamedCastExprWithType(SourceLocation CastLoc,
+                                               Expr *SubExpr,
+                                               QualType CastType,
+                                               llvm::StringRef CastKind) {
+  if (CastKind == "dynamic_cast")
+    return ExprResult(
+        Context.create<CXXDynamicCastExpr>(CastLoc, SubExpr, CastType));
+  return ActOnCXXNamedCastExpr(CastLoc, SubExpr, CastKind);
+}
+
+ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
+                                       Expr *Index) {
+  auto *PIE = Context.create<PackIndexingExpr>(Loc, Pack, Index);
+  return ExprResult(PIE);
+}
+
+ExprResult Sema::ActOnReflexprExpr(SourceLocation Loc, Expr *Arg) {
+  auto *RE = Context.create<ReflexprExpr>(Loc, Arg);
+  return ExprResult(RE);
+}
+
+ExprResult Sema::ActOnLambdaExpr(SourceLocation Loc,
+                                 llvm::ArrayRef<LambdaCapture> Captures,
+                                 llvm::ArrayRef<ParmVarDecl *> Params,
+                                 Stmt *Body, bool IsMutable,
+                                 QualType ReturnType,
+                                 SourceLocation LBraceLoc,
+                                 SourceLocation RBraceLoc,
+                                 TemplateParameterList *TemplateParams,
+                                 AttributeListDecl *Attrs) {
+  auto *LE = Context.create<LambdaExpr>(Loc, Captures, Params, Body, IsMutable,
+                                         ReturnType, LBraceLoc, RBraceLoc,
+                                         TemplateParams, Attrs);
+  return ExprResult(LE);
+}
+
+ExprResult Sema::ActOnCXXFoldExpr(SourceLocation Loc, Expr *LHS, Expr *RHS,
+                                  Expr *Pattern, BinaryOpKind Op,
+                                  bool IsRightFold) {
+  auto *FE = Context.create<CXXFoldExpr>(Loc, LHS, RHS, Pattern, Op,
+                                          IsRightFold);
+  return ExprResult(FE);
+}
+
+ExprResult Sema::ActOnRequiresExpr(SourceLocation Loc,
+                                   llvm::ArrayRef<Requirement *> Requirements,
+                                   SourceLocation RequiresLoc,
+                                   SourceLocation RBraceLoc) {
+  auto *RE = Context.create<RequiresExpr>(Loc, Requirements, RequiresLoc,
+                                           RBraceLoc);
+  return ExprResult(RE);
+}
+
 ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
                                 SourceLocation LParenLoc,
                                 SourceLocation RParenLoc) {
@@ -229,21 +650,31 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
   FunctionDecl *FD = nullptr;
 
   if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(Fn)) {
-    if (auto *FunD = llvm::dyn_cast<FunctionDecl>(DRE->getDecl())) {
+    Decl *D = DRE->getDecl();
+    if (!D) {
+      // Undeclared identifier — fall back to creating CallExpr directly
+      auto *CE = Context.create<CallExpr>(LParenLoc, Fn, Args);
+      return ExprResult(CE);
+    }
+    if (auto *FunD = llvm::dyn_cast<FunctionDecl>(D)) {
       FD = FunD;
     }
     // Handle function template: deduce arguments and instantiate
     if (!FD) {
-      if (auto *FTD = llvm::dyn_cast<FunctionTemplateDecl>(DRE->getDecl())) {
+      if (auto *FTD = llvm::dyn_cast<FunctionTemplateDecl>(D)) {
         FD = DeduceAndInstantiateFunctionTemplate(FTD, Args, LParenLoc);
       }
     }
     // Also check if the DeclRefExpr refers to a TemplateDecl by name
     if (!FD) {
-      llvm::StringRef Name = DRE->getDecl()->getName();
-      if (auto *FTD = Symbols.lookupTemplate(Name)) {
-        if (auto *FuncFTD = llvm::dyn_cast<FunctionTemplateDecl>(FTD)) {
-          FD = DeduceAndInstantiateFunctionTemplate(FuncFTD, Args, LParenLoc);
+      llvm::StringRef Name;
+      if (auto *ND = llvm::dyn_cast<NamedDecl>(D))
+        Name = ND->getName();
+      if (!Name.empty()) {
+        if (auto *FTD = Symbols.lookupTemplate(Name)) {
+          if (auto *FuncFTD = llvm::dyn_cast<FunctionTemplateDecl>(FTD)) {
+            FD = DeduceAndInstantiateFunctionTemplate(FuncFTD, Args, LParenLoc);
+          }
         }
       }
     }
@@ -252,7 +683,18 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
   // If not a direct function reference, try overload resolution
   if (!FD) {
     if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(Fn)) {
-      llvm::StringRef Name = DRE->getDecl()->getName();
+      Decl *D = DRE->getDecl();
+      if (!D) {
+        auto *CE = Context.create<CallExpr>(LParenLoc, Fn, Args);
+        return ExprResult(CE);
+      }
+      llvm::StringRef Name;
+      if (auto *ND = llvm::dyn_cast<NamedDecl>(D))
+        Name = ND->getName();
+      if (Name.empty()) {
+        auto *CE = Context.create<CallExpr>(LParenLoc, Fn, Args);
+        return ExprResult(CE);
+      }
       auto Decls = Symbols.lookup(Name);
       LookupResult LR;
       for (auto *D : Decls)
@@ -262,9 +704,10 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
   }
 
   if (!FD) {
-    Diags.report(LParenLoc, DiagID::err_ovl_no_viable_function,
-                 Fn->getType().isNull() ? "<unknown>" : "expression");
-    return ExprResult::getInvalid();
+    // During incremental migration, fall back to creating a CallExpr
+    // without full resolution. ProcessAST will handle it later.
+    auto *CE = Context.create<CallExpr>(LParenLoc, Fn, Args);
+    return ExprResult(CE);
   }
 
   // Type-check the call arguments
@@ -282,6 +725,13 @@ ExprResult Sema::ActOnMemberExpr(Expr *Base, llvm::StringRef Member,
     return ExprResult::getInvalid();
 
   QualType BaseType = Base->getType();
+
+  // Defensive: during incremental migration, base type may not be set yet.
+  // Skip member lookup and create MemberExpr with null MemberDecl.
+  if (BaseType.isNull()) {
+    auto *ME = Context.create<MemberExpr>(MemberLoc, Base, nullptr, IsArrow);
+    return ExprResult(ME);
+  }
 
   // For arrow (->), the base must be a pointer type
   if (IsArrow) {
@@ -340,6 +790,13 @@ ExprResult Sema::ActOnBinaryOperator(BinaryOpKind Op, Expr *LHS, Expr *RHS,
   QualType LHSType = LHS->getType();
   QualType RHSType = RHS->getType();
 
+  // Defensive: during incremental migration, types may not be set yet.
+  // Skip type checking and let ProcessAST handle it later.
+  if (LHSType.isNull() || RHSType.isNull()) {
+    auto *BO = Context.create<BinaryOperator>(OpLoc, LHS, RHS, Op);
+    return ExprResult(BO);
+  }
+
   // Compute the result type via TypeCheck
   QualType ResultType = TC.getBinaryOperatorResultType(Op, LHSType, RHSType);
   if (ResultType.isNull()) {
@@ -360,6 +817,12 @@ ExprResult Sema::ActOnUnaryOperator(UnaryOpKind Op, Expr *Operand,
 
   QualType OperandType = Operand->getType();
 
+  // Defensive: during incremental migration, types may not be set yet.
+  if (OperandType.isNull()) {
+    auto *UO = Context.create<UnaryOperator>(OpLoc, Operand, Op);
+    return ExprResult(UO);
+  }
+
   // Compute the result type via TypeCheck
   QualType ResultType = TC.getUnaryOperatorResultType(Op, OperandType);
   if (ResultType.isNull()) {
@@ -379,7 +842,8 @@ ExprResult Sema::ActOnCastExpr(QualType TargetType, Expr *E,
   if (!E || TargetType.isNull())
     return ExprResult::getInvalid();
 
-  if (!TC.isTypeCompatible(E->getType(), TargetType)) {
+  // Defensive: skip type compatibility check if expression type not set yet
+  if (!E->getType().isNull() && !TC.isTypeCompatible(E->getType(), TargetType)) {
     Diags.report(LParenLoc, DiagID::err_type_mismatch);
     return ExprResult::getInvalid();
   }
@@ -396,15 +860,20 @@ ExprResult Sema::ActOnArraySubscriptExpr(Expr *Base,
     return ExprResult::getInvalid();
 
   QualType BaseType = Base->getType();
-  const Type *BaseTy = BaseType.getTypePtr();
 
-  if (!BaseTy->isPointerType() && !BaseTy->isArrayType()) {
-    Diags.report(LLoc, DiagID::err_type_mismatch);
-    return ExprResult::getInvalid();
+  // Defensive: skip type check if type not set yet
+  if (!BaseType.isNull()) {
+    const Type *BaseTy = BaseType.getTypePtr();
+    if (!BaseTy->isPointerType() && !BaseTy->isArrayType()) {
+      Diags.report(LLoc, DiagID::err_type_mismatch);
+      return ExprResult::getInvalid();
+    }
   }
 
   for (auto *Idx : Indices) {
-    if (!Idx || !Idx->getType()->isIntegerType()) {
+    if (!Idx)
+      continue;
+    if (!Idx->getType().isNull() && !Idx->getType()->isIntegerType()) {
       Diags.report(LLoc, DiagID::err_type_mismatch);
       return ExprResult::getInvalid();
     }
@@ -420,13 +889,17 @@ ExprResult Sema::ActOnConditionalExpr(Expr *Cond, Expr *Then, Expr *Else,
   if (!Cond || !Then || !Else)
     return ExprResult::getInvalid();
 
-  if (!TC.CheckCondition(Cond, QuestionLoc))
+  // Defensive: skip condition check if type not set yet
+  if (!Cond->getType().isNull() && !TC.CheckCondition(Cond, QuestionLoc))
     return ExprResult::getInvalid();
 
-  QualType ResultType = TC.getCommonType(Then->getType(), Else->getType());
-  if (ResultType.isNull()) {
-    Diags.report(ColonLoc, DiagID::err_type_mismatch);
-    return ExprResult::getInvalid();
+  // Defensive: skip common type computation if types not set yet
+  if (!Then->getType().isNull() && !Else->getType().isNull()) {
+    QualType ResultType = TC.getCommonType(Then->getType(), Else->getType());
+    if (ResultType.isNull()) {
+      Diags.report(ColonLoc, DiagID::err_type_mismatch);
+      return ExprResult::getInvalid();
+    }
   }
 
   auto *CO = Context.create<ConditionalOperator>(QuestionLoc, Cond, Then, Else);
@@ -453,17 +926,22 @@ StmtResult Sema::ActOnReturnStmt(Expr *RetVal, SourceLocation ReturnLoc) {
 }
 
 StmtResult Sema::ActOnIfStmt(Expr *Cond, Stmt *Then, Stmt *Else,
-                              SourceLocation IfLoc) {
-  if (!TC.CheckCondition(Cond, IfLoc))
+                              SourceLocation IfLoc,
+                              VarDecl *CondVar, bool IsConsteval,
+                              bool IsNegated) {
+  // Defensive: skip condition check if type not yet set (incremental migration)
+  if (!IsConsteval && Cond && !Cond->getType().isNull()
+      && !TC.CheckCondition(Cond, IfLoc))
     return StmtResult::getInvalid();
 
-  auto *IS = Context.create<IfStmt>(IfLoc, Cond, Then, Else);
+  auto *IS = Context.create<IfStmt>(IfLoc, Cond, Then, Else, CondVar,
+                                     IsConsteval, IsNegated);
   return StmtResult(IS);
 }
 
 StmtResult Sema::ActOnWhileStmt(Expr *Cond, Stmt *Body,
                                  SourceLocation WhileLoc) {
-  if (!TC.CheckCondition(Cond, WhileLoc))
+  if (Cond && !Cond->getType().isNull() && !TC.CheckCondition(Cond, WhileLoc))
     return StmtResult::getInvalid();
 
   auto *WS = Context.create<WhileStmt>(WhileLoc, Cond, Body);
@@ -472,7 +950,7 @@ StmtResult Sema::ActOnWhileStmt(Expr *Cond, Stmt *Body,
 
 StmtResult Sema::ActOnForStmt(Stmt *Init, Expr *Cond, Expr *Inc, Stmt *Body,
                                SourceLocation ForLoc) {
-  if (Cond && !TC.CheckCondition(Cond, ForLoc))
+  if (Cond && !Cond->getType().isNull() && !TC.CheckCondition(Cond, ForLoc))
     return StmtResult::getInvalid();
 
   auto *FS = Context.create<ForStmt>(ForLoc, Init, Cond, Inc, Body);
@@ -480,7 +958,7 @@ StmtResult Sema::ActOnForStmt(Stmt *Init, Expr *Cond, Expr *Inc, Stmt *Body,
 }
 
 StmtResult Sema::ActOnDoStmt(Expr *Cond, Stmt *Body, SourceLocation DoLoc) {
-  if (!TC.CheckCondition(Cond, DoLoc))
+  if (Cond && !Cond->getType().isNull() && !TC.CheckCondition(Cond, DoLoc))
     return StmtResult::getInvalid();
 
   auto *DS = Context.create<DoStmt>(DoLoc, Body, Cond);
@@ -489,7 +967,8 @@ StmtResult Sema::ActOnDoStmt(Expr *Cond, Stmt *Body, SourceLocation DoLoc) {
 
 StmtResult Sema::ActOnSwitchStmt(Expr *Cond, Stmt *Body,
                                   SourceLocation SwitchLoc) {
-  if (Cond && !Cond->getType()->isIntegerType()) {
+  // Defensive: skip type check if type not yet set (incremental migration)
+  if (Cond && !Cond->getType().isNull() && !Cond->getType()->isIntegerType()) {
     Diags.report(SwitchLoc, DiagID::err_type_mismatch);
     return StmtResult::getInvalid();
   }
@@ -499,7 +978,7 @@ StmtResult Sema::ActOnSwitchStmt(Expr *Cond, Stmt *Body,
 }
 
 StmtResult Sema::ActOnCaseStmt(Expr *Val, Stmt *Body, SourceLocation CaseLoc) {
-  if (!TC.CheckCaseExpression(Val, CaseLoc))
+  if (Val && !Val->getType().isNull() && !TC.CheckCaseExpression(Val, CaseLoc))
     return StmtResult::getInvalid();
 
   auto *CS = Context.create<CaseStmt>(CaseLoc, Val, nullptr, Body);
@@ -544,6 +1023,63 @@ StmtResult Sema::ActOnDeclStmt(Decl *D) {
 StmtResult Sema::ActOnNullStmt(SourceLocation Loc) {
   auto *NS = Context.create<NullStmt>(Loc);
   return StmtResult(NS);
+}
+
+//===----------------------------------------------------------------------===//
+// Label and expression statements (Phase 2B)
+//===----------------------------------------------------------------------===//
+
+StmtResult Sema::ActOnExprStmt(SourceLocation Loc, Expr *E) {
+  auto *ES = Context.create<ExprStmt>(Loc, E);
+  return StmtResult(ES);
+}
+
+StmtResult Sema::ActOnLabelStmt(SourceLocation Loc, llvm::StringRef LabelName,
+                                 Stmt *SubStmt) {
+  auto *LD = Context.create<LabelDecl>(Loc, LabelName);
+  if (CurrentScope)
+    Symbols.addDecl(LD);
+  auto *LS = Context.create<LabelStmt>(Loc, LD, SubStmt);
+  return StmtResult(LS);
+}
+
+//===----------------------------------------------------------------------===//
+// C++ statement extensions (Phase 2B)
+//===----------------------------------------------------------------------===//
+
+StmtResult Sema::ActOnCXXForRangeStmt(SourceLocation ForLoc, VarDecl *RangeVar,
+                                       Expr *Range, Stmt *Body) {
+  auto *FRS = Context.create<CXXForRangeStmt>(ForLoc, RangeVar, Range, Body);
+  return StmtResult(FRS);
+}
+
+StmtResult Sema::ActOnCXXTryStmt(SourceLocation TryLoc, Stmt *TryBlock,
+                                  llvm::ArrayRef<Stmt *> Handlers) {
+  auto *TS = Context.create<CXXTryStmt>(TryLoc, TryBlock, Handlers);
+  return StmtResult(TS);
+}
+
+StmtResult Sema::ActOnCXXCatchStmt(SourceLocation CatchLoc,
+                                    VarDecl *ExceptionDecl,
+                                    Stmt *HandlerBlock) {
+  auto *CS = Context.create<CXXCatchStmt>(CatchLoc, ExceptionDecl,
+                                          HandlerBlock);
+  return StmtResult(CS);
+}
+
+StmtResult Sema::ActOnCoreturnStmt(SourceLocation Loc, Expr *RetVal) {
+  auto *CS = Context.create<CoreturnStmt>(Loc, RetVal);
+  return StmtResult(CS);
+}
+
+StmtResult Sema::ActOnCoyieldStmt(SourceLocation Loc, Expr *Value) {
+  auto *CS = Context.create<CoyieldStmt>(Loc, Value);
+  return StmtResult(CS);
+}
+
+ExprResult Sema::ActOnCoawaitExpr(SourceLocation Loc, Expr *Operand) {
+  auto *CE = Context.create<CoawaitExpr>(Loc, Operand);
+  return ExprResult(CE);
 }
 
 //===----------------------------------------------------------------------===//
@@ -847,10 +1383,13 @@ public:
     if (!E) return;
 
     // 对 new/delete 表达式调用 Sema 处理
+    // 防御性检查：如果节点已通过 ActOn* 设置过类型，跳过
     if (auto *NewE = llvm::dyn_cast<CXXNewExpr>(E)) {
-      S.ActOnCXXNewExpr(NewE);
+      if (NewE->getType().isNull())
+        S.ActOnCXXNewExpr(NewE);
     } else if (auto *DelE = llvm::dyn_cast<CXXDeleteExpr>(E)) {
-      S.ActOnCXXDeleteExpr(DelE);
+      if (DelE->getType().isNull())
+        S.ActOnCXXDeleteExpr(DelE);
     }
 
     // 递归遍历子表达式

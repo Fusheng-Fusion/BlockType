@@ -14,12 +14,13 @@
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/Basic/Diagnostics.h"
+#include "blocktype/Sema/Sema.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace blocktype {
 
-Parser::Parser(Preprocessor &PP, ASTContext &Ctx)
-    : PP(PP), Context(Ctx), Diags(PP.getDiagnostics()) {
+Parser::Parser(Preprocessor &PP, ASTContext &Ctx, Sema &S)
+    : PP(PP), Context(Ctx), Actions(S), Diags(PP.getDiagnostics()) {
   initializeTokenLookahead();
 }
 
@@ -36,6 +37,7 @@ TranslationUnitDecl *Parser::parseTranslationUnit() {
   // Create TranslationUnitDecl
   SourceLocation StartLoc = Tok.getLocation();
   TranslationUnitDecl *TU = Context.create<TranslationUnitDecl>(StartLoc);
+  Actions.ActOnTranslationUnit(TU);
   
   // Parse declarations
   while (!Tok.is(TokenKind::eof)) {
@@ -371,8 +373,7 @@ Expr *Parser::createRecoveryExpr(SourceLocation Loc) {
 
   // Create a placeholder integer literal for recovery
   // This prevents cascading errors
-  return Context.create<IntegerLiteral>(Loc, llvm::APInt(32, 0),
-                                         Context.getIntType());
+  return Actions.ActOnIntegerLiteral(Loc, llvm::APInt(32, 0)).get();
 }
 
 //===----------------------------------------------------------------------===//

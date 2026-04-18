@@ -27,6 +27,8 @@
 
 namespace blocktype {
 
+class Sema;
+
 class TranslationUnitDecl;
 class VarDecl;
 class FriendDecl;
@@ -76,6 +78,7 @@ enum class ParsingContext {
 class Parser {
   Preprocessor &PP;
   ASTContext &Context;
+  Sema &Actions;
   DiagnosticsEngine &Diags;
 
   // Current token lookahead
@@ -95,7 +98,7 @@ class Parser {
   friend class TentativeParsingAction;
 
 public:
-  Parser(Preprocessor &PP, ASTContext &Ctx);
+  Parser(Preprocessor &PP, ASTContext &Ctx, Sema &S);
   ~Parser();
 
   // Non-copyable

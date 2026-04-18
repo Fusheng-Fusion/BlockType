@@ -16,6 +16,7 @@
 #include "blocktype/Basic/SourceManager.h"
 #include "blocktype/Basic/Diagnostics.h"
 #include "blocktype/AST/ASTContext.h"
+#include "blocktype/Sema/Sema.h"
 
 using namespace blocktype;
 
@@ -107,28 +108,29 @@ BenchmarkResult runBenchmark(const std::string &Name, const std::string &Code, u
   SourceManager SM;
   DiagnosticsEngine Diags;
   ASTContext Context;
-  
+  Sema S(Context, Diags);
+
   // Warm-up
   {
     SM.createMainFileID("test.cpp", Code);
     auto PP = std::make_unique<Preprocessor>(SM, Diags);
     PP->enterSourceFile("test.cpp", Code);
-    Parser P(*PP, Context);
+    Parser P(*PP, Context, S);
     P.parseTranslationUnit();
   }
-  
-  // Benchmark
+
   auto Start = std::chrono::high_resolution_clock::now();
-  
+
   for (unsigned i = 0; i < Iterations; ++i) {
     SourceManager LSM;
     DiagnosticsEngine LDiags;
     ASTContext LContext;
-    
+    Sema LS(LContext, LDiags);
+
     LSM.createMainFileID("test.cpp", Code);
     auto PP = std::make_unique<Preprocessor>(LSM, LDiags);
     PP->enterSourceFile("test.cpp", Code);
-    Parser P(*PP, LContext);
+    Parser P(*PP, LContext, LS);
     P.parseTranslationUnit();
   }
   

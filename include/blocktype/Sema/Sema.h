@@ -269,11 +269,142 @@ public:
   /// Per C++ [dcl.enum], enum constant values are evaluated at declaration time.
   DeclResult ActOnEnumConstant(EnumConstantDecl *ECD);
 
+  // Declaration factory methods (Phase 2D)
+  StmtResult ActOnDeclStmtFromDecl(Decl *D);
+  DeclResult ActOnTypeAliasDecl(SourceLocation Loc, llvm::StringRef Name,
+                                QualType Underlying);
+  DeclResult ActOnUsingDecl(SourceLocation Loc, llvm::StringRef Name,
+                            llvm::StringRef NestedName, bool HasNested,
+                            bool IsInheritingCtor = false);
+  DeclResult ActOnParmVarDecl(SourceLocation Loc, llvm::StringRef Name,
+                              QualType T, unsigned Index, Expr *DefaultArg);
+  DeclResult ActOnNamespaceDecl(SourceLocation Loc, llvm::StringRef Name,
+                                bool IsInline);
+  DeclResult ActOnUsingEnumDecl(SourceLocation Loc, llvm::StringRef EnumName,
+                                llvm::StringRef NestedName, bool HasNested);
+  DeclResult ActOnUsingDirectiveDecl(SourceLocation Loc, llvm::StringRef Name,
+                                     llvm::StringRef NestedName, bool HasNested);
+  DeclResult ActOnNamespaceAliasDecl(SourceLocation Loc, llvm::StringRef Alias,
+                                     llvm::StringRef Target,
+                                     llvm::StringRef NestedName);
+  DeclResult ActOnModuleDecl(SourceLocation Loc, llvm::StringRef Name,
+                             bool IsExported, llvm::StringRef Partition,
+                             bool IsPartition, bool IsGlobalFragment,
+                             bool IsPrivateFragment);
+  DeclResult ActOnImportDecl(SourceLocation Loc, llvm::StringRef ModuleName,
+                             bool IsExported, llvm::StringRef Partition,
+                             llvm::StringRef Header, bool IsHeader);
+  DeclResult ActOnExportDecl(SourceLocation Loc, Decl *Exported);
+  DeclResult ActOnEnumDecl(SourceLocation Loc, llvm::StringRef Name);
+  DeclResult ActOnTypedefDecl(SourceLocation Loc, llvm::StringRef Name,
+                              QualType T);
+  DeclResult ActOnStaticAssertDecl(SourceLocation Loc, Expr *Cond,
+                                   llvm::StringRef Message);
+  DeclResult ActOnLinkageSpecDecl(SourceLocation Loc,
+                                  LinkageSpecDecl::Language Lang,
+                                  bool HasBraces);
+  DeclResult ActOnAsmDecl(SourceLocation Loc, llvm::StringRef AsmString);
+  DeclResult ActOnCXXDeductionGuideDecl(SourceLocation Loc,
+                                        llvm::StringRef TemplateName,
+                                        QualType ReturnType,
+                                        llvm::ArrayRef<ParmVarDecl *> Params);
+  DeclResult ActOnAttributeListDecl(SourceLocation Loc);
+  DeclResult ActOnAttributeDecl(SourceLocation Loc, llvm::StringRef Name,
+                                Expr *Arg);
+  DeclResult ActOnAttributeDeclWithNamespace(SourceLocation Loc,
+                                             llvm::StringRef Namespace,
+                                             llvm::StringRef Name, Expr *Arg);
+  DeclResult ActOnVarDeclFull(SourceLocation Loc, llvm::StringRef Name,
+                              QualType T, Expr *Init, bool IsStatic);
+  DeclResult ActOnFunctionDeclFull(SourceLocation Loc, llvm::StringRef Name,
+                                   QualType T,
+                                   llvm::ArrayRef<ParmVarDecl *> Params,
+                                   Stmt *Body, bool IsInline,
+                                   bool IsConstexpr, bool IsConsteval);
+
+  // Class member factory methods (Phase 2E)
+  void ActOnCXXRecordDecl(CXXRecordDecl *RD);
+  void ActOnCXXMethodDecl(CXXMethodDecl *MD);
+  void ActOnFieldDecl(FieldDecl *FD);
+  void ActOnAccessSpecDecl(AccessSpecDecl *ASD);
+  void ActOnCXXConstructorDecl(CXXConstructorDecl *CD);
+  void ActOnCXXDestructorDecl(CXXDestructorDecl *DD);
+  void ActOnFriendDecl(FriendDecl *FD);
+  DeclResult ActOnFieldDeclFactory(SourceLocation Loc, llvm::StringRef Name,
+                                   QualType Type, Expr *BitWidth,
+                                   bool IsMutable, Expr *InClassInit,
+                                   AccessSpecifier Access);
+  DeclResult ActOnAccessSpecDeclFactory(SourceLocation Loc,
+                                        AccessSpecifier Access,
+                                        SourceLocation ColonLoc);
+
   //===------------------------------------------------------------------===//
   // Expression handling
   //===------------------------------------------------------------------===//
 
   ExprResult ActOnExpr(Expr *E);
+
+  // Literal expressions (Phase 2A)
+  ExprResult ActOnIntegerLiteral(SourceLocation Loc, llvm::APInt Value);
+  ExprResult ActOnFloatingLiteral(SourceLocation Loc, llvm::APFloat Value);
+  ExprResult ActOnStringLiteral(SourceLocation Loc, llvm::StringRef Text);
+  ExprResult ActOnCharacterLiteral(SourceLocation Loc, uint32_t Value);
+  ExprResult ActOnCXXBoolLiteral(SourceLocation Loc, bool Value);
+  ExprResult ActOnCXXNullPtrLiteral(SourceLocation Loc);
+
+  // Expression factory methods (Phase 2C)
+  ExprResult ActOnDeclRefExpr(SourceLocation Loc, ValueDecl *D);
+  ExprResult ActOnUnaryExprOrTypeTraitExpr(SourceLocation Loc,
+                                           UnaryExprOrTypeTrait Kind,
+                                           QualType T);
+  ExprResult ActOnUnaryExprOrTypeTraitExpr(SourceLocation Loc,
+                                           UnaryExprOrTypeTrait Kind,
+                                           Expr *Arg);
+  ExprResult ActOnInitListExpr(SourceLocation LBraceLoc,
+                               llvm::ArrayRef<Expr *> Inits,
+                               SourceLocation RBraceLoc);
+  ExprResult ActOnDesignatedInitExpr(SourceLocation DotLoc,
+                                     llvm::ArrayRef<DesignatedInitExpr::Designator> Designators,
+                                     Expr *Init);
+  ExprResult ActOnTemplateSpecializationExpr(SourceLocation Loc,
+                                             llvm::StringRef Name,
+                                             llvm::ArrayRef<TemplateArgument> Args,
+                                             ValueDecl *VD);
+  ExprResult ActOnMemberExprDirect(SourceLocation OpLoc, Expr *Base,
+                                   ValueDecl *MemberDecl, bool IsArrow);
+  ExprResult ActOnCXXConstructExpr(SourceLocation Loc,
+                                   llvm::ArrayRef<Expr *> Args);
+  ExprResult ActOnCXXNewExprFactory(SourceLocation NewLoc, Expr *ArraySize,
+                                    Expr *Initializer, QualType Type);
+  ExprResult ActOnCXXDeleteExprFactory(SourceLocation DeleteLoc, Expr *Argument,
+                                       bool IsArrayDelete,
+                                       QualType AllocatedType);
+  ExprResult ActOnCXXThisExpr(SourceLocation Loc);
+  ExprResult ActOnCXXThrowExpr(SourceLocation Loc, Expr *Operand);
+  ExprResult ActOnCXXNamedCastExpr(SourceLocation CastLoc, Expr *SubExpr,
+                                   llvm::StringRef CastKind);
+  ExprResult ActOnCXXNamedCastExprWithType(SourceLocation CastLoc,
+                                           Expr *SubExpr, QualType CastType,
+                                           llvm::StringRef CastKind);
+  ExprResult ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack, Expr *Index);
+  ExprResult ActOnReflexprExpr(SourceLocation Loc, Expr *Arg);
+
+  // Complex expression factory methods (Phase 2C)
+  ExprResult ActOnLambdaExpr(SourceLocation Loc,
+                             llvm::ArrayRef<LambdaCapture> Captures,
+                             llvm::ArrayRef<ParmVarDecl *> Params, Stmt *Body,
+                             bool IsMutable, QualType ReturnType,
+                             SourceLocation LBraceLoc,
+                             SourceLocation RBraceLoc,
+                             TemplateParameterList *TemplateParams,
+                             class AttributeListDecl *Attrs);
+  ExprResult ActOnCXXFoldExpr(SourceLocation Loc, Expr *LHS, Expr *RHS,
+                              Expr *Pattern, BinaryOpKind Op,
+                              bool IsRightFold);
+  ExprResult ActOnRequiresExpr(SourceLocation Loc,
+                               llvm::ArrayRef<Requirement *> Requirements,
+                               SourceLocation RequiresLoc,
+                               SourceLocation RBraceLoc);
 
   ExprResult ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
                            SourceLocation LParenLoc,
@@ -316,7 +447,10 @@ public:
 
   StmtResult ActOnReturnStmt(Expr *RetVal, SourceLocation ReturnLoc);
   StmtResult ActOnIfStmt(Expr *Cond, Stmt *Then, Stmt *Else,
-                         SourceLocation IfLoc);
+                         SourceLocation IfLoc,
+                         VarDecl *CondVar = nullptr,
+                         bool IsConsteval = false,
+                         bool IsNegated = false);
   StmtResult ActOnWhileStmt(Expr *Cond, Stmt *Body,
                             SourceLocation WhileLoc);
   StmtResult ActOnForStmt(Stmt *Init, Expr *Cond, Expr *Inc, Stmt *Body,
@@ -334,6 +468,22 @@ public:
                                SourceLocation RBraceLoc);
   StmtResult ActOnDeclStmt(Decl *D);
   StmtResult ActOnNullStmt(SourceLocation Loc);
+
+  // Label and expression statements (Phase 2B)
+  StmtResult ActOnExprStmt(SourceLocation Loc, Expr *E);
+  StmtResult ActOnLabelStmt(SourceLocation Loc, llvm::StringRef LabelName,
+                            Stmt *SubStmt);
+
+  // C++ statement extensions (Phase 2B)
+  StmtResult ActOnCXXForRangeStmt(SourceLocation ForLoc, VarDecl *RangeVar,
+                                  Expr *Range, Stmt *Body);
+  StmtResult ActOnCXXTryStmt(SourceLocation TryLoc, Stmt *TryBlock,
+                             llvm::ArrayRef<Stmt *> Handlers);
+  StmtResult ActOnCXXCatchStmt(SourceLocation CatchLoc, VarDecl *ExceptionDecl,
+                               Stmt *HandlerBlock);
+  StmtResult ActOnCoreturnStmt(SourceLocation Loc, Expr *RetVal);
+  StmtResult ActOnCoyieldStmt(SourceLocation Loc, Expr *Value);
+  ExprResult ActOnCoawaitExpr(SourceLocation Loc, Expr *Operand);
 
   //===------------------------------------------------------------------===//
   // Type handling [Stage 4.2]

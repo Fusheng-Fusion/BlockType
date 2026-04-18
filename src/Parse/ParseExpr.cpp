@@ -14,6 +14,7 @@
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/Sema/Scope.h"
+#include "blocktype/Sema/Sema.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/raw_ostream.h"
@@ -303,9 +304,10 @@ Expr *Parser::parseRHS(Expr *LHS, PrecedenceLevel MinPrec) {
       }
     }
 
-    // Create the binary operator node
+    // Create the binary operator node via Sema
     BinaryOpKind BOK = getBinaryOpKind(BinOp);
-    LHS = Context.create<BinaryOperator>(LHS->getLocation(), LHS, RHS, BOK);
+    auto Result = Actions.ActOnBinaryOperator(BOK, LHS, RHS, OpLoc);
+    LHS = Result.isUsable() ? Result.get() : LHS;
   }
 
   return LHS;
@@ -343,9 +345,10 @@ Expr *Parser::parseUnaryExpression() {
       return createRecoveryExpr(OpLoc);
     }
 
-    // Create unary operator
+    // Create unary operator via Sema
     UnaryOpKind UOK = getUnaryOpKind(OpKind);
-    return Context.create<UnaryOperator>(OpLoc, Operand, UOK);
+    auto Result = Actions.ActOnUnaryOperator(UOK, Operand, OpLoc);
+    return Result.isUsable() ? Result.get() : nullptr;
   }
 
   // Parse postfix expression
@@ -401,7 +404,7 @@ Expr *Parser::parseUnaryExprOrTypeTraitExpr() {
       if (!tryConsumeToken(TokenKind::r_paren)) {
         emitError(DiagID::err_expected_rparen);
       }
-      return Context.create<UnaryExprOrTypeTraitExpr>(OpLoc, Kind, T);
+      return Actions.ActOnUnaryExprOrTypeTraitExpr(OpLoc, Kind, T).get();
     }
 
     // Check if it looks like a qualified type (identifier followed by ::)
@@ -419,7 +422,7 @@ Expr *Parser::parseUnaryExprOrTypeTraitExpr() {
     return createRecoveryExpr(OpLoc);
   }
 
-  return Context.create<UnaryExprOrTypeTraitExpr>(OpLoc, Kind, Arg);
+  return Actions.ActOnUnaryExprOrTypeTraitExpr(OpLoc, Kind, Arg).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -460,8 +463,8 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
         tryConsumeToken(TokenKind::r_square);
       }
 
-      // Create ArraySubscriptExpr (multi-index constructor)
-      Base = Context.create<ArraySubscriptExpr>(LLoc, Base, Indices);
+      // Create ArraySubscriptExpr via Sema
+      Base = Actions.ActOnArraySubscriptExpr(Base, Indices, LLoc, LLoc).get();
       break;
     }
 
@@ -487,8 +490,8 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       // This will be improved when type inference is added to the Expr class.
       ValueDecl *MemberDecl = lookupMemberInType(MemberName, QualType(), MemberLoc);
 
-      // Create MemberExpr
-      Base = Context.create<MemberExpr>(OpLoc, Base, MemberDecl, false);
+      // Create MemberExpr via Sema (direct form, Parser already looked up member)
+      Base = Actions.ActOnMemberExprDirect(OpLoc, Base, MemberDecl, false).get();
       break;
     }
 
@@ -514,8 +517,8 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       // This will be improved when type inference is added to the Expr class
       ValueDecl *MemberDecl = lookupMemberInType(MemberName, QualType(), MemberLoc);
 
-      // Create MemberExpr with IsArrow = true
-      Base = Context.create<MemberExpr>(OpLoc, Base, MemberDecl, true);
+      // Create MemberExpr with IsArrow = true via Sema
+      Base = Actions.ActOnMemberExprDirect(OpLoc, Base, MemberDecl, true).get();
       break;
     }
 
@@ -524,8 +527,9 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       SourceLocation OpLoc = Tok.getLocation();
       consumeToken();
 
-      // Create UnaryOperator with PostInc
-      Base = Context.create<UnaryOperator>(OpLoc, Base, UnaryOpKind::PostInc);
+      // Create UnaryOperator with PostInc via Sema
+      { auto R = Actions.ActOnUnaryOperator(UnaryOpKind::PostInc, Base, OpLoc);
+        Base = R.isUsable() ? R.get() : Base; }
       break;
     }
 
@@ -534,8 +538,9 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       SourceLocation OpLoc = Tok.getLocation();
       consumeToken();
 
-      // Create UnaryOperator with PostDec
-      Base = Context.create<UnaryOperator>(OpLoc, Base, UnaryOpKind::PostDec);
+      // Create UnaryOperator with PostDec via Sema
+      { auto R = Actions.ActOnUnaryOperator(UnaryOpKind::PostDec, Base, OpLoc);
+        Base = R.isUsable() ? R.get() : Base; }
       break;
     }
 
@@ -561,8 +566,8 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
         emitError(DiagID::err_expected);
       }
 
-      // Create PackIndexingExpr
-      Base = Context.create<PackIndexingExpr>(EllipsisLoc, Base, Index);
+      // Create PackIndexingExpr via Sema
+      Base = Actions.ActOnPackIndexingExpr(EllipsisLoc, Base, Index).get();
       break;
     }
 
@@ -751,7 +756,7 @@ Expr *Parser::parseIntegerLiteral() {
   }
 
   consumeToken();
-  return Context.create<IntegerLiteral>(Loc, Value, Context.getIntType());
+  return Actions.ActOnIntegerLiteral(Loc, Value).get();
 }
 
 Expr *Parser::parseFloatingLiteral() {
@@ -794,7 +799,7 @@ Expr *Parser::parseFloatingLiteral() {
   }
 
   consumeToken();
-  return Context.create<FloatingLiteral>(Loc, Value, Context.getDoubleType());
+  return Actions.ActOnFloatingLiteral(Loc, Value).get();
 }
 
 Expr *Parser::parseStringLiteral() {
@@ -809,8 +814,7 @@ Expr *Parser::parseStringLiteral() {
   consumeToken();
   // String literal type is const char[] — use char type as approximation.
   // A full implementation would create a ConstantArrayType(char, N).
-  return Context.create<StringLiteral>(Loc, Text.str(),
-                                       Context.getCharType());
+  return Actions.ActOnStringLiteral(Loc, Text.str()).get();
 }
 
 Expr *Parser::parseCharacterLiteral() {
@@ -880,7 +884,7 @@ Expr *Parser::parseCharacterLiteral() {
   }
 
   consumeToken();
-  return Context.create<CharacterLiteral>(Loc, Value, Context.getCharType());
+  return Actions.ActOnCharacterLiteral(Loc, Value).get();
 }
 
 Expr *Parser::parseBoolLiteral() {
@@ -888,14 +892,14 @@ Expr *Parser::parseBoolLiteral() {
   bool Value = Tok.is(TokenKind::kw_true);
 
   consumeToken();
-  return Context.create<CXXBoolLiteral>(Loc, Value, Context.getBoolType());
+  return Actions.ActOnCXXBoolLiteral(Loc, Value).get();
 }
 
 Expr *Parser::parseNullPtrLiteral() {
   SourceLocation Loc = Tok.getLocation();
 
   consumeToken();
-  return Context.create<CXXNullPtrLiteral>(Loc, Context.getNullPtrType());
+  return Actions.ActOnCXXNullPtrLiteral(Loc).get();
 }
 
 Expr *Parser::parseIdentifier() {
@@ -944,9 +948,9 @@ Expr *Parser::parseIdentifier() {
     }
   }
 
-  // Create DeclRefExpr (with or without declaration)
+  // Create DeclRefExpr via Sema (with or without declaration)
   // If VD is nullptr, it's an undefined identifier (error recovery)
-  return Context.create<DeclRefExpr>(Loc, VD);
+  return Actions.ActOnDeclRefExpr(Loc, VD).get();
 }
 
 /// parseQualifiedName - Parse a qualified name (e.g., std::vector).
@@ -1003,8 +1007,8 @@ Expr *Parser::parseQualifiedName(SourceLocation StartLoc, llvm::StringRef FirstN
     }
   }
 
-  // Create DeclRefExpr
-  return Context.create<DeclRefExpr>(StartLoc, VD);
+  // Create DeclRefExpr via Sema
+  return Actions.ActOnDeclRefExpr(StartLoc, VD).get();
 }
 
 /// parseTemplateSpecializationExpr - Parse a template specialization expression.
@@ -1020,14 +1024,14 @@ Expr *Parser::parseQualifiedName(SourceLocation StartLoc, llvm::StringRef FirstN
 Expr *Parser::parseTemplateSpecializationExpr(SourceLocation StartLoc, llvm::StringRef TemplateName) {
   // Expect '<'
   if (!Tok.is(TokenKind::less)) {
-    // Not a template specialization, just return a DeclRefExpr
+    // Not a template specialization, just return a DeclRefExpr via Sema
     ValueDecl *VD = nullptr;
     if (CurrentScope) {
       if (NamedDecl *D = CurrentScope->lookup(TemplateName)) {
         VD = dyn_cast<ValueDecl>(D);
       }
     }
-    return Context.create<DeclRefExpr>(StartLoc, VD);
+    return Actions.ActOnDeclRefExpr(StartLoc, VD).get();
   }
 
   consumeToken(); // consume '<'
@@ -1053,23 +1057,23 @@ Expr *Parser::parseTemplateSpecializationExpr(SourceLocation StartLoc, llvm::Str
         VD = dyn_cast<ValueDecl>(D);
       }
     }
-    return Context.create<TemplateSpecializationExpr>(StartLoc, TemplateName,
-                                                       TemplateArgs, VD);
+    return Actions.ActOnTemplateSpecializationExpr(StartLoc, TemplateName,
+                                                   TemplateArgs, VD).get();
   }
 
   consumeToken(); // consume '>'
 
   // Look up the template declaration (may be nullptr if not found)
-  ValueDecl *VD = nullptr;
+  ValueDecl *VD2 = nullptr;
   if (CurrentScope) {
     if (NamedDecl *D = CurrentScope->lookup(TemplateName)) {
-      VD = dyn_cast<ValueDecl>(D);
+      VD2 = dyn_cast<ValueDecl>(D);
     }
   }
 
-  // Create TemplateSpecializationExpr with complete template argument information
-  return Context.create<TemplateSpecializationExpr>(StartLoc, TemplateName,
-                                                     TemplateArgs, VD);
+  // Create TemplateSpecializationExpr via Sema
+  return Actions.ActOnTemplateSpecializationExpr(StartLoc, TemplateName,
+                                                 TemplateArgs, VD2).get();
 }
 
 /// isTypeKeyword - Returns true if the token is a type keyword.
@@ -1200,8 +1204,8 @@ Expr *Parser::parseConditionalExpression(Expr *Cond) {
     FalseExpr = createRecoveryExpr(QuestionLoc);
   }
 
-  return Context.create<ConditionalOperator>(Cond->getLocation(), Cond,
-                                              TrueExpr, FalseExpr);
+  return Actions.ActOnConditionalExpr(Cond, TrueExpr, FalseExpr,
+                                      QuestionLoc, QuestionLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1217,7 +1221,8 @@ Expr *Parser::parseCallExpression(Expr *Fn) {
     emitError(DiagID::err_expected_rparen);
   }
 
-  return Context.create<CallExpr>(Fn->getLocation(), Fn, Args);
+  return Actions.ActOnCallExpr(Fn, Args, Fn->getLocation(),
+                               Tok.getLocation()).get();
 }
 
 llvm::SmallVector<Expr *, 8> Parser::parseCallArguments() {
@@ -1385,7 +1390,7 @@ Expr *Parser::parseInitializerList() {
   SourceLocation RBraceLoc = Tok.getLocation();
   consumeToken(); // consume '}'
 
-  return Context.create<InitListExpr>(LBraceLoc, Inits, RBraceLoc);
+  return Actions.ActOnInitListExpr(LBraceLoc, Inits, RBraceLoc).get();
 }
 
 /// parseInitializerClause - Parse an initializer clause.
@@ -1445,8 +1450,8 @@ Expr *Parser::parseDesignatedInitializer() {
     return nullptr;
   }
 
-  // Create DesignatedInitExpr
-  return Context.create<DesignatedInitExpr>(DotLoc, Designators, Init);
+  // Create DesignatedInitExpr via Sema
+  return Actions.ActOnDesignatedInitExpr(DotLoc, Designators, Init).get();
 }
 
 } // namespace blocktype

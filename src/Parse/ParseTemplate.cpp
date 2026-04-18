@@ -18,6 +18,7 @@
 #include "blocktype/AST/Stmt.h"
 #include "blocktype/AST/TemplateParameterList.h"
 #include "blocktype/AST/Type.h"
+#include "blocktype/Sema/Sema.h"
 #include "blocktype/Basic/Diagnostics.h"
 #include "blocktype/Lex/Token.h"
 #include "llvm/ADT/SmallVector.h"
@@ -842,7 +843,7 @@ Expr *Parser::parseTypeConstraint() {
       ConceptValueDecl = dyn_cast<ValueDecl>(D);
     }
   }
-  return Context.create<DeclRefExpr>(Loc, ConceptValueDecl);
+  return Actions.ActOnDeclRefExpr(Loc, ConceptValueDecl).get();
 }
 
 /// parseConstraintExpression - Parse a constraint-expression.
@@ -910,6 +911,7 @@ ConceptDecl *Parser::parseConceptDefinition(SourceLocation Loc,
 
   // Create ConceptDecl
   ConceptDecl *Concept = Context.create<ConceptDecl>(ConceptNameLoc, ConceptName, Constraint, Template);
+  Actions.ActOnConceptDecl(Concept);
 
   return Concept;
 }

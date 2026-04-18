@@ -13,6 +13,7 @@
 #include "blocktype/Parse/Parser.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Stmt.h"
+#include "blocktype/Sema/Sema.h"
 
 namespace blocktype {
 
@@ -44,7 +45,7 @@ Stmt *Parser::parseCXXTryStatement() {
     }
   }
 
-  return Context.create<CXXTryStmt>(TryLoc, TryBlock, CatchStmts);
+  return Actions.ActOnCXXTryStmt(TryLoc, TryBlock, CatchStmts).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -101,7 +102,7 @@ Stmt *Parser::parseCXXCatchClause() {
     CatchBlock = Context.create<NullStmt>(CatchLoc);
   }
 
-  return Context.create<CXXCatchStmt>(CatchLoc, ExceptionDecl, CatchBlock);
+  return Actions.ActOnCXXCatchStmt(CatchLoc, ExceptionDecl, CatchBlock).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -126,7 +127,7 @@ Stmt *Parser::parseCoreturnStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  return Context.create<CoreturnStmt>(CoreturnLoc, RetVal);
+  return Actions.ActOnCoreturnStmt(CoreturnLoc, RetVal).get();
 }
 
 Stmt *Parser::parseCoyieldStatement() {
@@ -142,7 +143,7 @@ Stmt *Parser::parseCoyieldStatement() {
     emitError(DiagID::err_expected_semi);
   }
 
-  return Context.create<CoyieldStmt>(CoyieldLoc, Value);
+  return Actions.ActOnCoyieldStmt(CoyieldLoc, Value).get();
 }
 
 Expr *Parser::parseCoawaitExpression() {
@@ -154,7 +155,7 @@ Expr *Parser::parseCoawaitExpression() {
     Operand = createRecoveryExpr(CoawaitLoc);
   }
 
-  return Context.create<CoawaitExpr>(CoawaitLoc, Operand);
+  return Actions.ActOnCoawaitExpr(CoawaitLoc, Operand).get();
 }
 
 } // namespace blocktype

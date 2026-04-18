@@ -18,6 +18,7 @@
 #include "blocktype/AST/Stmt.h"
 #include "blocktype/AST/TemplateParameterList.h"
 #include "blocktype/AST/Type.h"
+#include "blocktype/Sema/Sema.h"
 #include "blocktype/Basic/Diagnostics.h"
 #include "blocktype/Lex/Token.h"
 #include "llvm/ADT/SmallVector.h"
@@ -72,6 +73,7 @@ CXXRecordDecl *Parser::parseClassDeclaration(SourceLocation ClassLoc,
 
   // Create CXXRecordDecl
   CXXRecordDecl *Class = Context.create<CXXRecordDecl>(NameLoc, Name, TagDecl::TK_class);
+  Actions.ActOnCXXRecordDecl(Class);
   
   // Add class to current scope before parsing body
   if (CurrentScope) {
@@ -149,6 +151,7 @@ CXXRecordDecl *Parser::parseStructDeclaration(SourceLocation StructLoc,
 
   // Create CXXRecordDecl (struct has public default access)
   CXXRecordDecl *Struct = Context.create<CXXRecordDecl>(NameLoc, Name, TagDecl::TK_struct);
+  Actions.ActOnCXXRecordDecl(Struct);
 
   // Add struct to current scope before parsing body
   if (CurrentScope) {
@@ -199,6 +202,7 @@ CXXRecordDecl *Parser::parseUnionDeclaration(SourceLocation UnionLoc) {
 
   // Create CXXRecordDecl (union has public default access)
   CXXRecordDecl *Union = Context.create<CXXRecordDecl>(NameLoc, Name, TagDecl::TK_union);
+  Actions.ActOnCXXRecordDecl(Union);
 
   // Add union to current scope before parsing body
   if (CurrentScope) {
@@ -349,8 +353,8 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
               return nullptr;
             }
             consumeToken();
-            return Context.create<UsingDecl>(UsingLoc, First, llvm::StringRef(First.str() + "::"),
-                                             true, true);
+            return llvm::cast<UsingDecl>(Actions.ActOnUsingDecl(UsingLoc, First,
+                llvm::StringRef(First.str() + "::"), true, true).get());
           }
           // Otherwise, it's a regular using declaration
           // Fall through to handle as regular using declaration
@@ -368,7 +372,7 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
         return nullptr;
       }
       consumeToken();
-      return Context.create<UsingDecl>(FirstLoc, First);
+      return llvm::cast<UsingDecl>(Actions.ActOnUsingDecl(FirstLoc, First, "", false).get());
     }
     emitError(DiagID::err_expected_identifier);
     return nullptr;
@@ -611,6 +615,7 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
                                          IsOverride, IsFinal, IsDefaulted, IsDeleted,
                                          RefQual, HasNoexceptSpec, NoexceptValue, NoexceptExpr,
                                          Access);
+    Actions.ActOnCXXMethodDecl(Method);
 
     // Add method to current scope
     if (CurrentScope) {
@@ -644,7 +649,7 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
 
   // Create VarDecl for static members, FieldDecl for non-static
   if (IsStatic) {
-    VarDecl *VD = Context.create<VarDecl>(NameLoc, Name, Type, InClassInit, true);
+    VarDecl *VD = llvm::cast<VarDecl>(Actions.ActOnVarDeclFull(NameLoc, Name, Type, InClassInit, true).get());
     if (CurrentScope) {
       CurrentScope->addDecl(VD);
     }
@@ -653,7 +658,7 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
   
   AccessSpecifier Access =
       static_cast<AccessSpecifier>(Class->getCurrentAccess());
-  return Context.create<FieldDecl>(NameLoc, Name, Type, BitWidth, IsMutable, InClassInit, Access);
+  return llvm::cast<FieldDecl>(Actions.ActOnFieldDeclFactory(NameLoc, Name, Type, BitWidth, IsMutable, InClassInit, Access).get());
 }
 
 //===----------------------------------------------------------------------===//
@@ -689,7 +694,7 @@ AccessSpecDecl *Parser::parseAccessSpecifier(SourceLocation Loc) {
   SourceLocation ColonLoc = Tok.getLocation();
   consumeToken();
 
-  return Context.create<AccessSpecDecl>(Loc, Access, ColonLoc);
+  return llvm::cast<AccessSpecDecl>(Actions.ActOnAccessSpecDeclFactory(Loc, Access, ColonLoc).get());
 }
 
 //===----------------------------------------------------------------------===//
@@ -802,6 +807,7 @@ CXXConstructorDecl *Parser::parseConstructorDeclaration(CXXRecordDecl *Class,
 
   // Create CXXConstructorDecl
   CXXConstructorDecl *Ctor = Context.create<CXXConstructorDecl>(Loc, Class, Params, nullptr, false);
+  Actions.ActOnCXXConstructorDecl(Ctor);
 
   // Parse member initializer list (if present)
   if (Tok.is(TokenKind::colon)) {
@@ -847,6 +853,7 @@ CXXDestructorDecl *Parser::parseDestructorDeclaration(CXXRecordDecl *Class,
 
   // Create CXXDestructorDecl
   CXXDestructorDecl *Dtor = Context.create<CXXDestructorDecl>(Loc, Class, Body);
+  Actions.ActOnCXXDestructorDecl(Dtor);
 
   // Add destructor to current scope
   if (CurrentScope) {
@@ -1025,6 +1032,8 @@ FriendDecl *Parser::parseFriendDeclaration(CXXRecordDecl *Class) {
     }
     
     FriendDecl *FD = Context.create<FriendDecl>(FriendLoc, nullptr, FriendType, true);
+    Actions.ActOnFriendDecl(FD);
+    Actions.ActOnFriendDecl(FD);
 
     // Expect semicolon
     if (!Tok.is(TokenKind::semicolon)) {

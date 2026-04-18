@@ -17,6 +17,7 @@
 #include "blocktype/AST/Stmt.h"
 #include "blocktype/AST/TemplateParameterList.h"
 #include "blocktype/AST/Type.h"
+#include "blocktype/Sema/Sema.h"
 #include "blocktype/Basic/Diagnostics.h"
 #include "blocktype/Lex/Token.h"
 #include "llvm/ADT/SmallVector.h"
@@ -42,7 +43,7 @@ Stmt *Parser::parseDeclarationStatement() {
     return nullptr;
   
   // Create DeclStmt
-  return Context.create<DeclStmt>(D->getLocation(), D);
+  return Actions.ActOnDeclStmtFromDecl(D).get();
 }
 
 /// parseDeclaration - Parse a declaration.
@@ -147,7 +148,7 @@ Decl *Parser::parseDeclaration(
           emitError(DiagID::err_expected_semi);
         }
         
-        return Context.create<TypeAliasDecl>(UsingLoc, FirstName, TargetType);
+        return Actions.ActOnTypeAliasDecl(UsingLoc, FirstName, TargetType).get();
       } else if (Tok.is(TokenKind::coloncolon)) {
         // This is a using declaration (using A::B)
         // Put back the tokens and parse as using declaration
@@ -164,7 +165,7 @@ Decl *Parser::parseDeclaration(
           emitError(DiagID::err_expected_semi);
         }
         
-        return Context.create<UsingDecl>(UsingLoc, "", FirstName, true);
+        return Actions.ActOnUsingDecl(UsingLoc, "", FirstName, true).get();
       } else {
         // Unknown using declaration
         emitError(DiagID::err_expected);
@@ -341,7 +342,7 @@ ParmVarDecl *Parser::parseParameterDeclaration(unsigned Index) {
   }
 
   // Create ParmVarDecl with the correct index
-  return Context.create<ParmVarDecl>(NameLoc, Name, Type, Index, DefaultArg);
+  return llvm::cast<ParmVarDecl>(Actions.ActOnParmVarDecl(NameLoc, Name, Type, Index, DefaultArg).get());
 }
 
 //===----------------------------------------------------------------------===//
@@ -407,7 +408,7 @@ Decl *Parser::parseNamespaceDeclaration() {
       // Create nested namespaces (innermost first, then wrap in outer)
       NamespaceDecl *InnerNS = nullptr;
       for (auto It = Names.rbegin(); It != Names.rend(); ++It) {
-        NamespaceDecl *NS = Context.create<NamespaceDecl>(It->second, It->first, IsInline && (It == Names.rend() - 1));
+        NamespaceDecl *NS = llvm::cast<NamespaceDecl>(Actions.ActOnNamespaceDecl(It->second, It->first, IsInline && (It == Names.rend() - 1)).get());
         if (InnerNS) {
           NS->addDecl(InnerNS);
         }
@@ -439,7 +440,7 @@ Decl *Parser::parseNamespaceDeclaration() {
   }
 
   // Create NamespaceDecl
-  NamespaceDecl *NS = Context.create<NamespaceDecl>(NameLoc, Name, IsInline);
+  NamespaceDecl *NS = llvm::cast<NamespaceDecl>(Actions.ActOnNamespaceDecl(NameLoc, Name, IsInline).get());
 
   // Expect '{'
   if (!Tok.is(TokenKind::l_brace)) {
@@ -527,7 +528,7 @@ Decl *Parser::parseUsingDeclaration() {
 
     consumeToken(); // consume ';'
 
-    return Context.create<UsingEnumDecl>(EnumNameLoc, EnumName, NestedName, HasNested);
+    return Actions.ActOnUsingEnumDecl(EnumNameLoc, EnumName, NestedName, HasNested).get();
   }
 
   // Parse unqualified-id
@@ -548,7 +549,7 @@ Decl *Parser::parseUsingDeclaration() {
 
   consumeToken(); // consume ';'
 
-  return Context.create<UsingDecl>(NameLoc, Name, NestedName, HasNested);
+  return Actions.ActOnUsingDecl(NameLoc, Name, NestedName, HasNested).get();
 }
 
 /// parseUsingDirective - Parse a using directive.
@@ -594,7 +595,7 @@ UsingDirectiveDecl *Parser::parseUsingDirective() {
 
   consumeToken(); // consume ';'
 
-  return Context.create<UsingDirectiveDecl>(NameLoc, Name, NestedName, HasNested);
+  return llvm::cast<UsingDirectiveDecl>(Actions.ActOnUsingDirectiveDecl(NameLoc, Name, NestedName, HasNested).get());
 }
 
 /// parseNamespaceAlias - Parse a namespace alias declaration.
@@ -645,7 +646,7 @@ NamespaceAliasDecl *Parser::parseNamespaceAlias(llvm::StringRef AliasName,
 
   consumeToken(); // consume ';'
 
-  return Context.create<NamespaceAliasDecl>(AliasLoc, AliasName, TargetName, NestedName);
+  return llvm::cast<NamespaceAliasDecl>(Actions.ActOnNamespaceAliasDecl(AliasLoc, AliasName, TargetName, NestedName).get());
 }
 
 //===----------------------------------------------------------------------===//
@@ -681,7 +682,7 @@ ModuleDecl *Parser::parseModuleDeclaration() {
   if (Tok.is(TokenKind::semicolon)) {
     consumeToken(); // consume ';'
     // Create a ModuleDecl for global module fragment
-    return Context.create<ModuleDecl>(ModuleLoc, "", IsExported, "", false, true, false);
+    return llvm::cast<ModuleDecl>(Actions.ActOnModuleDecl(ModuleLoc, "", IsExported, "", false, true, false).get());
   }
 
   // Check for private module fragment: module :private;
@@ -733,7 +734,7 @@ ModuleDecl *Parser::parseModuleDeclaration() {
     consumeToken(); // consume ';'
 
     // Create a ModuleDecl for private module fragment
-    return Context.create<ModuleDecl>(ModuleLoc, "", IsExported, "", false, false, true);
+    return llvm::cast<ModuleDecl>(Actions.ActOnModuleDecl(ModuleLoc, "", IsExported, "", false, false, true).get());
   }
 
   // Parse module name
@@ -748,7 +749,7 @@ ModuleDecl *Parser::parseModuleDeclaration() {
   }
 
   // Create ModuleDecl with full module name
-  ModuleDecl *MD = Context.create<ModuleDecl>(ModuleLoc, FullModuleName, IsExported, PartitionName, IsModulePartition);
+  ModuleDecl *MD = llvm::cast<ModuleDecl>(Actions.ActOnModuleDecl(ModuleLoc, FullModuleName, IsExported, PartitionName, IsModulePartition, false, false).get());
 
   // Parse attribute-specifier-seq (optional)
   // Attributes are specified using [[...]] syntax
@@ -882,7 +883,7 @@ ImportDecl *Parser::parseImportDeclaration() {
     consumeToken(); // consume ';'
 
     // Create ImportDecl for header import
-    return Context.create<ImportDecl>(ImportLoc, "", IsExported, "", HeaderName, true);
+    return llvm::cast<ImportDecl>(Actions.ActOnImportDecl(ImportLoc, "", IsExported, "", HeaderName, true).get());
   }
 
   // Parse module name
@@ -902,7 +903,7 @@ ImportDecl *Parser::parseImportDeclaration() {
 
   consumeToken(); // consume ';'
 
-  return Context.create<ImportDecl>(ImportLoc, ModuleName, IsExported, PartitionName);
+  return llvm::cast<ImportDecl>(Actions.ActOnImportDecl(ImportLoc, ModuleName, IsExported, PartitionName, "", false).get());
 }
 
 /// parseExportDeclaration - Parse an export declaration.
@@ -924,7 +925,7 @@ ExportDecl *Parser::parseExportDeclaration() {
     return nullptr;
   }
 
-  return Context.create<ExportDecl>(ExportLoc, ExportedDecl);
+  return llvm::cast<ExportDecl>(Actions.ActOnExportDecl(ExportLoc, ExportedDecl).get());
 }
 
 /// parseModuleName - Parse a module name.
@@ -1013,7 +1014,7 @@ EnumDecl *Parser::parseEnumDeclaration(SourceLocation EnumLoc) {
   }
 
   // Create EnumDecl
-  EnumDecl *Enum = Context.create<EnumDecl>(NameLoc, Name);
+  EnumDecl *Enum = llvm::cast<EnumDecl>(Actions.ActOnEnumDecl(NameLoc, Name).get());
   Enum->setScoped(IsScoped);
 
   // Parse optional underlying type (enum : int)
@@ -1087,6 +1088,7 @@ void Parser::parseEnumerator(EnumDecl *Enum) {
   // Note: We should determine the enum type properly
   EnumConstantDecl *Constant = Context.create<EnumConstantDecl>(
       NameLoc, Name, QualType(), InitVal);
+  Actions.ActOnEnumConstant(Constant);
   Enum->addEnumerator(Constant);
 }
 
@@ -1123,7 +1125,7 @@ TypedefDecl *Parser::parseTypedefDeclaration(SourceLocation TypedefLoc) {
   consumeToken();
 
   QualType T = D.buildType(Context);
-  return Context.create<TypedefDecl>(D.getNameLoc(), D.getName().getIdentifier(), T);
+  return llvm::cast<TypedefDecl>(Actions.ActOnTypedefDecl(D.getNameLoc(), D.getName().getIdentifier(), T).get());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1175,7 +1177,7 @@ TypeAliasDecl *Parser::parseTypeAliasDeclaration(SourceLocation UsingLoc) {
   consumeToken();
 
   // Create TypeAliasDecl
-  return Context.create<TypeAliasDecl>(NameLoc, Name, UnderlyingType);
+  return llvm::cast<TypeAliasDecl>(Actions.ActOnTypeAliasDecl(NameLoc, Name, UnderlyingType).get());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1232,7 +1234,7 @@ StaticAssertDecl *Parser::parseStaticAssertDeclaration(SourceLocation Loc) {
   consumeToken();
 
   // Create StaticAssertDecl
-  return Context.create<StaticAssertDecl>(Loc, CondExpr, Message);
+  return llvm::cast<StaticAssertDecl>(Actions.ActOnStaticAssertDecl(Loc, CondExpr, Message).get());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1272,7 +1274,7 @@ LinkageSpecDecl *Parser::parseLinkageSpecDeclaration(SourceLocation Loc) {
   }
 
   // Create LinkageSpecDecl
-  LinkageSpecDecl *LinkageSpec = Context.create<LinkageSpecDecl>(Loc, Lang, HasBraces);
+  LinkageSpecDecl *LinkageSpec = llvm::cast<LinkageSpecDecl>(Actions.ActOnLinkageSpecDecl(Loc, Lang, HasBraces).get());
 
   // Parse declarations
   if (HasBraces) {
@@ -1347,7 +1349,7 @@ AsmDecl *Parser::parseAsmDeclaration(SourceLocation Loc) {
   consumeToken();
 
   // Create AsmDecl
-  return Context.create<AsmDecl>(Loc, AsmString);
+  return llvm::cast<AsmDecl>(Actions.ActOnAsmDecl(Loc, AsmString).get());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1431,8 +1433,8 @@ CXXDeductionGuideDecl *Parser::parseDeductionGuide(SourceLocation Loc) {
   consumeToken();
 
   // Create CXXDeductionGuideDecl
-  return Context.create<CXXDeductionGuideDecl>(NameLoc, TemplateName, ReturnType,
-                                                Params, IsExplicit);
+  return llvm::cast<CXXDeductionGuideDecl>(Actions.ActOnCXXDeductionGuideDecl(NameLoc, TemplateName, ReturnType,
+                                             Params).get());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1462,7 +1464,7 @@ AttributeListDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
   consumeToken(); // consume '['
 
   // Create AttributeListDecl to store all attributes
-  AttributeListDecl *AttrList = Context.create<AttributeListDecl>(Loc);
+  AttributeListDecl *AttrList = llvm::cast<AttributeListDecl>(Actions.ActOnAttributeListDecl(Loc).get());
 
   // Parse attribute(s) - we support multiple attributes separated by commas
   bool First = true;
@@ -1510,8 +1512,7 @@ AttributeListDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
         llvm::StringRef StrValue = Tok.getText();
         consumeToken();
         // Create a StringLiteral expression
-        ArgExpr = Context.create<StringLiteral>(
-            SourceLocation(), StrValue, Context.getCharType());
+        ArgExpr = Actions.ActOnStringLiteral(SourceLocation(), StrValue.str()).get();
       } else if (Tok.isNot(TokenKind::r_paren)) {
         // General case: parse as expression
         ArgExpr = parseExpression();
@@ -1528,9 +1529,9 @@ AttributeListDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
     // Create AttributeDecl and add to the list
     AttributeDecl *AttrDecl;
     if (Namespace.empty()) {
-      AttrDecl = Context.create<AttributeDecl>(Loc, AttrName, ArgExpr);
+      AttrDecl = llvm::cast<AttributeDecl>(Actions.ActOnAttributeDecl(Loc, AttrName, ArgExpr).get());
     } else {
-      AttrDecl = Context.create<AttributeDecl>(Loc, Namespace, AttrName, ArgExpr);
+      AttrDecl = llvm::cast<AttributeDecl>(Actions.ActOnAttributeDeclWithNamespace(Loc, Namespace, AttrName, ArgExpr).get());
     }
     AttrList->addAttribute(AttrDecl);
   } while (Tok.is(TokenKind::comma));
@@ -1592,7 +1593,7 @@ VarDecl *Parser::buildVarDecl(Declarator &D) {
       consumeToken();
     }
     expectAndConsume(TokenKind::r_paren, "expected ')' after initializer");
-    Init = Context.create<CXXConstructExpr>(NameLoc, Args);
+    Init = Actions.ActOnCXXConstructExpr(NameLoc, Args).get();
   } else if (Tok.is(TokenKind::l_brace)) {
     Init = parseInitializerList();
     if (!Init)
@@ -1607,7 +1608,7 @@ VarDecl *Parser::buildVarDecl(Declarator &D) {
   consumeToken();
 
   bool IsStatic = (DS.SC == StorageClass::Static);
-  return Context.create<VarDecl>(NameLoc, Name, T, Init, IsStatic);
+  return llvm::cast<VarDecl>(Actions.ActOnVarDeclFull(NameLoc, Name, T, Init, IsStatic).get());
 }
 
 /// buildFunctionDecl - Build a FunctionDecl from a parsed Declarator.
@@ -1653,10 +1654,8 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
   bool IsInline = DS.IsInline;
   bool IsConstexpr = DS.IsConstexpr;
 
-  return Context.create<FunctionDecl>(NameLoc, Name, T, Params, Body,
-                                       IsInline, IsConstexpr,
-                                       false, false, nullptr,
-                                       DS.AttrList);
+  return llvm::cast<FunctionDecl>(Actions.ActOnFunctionDeclFull(NameLoc, Name, T, Params, Body,
+                                       IsInline, IsConstexpr, false).get());
 }
 
 } // namespace blocktype
