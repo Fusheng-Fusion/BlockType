@@ -564,53 +564,85 @@ void CodeGenFunction::EmitCXXTryStmt(CXXTryStmt *TryStatement) {
   }
 
   // 基本 try/catch 代码生成
-  // 使用 invoke + landingpad 模式（简化版本）
+  // 使用 invoke + landingpad 模式
   //
   // 结构：
-  //   try block: invoke @func to normal unwind landingpad
-  //   normal: continue
-  //   landingpad: catch dispatch → catch handlers → resume/unreachable
-  //   catch.all: 处理 catch(...)
+  //   try block: invoke @func to normalBB unwind landingpadBB
+  //   normalBB: → try.cont
+  //   landingpadBB: catch dispatch → catch handlers → try.cont
+  //   eh.resume: resume 未捕获的异常
 
   llvm::BasicBlock *TryContBB = createBasicBlock("try.cont");
 
-  // 如果有 catch blocks，生成 landingpad 和 catch dispatch
+  // 如果有 catch blocks，生成 invoke 上下文 + landingpad
   if (!TryStatement->getCatchBlocks().empty()) {
     llvm::BasicBlock *LandingPadBB = createBasicBlock("lpad");
 
-    // 生成 try block（使用 invoke 替代 call 来支持异常处理）
-    // 简化：直接生成 try block 代码
+    // 保存 landingpad 结果的 alloca（在 entry 块创建）
+    llvm::IRBuilder<>::InsertPoint SavedIP = Builder.saveIP();
+    llvm::BasicBlock *EntryBlock = &CurFn->getEntryBlock();
+    llvm::Instruction *InsertPos = EntryBlock->getFirstNonPHIOrDbg();
+    if (InsertPos) {
+      Builder.SetInsertPoint(InsertPos);
+    } else {
+      Builder.SetInsertPoint(EntryBlock);
+    }
+    llvm::StructType *LPadResultType = llvm::StructType::get(
+        CGM.getLLVMContext(),
+        {llvm::PointerType::get(CGM.getLLVMContext(), 0),
+         llvm::Type::getInt32Ty(CGM.getLLVMContext())});
+    llvm::AllocaInst *LPadAlloca =
+        Builder.CreateAlloca(LPadResultType, nullptr, "lpad.result");
+    Builder.restoreIP(SavedIP);
+
+    // 正常返回块（invoke 成功后跳转）
+    llvm::BasicBlock *NormalBB = createBasicBlock("try.normal");
+
+    // 设置 invoke 上下文：try 块内的函数调用将生成 invoke 而非 call
+    pushInvokeTarget(NormalBB, LandingPadBB);
+
+    // 生成 try block
     if (TryStatement->getTryBlock()) {
       EmitStmt(TryStatement->getTryBlock());
     }
+
+    // try 块正常结束 → 跳到 try.cont
     if (haveInsertPoint()) {
       Builder.CreateBr(TryContBB);
     }
 
+    // NormalBB: invoke 成功后跳转到这里
+    EmitBlock(NormalBB);
+    Builder.CreateBr(TryContBB);
+
+    // 离开 try 块的 invoke 上下文
+    popInvokeTarget();
+
     // 生成 landingpad
     EmitBlock(LandingPadBB);
     llvm::LandingPadInst *LPad = Builder.CreateLandingPad(
-        llvm::StructType::get(CGM.getLLVMContext(),
-                              {llvm::PointerType::get(CGM.getLLVMContext(), 0),
-                               llvm::Type::getInt32Ty(CGM.getLLVMContext())}),
+        LPadResultType,
         TryStatement->getCatchBlocks().size(), "lpad");
 
     // 为每个 catch 块添加 catch clause 到 landingpad
-    llvm::BasicBlock *CatchDispatchBB = createBasicBlock("catch.dispatch");
-    llvm::BasicBlock *UnwindBB = createBasicBlock("eh.resume");
-
     for (Stmt *CatchBlock : TryStatement->getCatchBlocks()) {
       if (auto *Catch = llvm::dyn_cast<CXXCatchStmt>(CatchBlock)) {
-        // catch(...) 匹配所有
-        // catch(T e) 需要类型信息匹配（简化：catch(...) 的方式处理）
-        LPad->addClause(nullptr); // catch-all clause
+        if (!Catch->getExceptionDecl()) {
+          // catch(...) — catch-all clause
+          LPad->addClause(nullptr);
+        } else {
+          // catch(T e) — 需要类型信息（简化：也用 catch-all）
+          // TODO: 使用 RTTI 类型信息作为 clause
+          LPad->addClause(nullptr);
+        }
       } else {
         LPad->addClause(llvm::Constant::getNullValue(
             llvm::PointerType::get(CGM.getLLVMContext(), 0)));
       }
     }
 
-    Builder.CreateBr(CatchDispatchBB);
+    // 保存 landingpad 结果
+    Builder.CreateStore(LPad, LPadAlloca);
 
     // 生成每个 catch handler
     for (Stmt *CatchBlock : TryStatement->getCatchBlocks()) {
@@ -624,7 +656,22 @@ void CodeGenFunction::EmitCXXTryStmt(CXXTryStmt *TryStatement) {
               CreateAlloca(Catch->getExceptionDecl()->getType(),
                            Catch->getExceptionDecl()->getName());
           setLocalDecl(Catch->getExceptionDecl(), CatchAlloca);
-          // 简化：不真正 extractvalue 从 landingpad 中提取异常对象
+
+          // 从 landingpad 结果中提取异常对象指针
+          llvm::Value *LPadResult = Builder.CreateLoad(LPadResultType,
+                                                       LPadAlloca, "lpad");
+          llvm::Value *ExceptionPtr = Builder.CreateExtractValue(
+              LPadResult, {0}, "exception.ptr");
+          // 将异常指针转换为 catch 参数类型
+          llvm::Type *CatchTy =
+              CGM.getTypes().ConvertType(Catch->getExceptionDecl()->getType());
+          if (CatchTy && ExceptionPtr) {
+            llvm::Value *TypedPtr = Builder.CreateBitCast(
+                ExceptionPtr, llvm::PointerType::get(CatchTy, 0), "catch.obj");
+            llvm::Value *CatchVal = Builder.CreateLoad(CatchTy, TypedPtr,
+                                                       "catch.val");
+            Builder.CreateStore(CatchVal, CatchAlloca);
+          }
         }
         if (Catch->getHandlerBlock()) {
           EmitStmt(Catch->getHandlerBlock());
@@ -638,12 +685,11 @@ void CodeGenFunction::EmitCXXTryStmt(CXXTryStmt *TryStatement) {
     }
 
     // 生成 eh.resume（未被 catch 捕获的异常继续传播）
+    llvm::BasicBlock *UnwindBB = createBasicBlock("eh.resume");
     EmitBlock(UnwindBB);
-    llvm::Value *LPadVal = Builder.CreateLoad(
-        LPad->getType(),
-        llvm::UndefValue::get(llvm::PointerType::get(LPad->getType(), 0)),
-        "lpad.val");
-    Builder.CreateResume(LPadVal);
+    llvm::Value *LPadResult = Builder.CreateLoad(LPadResultType, LPadAlloca,
+                                                  "lpad");
+    Builder.CreateResume(LPadResult);
   } else {
     // 无 catch blocks：直接生成 try block
     if (TryStatement->getTryBlock()) {
@@ -810,20 +856,152 @@ void CodeGenFunction::EmitCXXForRangeStmt(CXXForRangeStmt *ForRangeStatement) {
     EmitBlock(EndBB);
     BreakContinueStack.pop_back();
   } else {
-    // 容器类型：尝试调用 begin()/end() 方法
-    // 简化实现：假设 range 是指针或可迭代对象，生成 begin/end 调用
-    // 完整实现需要 ADL 查找 begin/end 函数
+    // 容器类型：生成 begin()/end() 调用的循环
+    // 模式：
+    //   auto __begin = range.begin();  // 或 begin(range)
+    //   auto __end = range.end();      // 或 end(range)
+    //   for (; __begin != __end; ++__begin) {
+    //     auto& __ref = *__begin;
+    //     loop_var = __ref;
+    //     body;
+    //   }
 
-    // 简化：使用 range 值本身作为 begin，不生成循环体
-    // 这是一个占位实现，真实实现需要 Sema 提供的 begin/end 表达式
-    llvm::Value *InitVal = RangeVal;
-    if (LoopVarAlloca && InitVal) {
-      Builder.CreateStore(InitVal, LoopVarAlloca);
+    // 获取元素类型（从 LoopVar 推导）
+    QualType ElemQualType = LoopVar->getType();
+    llvm::Type *ElemTy = CGM.getTypes().ConvertType(ElemQualType);
+    if (!ElemTy) {
+      return;
     }
+
+    // 尝试生成 range.begin() 调用
+    // 简化实现：查找 CXXRecordDecl 中的 begin()/end() 方法
+    llvm::Value *BeginVal = nullptr;
+    llvm::Value *EndVal = nullptr;
+    llvm::Type *IterTy = nullptr;
+
+    if (RangePtr && RangeType->isRecordType()) {
+      // 对象类型：调用 obj.begin() / obj.end()
+      auto *RecType = llvm::dyn_cast<RecordType>(RangeType.getTypePtr());
+      auto *RecordDecl = RecType ? RecType->getDecl() : nullptr;
+      auto *CXXRecord = llvm::dyn_cast_or_null<CXXRecordDecl>(RecordDecl);
+      if (CXXRecord) {
+        FunctionDecl *BeginFn = nullptr;
+        FunctionDecl *EndFn = nullptr;
+        for (auto *MemberDecl : CXXRecord->decls()) {
+          if (auto *Method = llvm::dyn_cast<CXXMethodDecl>(MemberDecl)) {
+            if (Method->getName() == "begin" && Method->getNumParams() == 0) {
+              BeginFn = Method;
+            } else if (Method->getName() == "end" && Method->getNumParams() == 0) {
+              EndFn = Method;
+            }
+          }
+        }
+
+        if (BeginFn && EndFn) {
+          // 生成 begin() 调用
+          llvm::Function *BeginFunc = CGM.GetOrCreateFunctionDecl(BeginFn);
+          if (BeginFunc) {
+            BeginVal = Builder.CreateCall(BeginFunc, {RangePtr}, "range.begin");
+            IterTy = BeginVal->getType();
+          }
+          // 生成 end() 调用
+          llvm::Function *EndFunc = CGM.GetOrCreateFunctionDecl(EndFn);
+          if (EndFunc) {
+            EndVal = Builder.CreateCall(EndFunc, {RangePtr}, "range.end");
+          }
+        }
+      }
+    }
+
+    // 如果 begin()/end() 方法不存在，尝试自由函数 begin(range)/end(range)
+    if (!BeginVal || !EndVal) {
+      // 查找自由函数 begin/end（通过 ADL 或 std::begin/std::end）
+      // 简化：在模块中查找 begin/end 函数
+      // 如果找不到，使用 range 值本身作为迭代器（指针类型场景）
+      if (RangeVal->getType()->isPointerTy()) {
+        // 指针类型：直接作为迭代器
+        BeginVal = RangeVal;
+        IterTy = RangeVal->getType();
+        // 对于指针，无法确定 end，跳过生成
+        // 使用占位实现：只执行一次 body
+        if (LoopVarAlloca && RangeVal) {
+          llvm::Value *ElemPtr = RangeVal;
+          llvm::Value *ElemVal = Builder.CreateLoad(ElemTy, ElemPtr, "range.elem");
+          Builder.CreateStore(ElemVal, LoopVarAlloca);
+        }
+        if (Body) {
+          EmitStmt(Body);
+        }
+        return;
+      }
+
+      // 无法生成 begin/end，执行占位实现
+      if (LoopVarAlloca && RangeVal) {
+        Builder.CreateStore(RangeVal, LoopVarAlloca);
+      }
+      if (Body) {
+        EmitStmt(Body);
+      }
+      return;
+    }
+
+    // 成功获取 begin/end — 生成迭代器循环
+    // 创建迭代器 alloca
+    llvm::IRBuilder<>::InsertPoint SavedIP = Builder.saveIP();
+    llvm::BasicBlock *EntryBlock = &CurFn->getEntryBlock();
+    llvm::Instruction *InsertPos = EntryBlock->getFirstNonPHIOrDbg();
+    if (InsertPos) {
+      Builder.SetInsertPoint(InsertPos);
+    } else {
+      Builder.SetInsertPoint(EntryBlock);
+    }
+    llvm::AllocaInst *IterAlloca = Builder.CreateAlloca(
+        IterTy, nullptr, "__iter");
+    Builder.restoreIP(SavedIP);
+
+    // 初始化迭代器 = begin
+    Builder.CreateStore(BeginVal, IterAlloca);
+
+    // 循环结构
+    llvm::BasicBlock *CondBB = createBasicBlock("for.range.cond");
+    llvm::BasicBlock *BodyBB = createBasicBlock("for.range.body");
+    llvm::BasicBlock *IncBB = createBasicBlock("for.range.inc");
+    llvm::BasicBlock *EndBB = createBasicBlock("for.range.end");
+
+    BreakContinueStack.push_back({EndBB, IncBB});
+
+    // Condition: __iter != __end
+    EmitBlock(CondBB);
+    llvm::Value *Iter = Builder.CreateLoad(IterTy, IterAlloca, "iter");
+    llvm::Value *Cond = Builder.CreateICmpNE(Iter, EndVal, "range.cmp");
+    Builder.CreateCondBr(Cond, BodyBB, EndBB);
+
+    // Body
+    EmitBlock(BodyBB);
+    // *LoopVar = *__iter（解引用迭代器）
+    llvm::Value *DerefVal = Builder.CreateLoad(ElemTy, Iter, "range.elem");
+    Builder.CreateStore(DerefVal, LoopVarAlloca);
 
     if (Body) {
       EmitStmt(Body);
     }
+    if (haveInsertPoint()) {
+      Builder.CreateBr(IncBB);
+    }
+
+    // Increment: ++__iter
+    EmitBlock(IncBB);
+    Iter = Builder.CreateLoad(IterTy, IterAlloca, "iter");
+    // 调用 operator++ 或 GEP
+    // 简化：假设迭代器支持 +1（指针或随机访问迭代器）
+    llvm::Value *NextIter = Builder.CreateGEP(ElemTy, Iter,
+        {llvm::ConstantInt::get(llvm::Type::getInt64Ty(CGM.getLLVMContext()), 1)},
+        "iter.next");
+    Builder.CreateStore(NextIter, IterAlloca);
+    Builder.CreateBr(CondBB);
+
+    EmitBlock(EndBB);
+    BreakContinueStack.pop_back();
   }
 }
 

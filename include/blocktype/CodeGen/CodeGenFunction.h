@@ -70,6 +70,18 @@ class CodeGenFunction {
   /// Label → BasicBlock 映射（用于 goto/label 前向引用）
   llvm::DenseMap<const LabelDecl *, llvm::BasicBlock *> LabelMap;
 
+  //===------------------------------------------------------------------===//
+  // 异常处理上下文
+  //===------------------------------------------------------------------===//
+
+  /// 当前处于 try 块中的 invoke 目标对（NormalBB, UnwindBB）
+  /// 为空表示不在 try 块中
+  struct InvokeTarget {
+    llvm::BasicBlock *NormalBB;
+    llvm::BasicBlock *UnwindBB;
+  };
+  llvm::SmallVector<InvokeTarget, 4> InvokeTargets;
+
 public:
   explicit CodeGenFunction(CodeGenModule &M);
 
@@ -213,6 +225,23 @@ private:
 
   /// 获取或创建 label 对应的 BasicBlock
   llvm::BasicBlock *getOrCreateLabelBB(LabelDecl *Label);
+
+  /// 当前是否处于 try 块中（需要生成 invoke 而非 call）
+  bool isInTryBlock() const { return !InvokeTargets.empty(); }
+
+  /// 获取当前 try 块的 invoke 目标
+  const InvokeTarget &getCurrentInvokeTarget() const {
+    return InvokeTargets.back();
+  }
+
+  /// 进入 try 块
+  void pushInvokeTarget(llvm::BasicBlock *NormalBB,
+                        llvm::BasicBlock *UnwindBB) {
+    InvokeTargets.push_back({NormalBB, UnwindBB});
+  }
+
+  /// 离开 try 块
+  void popInvokeTarget() { InvokeTargets.pop_back(); }
 };
 
 } // namespace blocktype

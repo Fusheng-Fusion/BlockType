@@ -628,6 +628,13 @@ llvm::Value *CodeGenFunction::EmitCallExpr(CallExpr *CallExpression) {
     }
   }
 
+  // 在 try 块中：生成 invoke 指令以支持异常传播到 landingpad
+  if (isInTryBlock()) {
+    const auto &InvokeTarget = getCurrentInvokeTarget();
+    return Builder.CreateInvoke(CalleeFunction, InvokeTarget.NormalBB,
+                               InvokeTarget.UnwindBB, Arguments, "invoke");
+  }
+
   return Builder.CreateCall(CalleeFunction, Arguments, "call");
 }
 
