@@ -150,17 +150,19 @@ class FunctionDecl : public ValueDecl {
   bool HasNoexceptSpec;
   bool NoexceptValue; // true if noexcept(true), false if noexcept(false)
   Expr *NoexceptExpr; // noexcept(expression)
+  class AttributeListDecl *Attrs = nullptr; // [[noreturn]], [[nodiscard]] etc.
 
 public:
   FunctionDecl(SourceLocation Loc, llvm::StringRef Name, QualType T,
                llvm::ArrayRef<ParmVarDecl *> Params, Stmt *Body = nullptr,
                bool IsInline = false, bool IsConstexpr = false,
                bool HasNoexceptSpec = false, bool NoexceptValue = false,
-               Expr *NoexceptExpr = nullptr)
+               Expr *NoexceptExpr = nullptr,
+               class AttributeListDecl *Attrs = nullptr)
       : ValueDecl(Loc, Name, T), Params(Params.begin(), Params.end()),
         Body(Body), IsInline(IsInline), IsConstexpr(IsConstexpr),
         HasNoexceptSpec(HasNoexceptSpec), NoexceptValue(NoexceptValue),
-        NoexceptExpr(NoexceptExpr) {}
+        NoexceptExpr(NoexceptExpr), Attrs(Attrs) {}
 
   llvm::ArrayRef<ParmVarDecl *> getParams() const { return Params; }
   unsigned getNumParams() const { return Params.size(); }
@@ -174,6 +176,16 @@ public:
   bool hasNoexceptSpec() const { return HasNoexceptSpec; }
   bool getNoexceptValue() const { return NoexceptValue; }
   Expr *getNoexceptExpr() const { return NoexceptExpr; }
+
+  /// Whether this function is variadic (has ... parameter).
+  bool isVariadic() const;
+
+  /// Attribute access.
+  class AttributeListDecl *getAttrs() const { return Attrs; }
+  void setAttrs(class AttributeListDecl *A) { Attrs = A; }
+
+  /// Check if this function has a specific attribute by name.
+  bool hasAttr(llvm::StringRef Name) const;
 
   NodeKind getKind() const override { return NodeKind::FunctionDeclKind; }
 

@@ -33,6 +33,26 @@ void Parser::parseDeclSpecifierSeq(DeclSpec &DS) {
   bool SeenType = false;
 
   while (true) {
+    // 0. C++11 attribute specifiers: [[noreturn]], [[nodiscard]], etc.
+    if (Tok.is(TokenKind::l_square)) {
+      Token NextTok = peekToken();
+      if (NextTok.is(TokenKind::l_square)) {
+        AttributeListDecl *ParsedAttrs =
+            parseAttributeSpecifier(Tok.getLocation());
+        if (ParsedAttrs) {
+          // 如果已有属性，合并（简化处理：后者覆盖前者）
+          if (!DS.AttrList) {
+            DS.AttrList = ParsedAttrs;
+          } else {
+            for (auto *Attr : ParsedAttrs->getAttributes()) {
+              DS.AttrList->addAttribute(Attr);
+            }
+          }
+        }
+        continue;
+      }
+    }
+
     // 1. Storage class specifiers
     if (Tok.is(TokenKind::kw_static)) {
       if (DS.SC != StorageClass::None)

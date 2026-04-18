@@ -238,6 +238,11 @@ private:
   llvm::Value *EmitScalarConversion(llvm::Value *Src, QualType SrcType,
                                     QualType DstType);
 
+  /// 变参默认参数提升 (default argument promotion)
+  /// float → double, < 32-bit integer → int, bool → int
+  /// 用于变参函数调用时可变参数部分的类型提升
+  llvm::Value *emitDefaultArgPromotion(llvm::Value *Arg, QualType ArgType);
+
   /// 生成条件变量声明（if/switch/while/for 的 CondVar）
   void EmitCondVarDecl(VarDecl *CondVariable);
 

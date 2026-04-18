@@ -527,6 +527,9 @@ llvm::Function *CodeGenModule::GetOrCreateFunctionDecl(FunctionDecl *FD) {
   if (FD->hasNoexceptSpec() && FD->getNoexceptValue()) {
     Fn->setDoesNotThrow();
   }
+  if (FD->hasAttr("noreturn")) {
+    Fn->setDoesNotReturn();
+  }
 
   // 应用全局属性（visibility, weak, dll 等）
   auto Attrs = GetGlobalDeclAttributes(FD);

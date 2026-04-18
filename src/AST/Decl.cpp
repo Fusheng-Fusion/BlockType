@@ -100,6 +100,22 @@ void FunctionDecl::dump(raw_ostream &OS, unsigned Indent) const {
   }
 }
 
+bool FunctionDecl::isVariadic() const {
+  if (auto *FnTy = llvm::dyn_cast_or_null<FunctionType>(T.getTypePtr())) {
+    return FnTy->isVariadic();
+  }
+  return false;
+}
+
+bool FunctionDecl::hasAttr(llvm::StringRef Name) const {
+  if (!Attrs) return false;
+  for (auto *A : Attrs->getAttributes()) {
+    if (A->getAttributeName() == Name) return true;
+    if (A->getFullName() == Name) return true;
+  }
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // ParmVarDecl
 //===----------------------------------------------------------------------===//

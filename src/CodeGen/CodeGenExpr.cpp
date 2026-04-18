@@ -732,6 +732,27 @@ CodeGenFunction::EmitScalarConversion(llvm::Value *Src, QualType SrcType,
   return Src;
 }
 
+llvm::Value *
+CodeGenFunction::emitDefaultArgPromotion(llvm::Value *Arg, QualType ArgType) {
+  if (!Arg || ArgType.isNull()) return Arg;
+
+  // float → double (C ABI default argument promotion)
+  if (Arg->getType()->isFloatTy()) {
+    return Builder.CreateFPExt(Arg, llvm::Type::getDoubleTy(CGM.getLLVMContext()),
+                               "vararg.promote");
+  }
+
+  // < 32-bit integer → int (integral promotion to at least int)
+  if (Arg->getType()->isIntegerTy() &&
+      Arg->getType()->getIntegerBitWidth() < 32) {
+    bool IsSigned = isSignedType(ArgType);
+    return Builder.CreateIntCast(Arg, llvm::Type::getInt32Ty(CGM.getLLVMContext()),
+                                 IsSigned, "vararg.promote");
+  }
+
+  return Arg;
+}
+
 llvm::Value *CodeGenFunction::EmitCallExpr(CallExpr *CallExpression) {
   if (!CallExpression) {
     return nullptr;
@@ -783,12 +804,15 @@ llvm::Value *CodeGenFunction::EmitCallExpr(CallExpr *CallExpression) {
         // 收集非 this 参数（带隐式类型转换）
         llvm::SmallVector<llvm::Value *, 8> NonThisArgs;
         auto Params = MemberDecl->getParams();
+        bool IsVarArg = MemberDecl->isVariadic();
         for (unsigned I = 0; I < CallExpression->getNumArgs(); ++I) {
           Expr *ArgExpr = CallExpression->getArgs()[I];
           llvm::Value *ArgValue = EmitExpr(ArgExpr);
           if (ArgValue && I < Params.size()) {
             ArgValue = EmitScalarConversion(ArgValue, ArgExpr->getType(),
                                             Params[I]->getType());
+          } else if (ArgValue && IsVarArg && I >= Params.size()) {
+            ArgValue = emitDefaultArgPromotion(ArgValue, ArgExpr->getType());
           }
           if (ArgValue) {
             NonThisArgs.push_back(ArgValue);
@@ -808,18 +832,21 @@ llvm::Value *CodeGenFunction::EmitCallExpr(CallExpr *CallExpression) {
     }
   }
 
-  // 非虚函数参数（带隐式类型转换）
+  // 非虚函数参数（带隐式类型转换 + 变参 default argument promotion）
   auto Params = CalleeDecl->getParams();
   bool IsNonStaticMember =
       llvm::isa<CXXMethodDecl>(CalleeDecl) &&
       !llvm::cast<CXXMethodDecl>(CalleeDecl)->isStatic();
   unsigned ParamOffset = IsNonStaticMember ? 1 : 0;
+  bool IsVarArg = CalleeDecl->isVariadic();
   for (unsigned I = 0; I < CallExpression->getNumArgs(); ++I) {
     Expr *ArgExpr = CallExpression->getArgs()[I];
     llvm::Value *ArgValue = EmitExpr(ArgExpr);
     if (ArgValue && I < Params.size()) {
       ArgValue = EmitScalarConversion(ArgValue, ArgExpr->getType(),
                                       Params[I]->getType());
+    } else if (ArgValue && IsVarArg && I >= Params.size()) {
+      ArgValue = emitDefaultArgPromotion(ArgValue, ArgExpr->getType());
     }
     if (ArgValue) {
       Arguments.push_back(ArgValue);
@@ -829,11 +856,19 @@ llvm::Value *CodeGenFunction::EmitCallExpr(CallExpr *CallExpression) {
   // 在 try 块中：生成 invoke 指令以支持异常传播到 landingpad
   if (isInTryBlock()) {
     const auto &InvokeTarget = getCurrentInvokeTarget();
-    return Builder.CreateInvoke(CalleeFunction, InvokeTarget.NormalBB,
+    auto *Invoke = Builder.CreateInvoke(CalleeFunction, InvokeTarget.NormalBB,
                                InvokeTarget.UnwindBB, Arguments, "invoke");
+    if (CalleeFunction->doesNotReturn()) {
+      Invoke->setDoesNotReturn();
+    }
+    return Invoke;
   }
 
-  return Builder.CreateCall(CalleeFunction, Arguments, "call");
+  auto *Call = Builder.CreateCall(CalleeFunction, Arguments, "call");
+  if (CalleeFunction->doesNotReturn()) {
+    Call->setDoesNotReturn();
+  }
+  return Call;
 }
 
 //===----------------------------------------------------------------------===//

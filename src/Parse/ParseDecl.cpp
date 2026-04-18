@@ -1654,7 +1654,9 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
   bool IsConstexpr = DS.IsConstexpr;
 
   return Context.create<FunctionDecl>(NameLoc, Name, T, Params, Body,
-                                       IsInline, IsConstexpr);
+                                       IsInline, IsConstexpr,
+                                       false, false, nullptr,
+                                       DS.AttrList);
 }
 
 } // namespace blocktype
