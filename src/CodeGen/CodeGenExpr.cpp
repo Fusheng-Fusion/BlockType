@@ -256,7 +256,23 @@ llvm::Value *CodeGenFunction::EmitCompoundAssignment(BinaryOperator *BinaryOp) {
     return nullptr;
   }
 
-  QualType ResultType = BinaryOp->getLHS()->getType();
+  QualType LHSType = BinaryOp->getLHS()->getType();
+  QualType RHSType = BinaryOp->getRHS()->getType();
+  QualType ResultType = LHSType;
+
+  // 类型提升: 将 RHS 转换到 LHS 类型，确保运算在相同类型下进行
+  // 例如 short += int: RHS(int) 先提升到公共类型，运算后截断回 short
+  if (LeftValue->getType()->isIntegerTy() && RightValue->getType()->isIntegerTy()) {
+    if (RightValue->getType() != LeftValue->getType()) {
+      RightValue = EmitScalarConversion(RightValue, RHSType, LHSType);
+    }
+  } else if (LeftValue->getType()->isFloatingPointTy() &&
+             RightValue->getType()->isFloatingPointTy()) {
+    if (RightValue->getType() != LeftValue->getType()) {
+      RightValue = EmitScalarConversion(RightValue, RHSType, LHSType);
+    }
+  }
+
   bool IsSigned = isSignedType(ResultType);
   llvm::Value *Result = nullptr;
 
@@ -366,22 +382,28 @@ llvm::Value *CodeGenFunction::EmitBinaryOperator(BinaryOperator *BinaryOp) {
   QualType ResultType = BinaryOp->getType();
   bool IsSigned = isSignedType(ResultType);
 
-  // 整数提升 (integral promotion): 将操作数提升到至少 i32
-  // 参照 Clang EmitUsualArithmeticConversions
-  auto promoteToInt32 = [&](llvm::Value *Val) -> llvm::Value * {
-    if (Val && Val->getType()->isIntegerTy() &&
-        Val->getType()->getIntegerBitWidth() < 32) {
-      return Builder.CreateIntCast(Val, llvm::Type::getInt32Ty(CGM.getLLVMContext()),
-                                   IsSigned, "promote");
-    }
-    return Val;
-  };
+  // 整数/浮点提升: 使用 Sema 推导的公共类型 (BinaryOp->getType())
+  // 将两操作数转换到公共类型，覆盖 short+long→long 等场景
+  QualType LHSType = BinaryOp->getLHS()->getType();
+  QualType RHSType = BinaryOp->getRHS()->getType();
   if (LeftHandSide->getType()->isIntegerTy() &&
-      RightHandSide->getType()->isIntegerTy() &&
-      !LeftHandSide->getType()->isPointerTy() &&
-      !RightHandSide->getType()->isPointerTy()) {
-    LeftHandSide = promoteToInt32(LeftHandSide);
-    RightHandSide = promoteToInt32(RightHandSide);
+      RightHandSide->getType()->isIntegerTy()) {
+    llvm::Type *ResultLLVMTy = CGM.getTypes().ConvertType(ResultType);
+    if (ResultLLVMTy) {
+      if (LeftHandSide->getType() != ResultLLVMTy)
+        LeftHandSide = EmitScalarConversion(LeftHandSide, LHSType, ResultType);
+      if (RightHandSide->getType() != ResultLLVMTy)
+        RightHandSide = EmitScalarConversion(RightHandSide, RHSType, ResultType);
+    }
+  } else if (LeftHandSide->getType()->isFloatingPointTy() &&
+             RightHandSide->getType()->isFloatingPointTy()) {
+    llvm::Type *ResultLLVMTy = CGM.getTypes().ConvertType(ResultType);
+    if (ResultLLVMTy) {
+      if (LeftHandSide->getType() != ResultLLVMTy)
+        LeftHandSide = EmitScalarConversion(LeftHandSide, LHSType, ResultType);
+      if (RightHandSide->getType() != ResultLLVMTy)
+        RightHandSide = EmitScalarConversion(RightHandSide, RHSType, ResultType);
+    }
   }
 
   // 指针运算: pointer ± integer → GEP
@@ -405,6 +427,30 @@ llvm::Value *CodeGenFunction::EmitBinaryOperator(BinaryOperator *BinaryOp) {
       return Builder.CreateGEP(PointeeLLVMType, LeftHandSide,
                                NegativeOffset, "ptrsub");
     }
+  }
+
+  // 指针差值: pointer - pointer → ptrdiff_t
+  if (LeftHandSide->getType()->isPointerTy() &&
+      RightHandSide->getType()->isPointerTy() &&
+      Opcode == BinaryOpKind::Sub) {
+    llvm::Type *PtrDiffTy = llvm::Type::getInt64Ty(CGM.getLLVMContext());
+    llvm::Value *LHSInt = Builder.CreatePtrToInt(LeftHandSide, PtrDiffTy, "pdiff.l");
+    llvm::Value *RHSInt = Builder.CreatePtrToInt(RightHandSide, PtrDiffTy, "pdiff.r");
+    llvm::Value *ByteDiff = Builder.CreateSub(LHSInt, RHSInt, "pdiff.bytes");
+    // 除以元素大小得到元素个数差
+    QualType PointeeType;
+    if (auto *PtrType = llvm::dyn_cast<PointerType>(
+            BinaryOp->getLHS()->getType().getTypePtr())) {
+      PointeeType = QualType(PtrType->getPointeeType(), Qualifier::None);
+    }
+    if (!PointeeType.isNull()) {
+      uint64_t ElemSize = CGM.getTarget().getTypeSize(PointeeType);
+      if (ElemSize > 1) {
+        llvm::Value *ElemSizeVal = llvm::ConstantInt::get(PtrDiffTy, ElemSize);
+        return Builder.CreateSDiv(ByteDiff, ElemSizeVal, "pdiff");
+      }
+    }
+    return ByteDiff;
   }
 
   if (ResultType->isIntegerType()) {
@@ -507,7 +553,12 @@ llvm::Value *CodeGenFunction::EmitUnaryOperator(UnaryOperator *UnaryOp) {
     if (!Operand) {
       return nullptr;
     }
+    // Sema 已对 unary minus 做 integral promotion，UnaryOp->getType() 是提升后类型
+    // 先将操作数提升到目标类型，再取反
+    QualType SrcType = UnaryOp->getSubExpr()->getType();
+    QualType DstType = UnaryOp->getType();
     if (Operand->getType()->isIntegerTy()) {
+      Operand = EmitScalarConversion(Operand, SrcType, DstType);
       return Builder.CreateNeg(Operand, "neg");
     }
     if (Operand->getType()->isFloatingPointTy()) {
@@ -521,6 +572,12 @@ llvm::Value *CodeGenFunction::EmitUnaryOperator(UnaryOperator *UnaryOp) {
     llvm::Value *Operand = EmitExpr(UnaryOp->getSubExpr());
     if (!Operand) {
       return nullptr;
+    }
+    // Sema 已对 ~ 做 integral promotion，UnaryOp->getType() 是提升后类型
+    QualType SrcType = UnaryOp->getSubExpr()->getType();
+    QualType DstType = UnaryOp->getType();
+    if (Operand->getType()->isIntegerTy()) {
+      Operand = EmitScalarConversion(Operand, SrcType, DstType);
     }
     return Builder.CreateNot(Operand, "not");
   }

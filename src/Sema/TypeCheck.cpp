@@ -413,6 +413,31 @@ QualType TypeCheck::getBinaryOperatorResultType(BinaryOpKind Op,
     return RHS;
   }
 
+  // Pointer arithmetic: pointer ± integer, pointer - pointer
+  // Per C++ [expr.add]
+  if (Op == BinaryOpKind::Add || Op == BinaryOpKind::Sub) {
+    const Type *LTy = LHS.getTypePtr();
+    const Type *RTy = RHS.getTypePtr();
+
+    bool LIsPtr = LTy->isPointerType();
+    bool RIsPtr = RTy->isPointerType();
+    bool LIsInt = LTy->isIntegerType() || LTy->isEnumType() || LTy->isBooleanType();
+    bool RIsInt = RTy->isIntegerType() || RTy->isEnumType() || RTy->isBooleanType();
+
+    if (LIsPtr && RIsInt) {
+      // pointer + integer or pointer - integer → pointer type
+      return LHS;
+    }
+    if (Op == BinaryOpKind::Add && RIsPtr && LIsInt) {
+      // integer + pointer → pointer type
+      return RHS;
+    }
+    if (LIsPtr && RIsPtr && Op == BinaryOpKind::Sub) {
+      // pointer - pointer → ptrdiff_t (long)
+      return Context.getLongType();
+    }
+  }
+
   // Arithmetic operators: Mul, Div, Rem, Add, Sub
   // Shift operators: Shl, Shr
   // Bitwise operators: And, Or, Xor
