@@ -10,6 +10,7 @@
 #include "blocktype/CodeGen/CodeGenModule.h"
 #include "blocktype/CodeGen/CodeGenTypes.h"
 #include "blocktype/CodeGen/CodeGenFunction.h"
+#include "blocktype/CodeGen/Mangler.h"
 #include "blocktype/CodeGen/TargetInfo.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
@@ -505,7 +506,7 @@ llvm::GlobalVariable *CGCXX::EmitVTable(CXXRecordDecl *RD) {
 
   auto *GV = new llvm::GlobalVariable(
       *CGM.getModule(), VTableTy, true, llvm::GlobalValue::ExternalLinkage,
-      VTableInit, "_ZTV" + RD->getName());
+      VTableInit, CGM.getMangler().getVTableName(RD));
 
   VTables[RD] = GV;
   return GV;

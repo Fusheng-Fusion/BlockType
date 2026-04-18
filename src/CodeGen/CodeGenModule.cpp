@@ -12,6 +12,7 @@
 #include "blocktype/CodeGen/CodeGenFunction.h"
 #include "blocktype/CodeGen/CGCXX.h"
 #include "blocktype/CodeGen/CGDebugInfo.h"
+#include "blocktype/CodeGen/Mangler.h"
 #include "blocktype/CodeGen/TargetInfo.h"
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/Decl.h"
@@ -46,6 +47,7 @@ CodeGenModule::CodeGenModule(ASTContext &Ctx, llvm::LLVMContext &LLVMCtx,
   Constants = std::make_unique<CodeGenConstant>(*this);
   CXX = std::make_unique<CGCXX>(*this);
   DebugInfo = std::make_unique<CGDebugInfo>(*this);
+  Mangle = std::make_unique<Mangler>(*this);
 }
 
 CodeGenModule::~CodeGenModule() = default;
@@ -148,7 +150,7 @@ llvm::GlobalVariable *CodeGenModule::EmitGlobalVar(VarDecl *VD) {
 
   auto *GV = new llvm::GlobalVariable(
       *TheModule, Ty, IsConstant, Linkage, Init,
-      VD->getName());
+      Mangle->getMangledName(VD));
 
   // 设置对齐
   GV->setAlignment(llvm::Align(getTarget().getTypeAlign(VD->getType())));

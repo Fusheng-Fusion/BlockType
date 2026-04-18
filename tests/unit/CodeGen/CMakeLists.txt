@@ -8,6 +8,7 @@ add_executable(blocktype-codegen-test
   CodeGenFunctionTest.cpp
   CodeGenClassTest.cpp
   CodeGenDebugInfoTest.cpp
+  ManglerTest.cpp
 )
 
 target_include_directories(blocktype-codegen-test PUBLIC
