@@ -74,7 +74,19 @@ enum class CastKind {
   CXXStatic,
   CXXDynamic,
   CXXConst,
-  CXXReinterpret
+  CXXReinterpret,
+  // 隐式转换（由 Sema 插入）
+  LValueToRValue,      ///< glvalue → prvalue (加载)
+  IntegralCast,        ///< 整数类型之间转换（含提升）
+  FloatingCast,        ///< 浮点类型之间转换
+  IntegralToFloating,  ///< 整数 → 浮点
+  FloatingToIntegral,  ///< 浮点 → 整数
+  PointerToIntegral,   ///< 指针 → 整数
+  IntegralToPointer,   ///< 整数 → 指针
+  BitCast,             ///< 指针之间 bitcast
+  DerivedToBase,       ///< 派生类指针/引用 → 基类指针/引用
+  BaseToDerived,       ///< 基类指针/引用 → 派生类指针/引用
+  NoOp                 ///< 无操作（类型相同）
 };
 
 //===----------------------------------------------------------------------===//

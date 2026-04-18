@@ -1,0 +1,403 @@
+//===--- CodeGenTypes.cpp - C++ to LLVM Type Mapping ----------*- C++ -*-===//
+//
+// Part of the BlockType Project, under the Apache License v2.0 with LLVM
+// Exceptions. See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+#include "blocktype/CodeGen/CodeGenTypes.h"
+#include "blocktype/CodeGen/CodeGenModule.h"
+#include "blocktype/CodeGen/TargetInfo.h"
+#include "blocktype/AST/ASTContext.h"
+#include "blocktype/AST/Decl.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/Support/Casting.h"
+
+using namespace blocktype;
+
+//===----------------------------------------------------------------------===//
+// 类型转换主接口
+//===----------------------------------------------------------------------===//
+
+llvm::Type *CodeGenTypes::ConvertType(QualType T) {
+  if (T.isNull()) return nullptr;
+
+  const Type *Ty = T.getTypePtr();
+
+  // 检查缓存
+  auto It = TypeCache.find(Ty);
+  if (It != TypeCache.end()) return It->second;
+
+  // 按类型分派
+  llvm::Type *Result = nullptr;
+  switch (Ty->getTypeClass()) {
+  case TypeClass::Builtin:
+    Result = ConvertBuiltinType(llvm::cast<BuiltinType>(Ty)); break;
+  case TypeClass::Pointer:
+    Result = ConvertPointerType(llvm::cast<PointerType>(Ty)); break;
+  case TypeClass::LValueReference:
+  case TypeClass::RValueReference:
+    Result = ConvertReferenceType(llvm::cast<ReferenceType>(Ty)); break;
+  case TypeClass::ConstantArray:
+  case TypeClass::IncompleteArray:
+  case TypeClass::VariableArray:
+    Result = ConvertArrayType(llvm::cast<ArrayType>(Ty)); break;
+  case TypeClass::Function:
+    Result = ConvertFunctionType(llvm::cast<FunctionType>(Ty)); break;
+  case TypeClass::Record:
+    Result = ConvertRecordType(llvm::cast<RecordType>(Ty)); break;
+  case TypeClass::Enum:
+    Result = ConvertEnumType(llvm::cast<EnumType>(Ty)); break;
+  case TypeClass::Typedef:
+    Result = ConvertTypedefType(llvm::cast<TypedefType>(Ty)); break;
+  case TypeClass::TemplateSpecialization:
+    Result = ConvertTemplateSpecializationType(
+        llvm::cast<TemplateSpecializationType>(Ty)); break;
+  case TypeClass::MemberPointer:
+    Result = ConvertMemberPointerType(llvm::cast<MemberPointerType>(Ty)); break;
+  case TypeClass::Auto:
+    Result = ConvertAutoType(llvm::cast<AutoType>(Ty)); break;
+  case TypeClass::Decltype:
+    Result = ConvertDecltypeType(llvm::cast<DecltypeType>(Ty)); break;
+  case TypeClass::Elaborated:
+    // Elaborated type: resolve to the underlying named type
+    if (auto *ET = llvm::dyn_cast<ElaboratedType>(Ty)) {
+      Result = ConvertType(QualType(ET->getNamedType(), Qualifier::None));
+    }
+    break;
+  case TypeClass::Dependent:
+  case TypeClass::Unresolved:
+  case TypeClass::TemplateTypeParm:
+    // Dependent/unresolved types should not appear in CodeGen.
+    // Use void as a safe fallback.
+    Result = llvm::Type::getVoidTy(CGM.getLLVMContext());
+    break;
+  }
+
+  if (Result) TypeCache[Ty] = Result;
+  return Result;
+}
+
+llvm::Type *CodeGenTypes::ConvertTypeForMem(QualType T) {
+  return ConvertType(T);
+}
+
+llvm::Type *CodeGenTypes::ConvertTypeForValue(QualType T) {
+  if (T.isNull()) return nullptr;
+
+  // 对于数组类型，值类型不存在于 LLVM 中（数组不能作为一等值传递）
+  // 返回指向首元素的指针类型代替
+  const Type *Ty = T.getTypePtr();
+  if (Ty->getTypeClass() == TypeClass::ConstantArray ||
+      Ty->getTypeClass() == TypeClass::IncompleteArray ||
+      Ty->getTypeClass() == TypeClass::VariableArray) {
+    auto *AT = llvm::cast<ArrayType>(Ty);
+    return llvm::PointerType::get(
+        ConvertType(QualType(AT->getElementType(), Qualifier::None)), 0);
+  }
+
+  return ConvertType(T);
+}
+
+//===----------------------------------------------------------------------===//
+// 内部类型转换分派
+//===----------------------------------------------------------------------===//
+
+llvm::Type *CodeGenTypes::ConvertBuiltinType(const BuiltinType *BT) {
+  llvm::LLVMContext &Ctx = CGM.getLLVMContext();
+  switch (BT->getKind()) {
+  case BuiltinKind::Void:
+    return llvm::Type::getVoidTy(Ctx);
+  case BuiltinKind::Bool:
+    return llvm::Type::getInt1Ty(Ctx);
+  case BuiltinKind::Char:
+  case BuiltinKind::SignedChar:
+  case BuiltinKind::UnsignedChar:
+  case BuiltinKind::Char8:
+    return llvm::Type::getInt8Ty(Ctx);
+  case BuiltinKind::WChar:
+    return llvm::Type::getInt32Ty(Ctx);
+  case BuiltinKind::Char16:
+    return llvm::Type::getInt16Ty(Ctx);
+  case BuiltinKind::Char32:
+    return llvm::Type::getInt32Ty(Ctx);
+  case BuiltinKind::Short:
+  case BuiltinKind::UnsignedShort:
+    return llvm::Type::getInt16Ty(Ctx);
+  case BuiltinKind::Int:
+  case BuiltinKind::UnsignedInt:
+    return llvm::Type::getInt32Ty(Ctx);
+  case BuiltinKind::Long:
+  case BuiltinKind::UnsignedLong:
+    return llvm::Type::getInt64Ty(Ctx);
+  case BuiltinKind::LongLong:
+  case BuiltinKind::UnsignedLongLong:
+    return llvm::Type::getInt64Ty(Ctx);
+  case BuiltinKind::Int128:
+  case BuiltinKind::UnsignedInt128:
+    return llvm::Type::getInt128Ty(Ctx);
+  case BuiltinKind::Float:
+    return llvm::Type::getFloatTy(Ctx);
+  case BuiltinKind::Double:
+    return llvm::Type::getDoubleTy(Ctx);
+  case BuiltinKind::LongDouble:
+  case BuiltinKind::Float128:
+    return llvm::Type::getFP128Ty(Ctx);
+  case BuiltinKind::NullPtr:
+    return llvm::PointerType::get(Ctx, 0);
+  default:
+    return llvm::Type::getVoidTy(Ctx);
+  }
+}
+
+llvm::Type *CodeGenTypes::ConvertPointerType(const PointerType *PT) {
+  llvm::Type *Pointee = ConvertType(QualType(PT->getPointeeType(), Qualifier::None));
+  if (!Pointee) Pointee = llvm::Type::getInt8Ty(CGM.getLLVMContext());
+  return llvm::PointerType::get(Pointee, 0);
+}
+
+llvm::Type *CodeGenTypes::ConvertReferenceType(const ReferenceType *RT) {
+  // 引用在 LLVM IR 中表示为指针
+  llvm::Type *Referenced = ConvertType(
+      QualType(RT->getReferencedType(), Qualifier::None));
+  if (!Referenced) Referenced = llvm::Type::getInt8Ty(CGM.getLLVMContext());
+  return llvm::PointerType::get(Referenced, 0);
+}
+
+llvm::Type *CodeGenTypes::ConvertArrayType(const ArrayType *AT) {
+  llvm::Type *ElemTy = ConvertType(QualType(AT->getElementType(), Qualifier::None));
+  if (!ElemTy) return nullptr;
+
+  if (auto *CAT = llvm::dyn_cast<ConstantArrayType>(AT)) {
+    return llvm::ArrayType::get(ElemTy, CAT->getSize().getZExtValue());
+  }
+  // IncompleteArray / VariableArray: use zero-length array as placeholder
+  return llvm::ArrayType::get(ElemTy, 0);
+}
+
+llvm::Type *CodeGenTypes::ConvertFunctionType(const FunctionType *FT) {
+  return GetFunctionType(FT);
+}
+
+llvm::Type *CodeGenTypes::ConvertRecordType(const RecordType *RT) {
+  return GetRecordType(RT->getDecl());
+}
+
+llvm::Type *CodeGenTypes::ConvertEnumType(const EnumType *ET) {
+  // 枚举类型映射到其底层整数类型
+  if (auto *ED = ET->getDecl()) {
+    QualType Underlying = ED->getUnderlyingType();
+    if (!Underlying.isNull()) {
+      return ConvertType(Underlying);
+    }
+  }
+  // 默认 int/i32
+  return llvm::Type::getInt32Ty(CGM.getLLVMContext());
+}
+
+llvm::Type *CodeGenTypes::ConvertTypedefType(const TypedefType *TT) {
+  // Typedef: 递归到目标类型
+  // TypedefNameDecl has getUnderlyingType()
+  if (auto *TND = TT->getDecl()) {
+    QualType Underlying = TND->getUnderlyingType();
+    if (!Underlying.isNull()) return ConvertType(Underlying);
+  }
+  return llvm::Type::getInt32Ty(CGM.getLLVMContext());
+}
+
+llvm::Type *CodeGenTypes::ConvertTemplateSpecializationType(
+    const TemplateSpecializationType *TST) {
+  // Template specialization types should be resolved to concrete types
+  // by Sema before reaching CodeGen. If we get here, try to resolve
+  // through the template decl.
+  if (auto *TD = TST->getTemplateDecl()) {
+    if (auto *RD = llvm::dyn_cast<RecordDecl>(TD)) {
+      QualType RT = CGM.getASTContext().getRecordType(RD);
+      return ConvertRecordType(llvm::cast<RecordType>(RT.getTypePtr()));
+    }
+  }
+  return llvm::Type::getInt8Ty(CGM.getLLVMContext());
+}
+
+llvm::Type *CodeGenTypes::ConvertMemberPointerType(const MemberPointerType *MPT) {
+  // Member pointers are typically represented as a pair of pointers
+  // { function-pointer-or-adjustment-offset, this-adjustment }
+  // Simplified: use i8* as a placeholder
+  return llvm::PointerType::get(CGM.getLLVMContext(), 0);
+}
+
+llvm::Type *CodeGenTypes::ConvertAutoType(const AutoType *AT) {
+  if (AT->isDeduced()) {
+    return ConvertType(AT->getDeducedType());
+  }
+  // Undeduced auto — should not reach CodeGen
+  return llvm::Type::getInt32Ty(CGM.getLLVMContext());
+}
+
+llvm::Type *CodeGenTypes::ConvertDecltypeType(const DecltypeType *DT) {
+  QualType Underlying = DT->getUnderlyingType();
+  if (!Underlying.isNull()) return ConvertType(Underlying);
+  return llvm::Type::getInt32Ty(CGM.getLLVMContext());
+}
+
+//===----------------------------------------------------------------------===//
+// 函数类型
+//===----------------------------------------------------------------------===//
+
+llvm::FunctionType *CodeGenTypes::GetFunctionType(const FunctionType *FT) {
+  llvm::Type *RetTy = ConvertType(QualType(FT->getReturnType(), Qualifier::None));
+  if (!RetTy) RetTy = llvm::Type::getVoidTy(CGM.getLLVMContext());
+
+  llvm::SmallVector<llvm::Type *, 8> ParamTys;
+  for (const Type *PT : FT->getParamTypes()) {
+    llvm::Type *P = ConvertType(QualType(PT, Qualifier::None));
+    if (P) ParamTys.push_back(P);
+  }
+
+  return llvm::FunctionType::get(RetTy, ParamTys, FT->isVariadic());
+}
+
+llvm::FunctionType *CodeGenTypes::GetFunctionTypeForDecl(FunctionDecl *FD) {
+  // 检查缓存
+  auto It = FunctionTypeCache.find(FD);
+  if (It != FunctionTypeCache.end()) return It->second;
+
+  QualType FT = FD->getType();
+  llvm::FunctionType *Result = nullptr;
+
+  if (auto *FnTy = llvm::dyn_cast<FunctionType>(FT.getTypePtr())) {
+    // 非静态成员函数需要添加 this 指针作为第一个参数
+    if (auto *MD = llvm::dyn_cast<CXXMethodDecl>(FD)) {
+      if (!MD->isStatic()) {
+        llvm::Type *RetTy = ConvertType(
+            QualType(FnTy->getReturnType(), Qualifier::None));
+        if (!RetTy) RetTy = llvm::Type::getVoidTy(CGM.getLLVMContext());
+
+        llvm::SmallVector<llvm::Type *, 8> ParamTys;
+        // this 指针（指向类的指针）
+        if (MD->getParent()) {
+          llvm::StructType *ClassTy = GetRecordType(MD->getParent());
+          ParamTys.push_back(llvm::PointerType::get(ClassTy, 0));
+        } else {
+          ParamTys.push_back(llvm::PointerType::get(CGM.getLLVMContext(), 0));
+        }
+
+        for (const Type *PT : FnTy->getParamTypes()) {
+          llvm::Type *P = ConvertType(QualType(PT, Qualifier::None));
+          if (P) ParamTys.push_back(P);
+        }
+
+        Result = llvm::FunctionType::get(RetTy, ParamTys, FnTy->isVariadic());
+      }
+    }
+
+    if (!Result) {
+      Result = GetFunctionType(FnTy);
+    }
+  }
+
+  if (!Result) {
+    // Fallback: void()
+    Result = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(CGM.getLLVMContext()), false);
+  }
+
+  FunctionTypeCache[FD] = Result;
+  return Result;
+}
+
+//===----------------------------------------------------------------------===//
+// 记录类型
+//===----------------------------------------------------------------------===//
+
+llvm::StructType *CodeGenTypes::GetCXXRecordType(CXXRecordDecl *RD) {
+  return GetRecordType(RD); // GetRecordType already handles vptr for CXXRecordDecl
+}
+
+llvm::StructType *CodeGenTypes::GetRecordType(RecordDecl *RD) {
+  // 检查缓存
+  auto It = RecordTypeCache.find(RD);
+  if (It != RecordTypeCache.end()) return It->second;
+
+  // 创建 opaque struct type（先占位，避免递归）
+  llvm::StructType *STy = llvm::StructType::create(
+      CGM.getLLVMContext(), RD->getName());
+
+  // 缓存 opaque type（处理递归引用）
+  RecordTypeCache[RD] = STy;
+
+  // 收集字段类型
+  llvm::SmallVector<llvm::Type *, 16> FieldTypes;
+
+  // CXXRecordDecl: 添加 vptr 指针（如果有虚函数）
+  if (auto *CXXRD = llvm::dyn_cast<CXXRecordDecl>(RD)) {
+    bool HasVFunc = false;
+    for (CXXMethodDecl *MD : CXXRD->methods()) {
+      if (MD->isVirtual()) { HasVFunc = true; break; }
+    }
+    if (HasVFunc) {
+      FieldTypes.push_back(llvm::PointerType::get(CGM.getLLVMContext(), 0));
+    }
+  }
+
+  // 添加字段
+  for (FieldDecl *Field : RD->fields()) {
+    llvm::Type *FT = ConvertType(Field->getType());
+    if (FT) FieldTypes.push_back(FT);
+  }
+
+  // 设置结构体内容
+  STy->setBody(FieldTypes);
+
+  return STy;
+}
+
+unsigned CodeGenTypes::GetFieldIndex(FieldDecl *FD) {
+  // FieldDecl 没有父记录指针，通过遍历 RecordTypeCache 查找
+  for (auto &[RD, STy] : RecordTypeCache) {
+    unsigned Idx = 0;
+
+    // Skip vptr for CXXRecordDecl with virtual functions
+    if (auto *CXXRD = llvm::dyn_cast<CXXRecordDecl>(RD)) {
+      bool HasVFunc = false;
+      for (CXXMethodDecl *MD : CXXRD->methods()) {
+        if (MD->isVirtual()) { HasVFunc = true; break; }
+      }
+      if (HasVFunc) {
+        ++Idx;
+      }
+    }
+
+    for (FieldDecl *F : RD->fields()) {
+      if (F == FD) return Idx;
+      ++Idx;
+    }
+  }
+
+  return 0; // Not found
+}
+
+//===----------------------------------------------------------------------===//
+// 类型信息查询
+//===----------------------------------------------------------------------===//
+
+uint64_t CodeGenTypes::GetTypeSize(QualType T) const {
+  return CGM.getTarget().getTypeSize(T);
+}
+
+uint64_t CodeGenTypes::GetTypeAlign(QualType T) const {
+  return CGM.getTarget().getTypeAlign(T);
+}
+
+llvm::Constant *CodeGenTypes::GetSize(uint64_t SizeInBytes) {
+  return llvm::ConstantInt::get(
+      llvm::Type::getInt64Ty(CGM.getLLVMContext()), SizeInBytes);
+}
+
+llvm::Constant *CodeGenTypes::GetAlign(uint64_t AlignInBytes) {
+  return llvm::ConstantInt::get(
+      llvm::Type::getInt64Ty(CGM.getLLVMContext()), AlignInBytes);
+}
