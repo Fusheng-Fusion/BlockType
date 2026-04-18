@@ -1,0 +1,406 @@
+# Stage 6.4 核查文档 — 函数与类代码生成
+
+**核查日期：** 2026-04-18  
+**对照文档：** `docs/plan/06-PHASE6-irgen.md` Stage 6.4 (行 1395-1577)  
+**核查范围：** CGCXX.h / CGCXX.cpp / CodeGenModule.cpp / CodeGenExpr.cpp / CodeGenFunction.h
+
+---
+
+## A. 对比开发文档 (06-PHASE6-irgen.md) — Stage 6.4 部分
+
+---
+
+### Task 6.4.1 函数代码生成
+
+文档要求 vs 实际实现：
+
+1. ✅ **E6.4.1.1 生成函数参数和局部变量** — 已实现
+   -- EmitFunctionBody 在 Stage 6.2 中已完整实现
+   -- 创建 entry 块 + 返回值 alloca + 参数 alloca + store
+   -- 参数通过 FD->getParamDecl + CreateAlloca + setLocalDecl 管理
+
+2. ✅ **E6.4.1.2 生成函数体** — 已实现
+   -- FD->getBody() → EmitStmt 递归生成
+   -- ReturnBlock 统一返回模式
+
+3. ✅ **构造函数/析构函数分派** — 超出文档要求
+   -- EmitFunction 增加 dyn_cast<CXXConstructorDecl> / dyn_cast<CXXDestructorDecl> 判断
+   -- 构造函数分派到 CGCXX::EmitConstructor
+   -- 析构函数分派到 CGCXX::EmitDestructor
+
+4. ✅ **this 指针管理** — 超出文档要求
+   -- CodeGenFunction 新增 ThisValue 成员
+   -- setThisPointer / getThisPointer 用于构造/析构函数
+   -- EmitCXXThisExpr 优先使用 ThisValue，fallback 到 CurFn->arg_begin()
+
+---
+
+### Task 6.4.2.1 创建 CGCXX.h
+
+文档要求 vs 实际实现：
+
+1. ✅ **CGCXX 类定义** — 已实现，超出文档要求
+   -- 文档定义了基本接口（ComputeClassLayout / GetFieldOffset / GetClassSize / EmitConstructor / EmitDestructor / EmitVTable / GetVTableType / GetVTableIndex / EmitVirtualCall / EmitBaseOffset / EmitDerivedOffset / EmitBaseInitializer / EmitMemberInitializer）
+   -- 实际实现额外增加了：
+      -- ClassSizeCache / BaseOffsetCache 缓存成员
+      -- hasVirtualFunctionsInHierarchy 递归检查
+      -- GetBaseOffset(Derived, Base) 查询接口
+      -- InitializeVTablePtr vptr 初始化
+      -- EmitCastToBase / EmitCastToDerived 指针调整
+      -- EmitDestructorBody 析构体生成
+
+2. ⚠️ **接口签名变化**
+   -- 文档中 EmitVirtualCall 签名为 `(CXXMethodDecl*, Value*, ArrayRef<Value*>)`
+   -- 实际实现为 `(CodeGenFunction&, CXXMethodDecl*, Value*, ArrayRef<Value*>)`
+   -- 文档中 EmitBaseOffset/EmitDerivedOffset 签名无 CGF 参数
+   -- 实际实现添加了 CGF 参数（需要 IRBuilder）
+   -- 文档中 EmitBaseInitializer/EmitMemberInitializer 签名无 CGF 参数
+   -- 实际实现添加了 CGF 参数
+   -- **原因：** 需要 CodeGenFunction 的 Builder 来生成 IR（P2，文档需同步更新）
+
+---
+
+### Task 6.4.2.2 生成类布局
+
+文档关键点提示 vs 实际实现：
+
+1. ✅ **从基类开始，按声明顺序排列基类子对象** — 已实现
+   -- ComputeClassLayout 第一步遍历 RD->bases()
+   -- 递归调用 GetClassSize(BaseCXX) 获取基类大小
+   -- BaseOffsetCache 记录每个基类在派生类中的偏移
+
+2. ✅ **如果有虚函数，在起始位置放置 vptr 指针** — 已实现
+   -- vptr 位置逻辑：当 HasVPtr && !HasVirtualBase 时放置
+   -- 如果基类已有 vptr，派生类共享（不重复放置）
+   -- PtrSize(8 bytes) + PtrAlign 对齐
+
+3. ✅ **按声明顺序排列非静态数据成员** — 已实现
+   -- 遍历 RD->fields()，按序放置
+   -- FieldOffsetCache 记录每个字段的偏移
+
+4. ✅ **每个字段按自然对齐放置** — 已实现
+   -- llvm::alignTo(CurrentOffset, FieldAlign)
+
+5. ✅ **最后添加尾部填充以满足整体对齐要求** — 已实现
+   -- 计算整体对齐 OverallAlign = max(所有字段对齐, 基类对齐, vptr对齐)
+   -- TotalSize = llvm::alignTo(CurrentOffset, OverallAlign)
+
+6. ⚠️ **类布局与 LLVM StructType 不一致**（P1）
+   -- ComputeClassLayout 计算的偏移包含基类子对象空间
+   -- 但 CodeGenTypes::GetRecordType 生成的 StructType 不包含基类子对象的字段
+   -- GetRecordType 只放 vptr + RD->fields()
+   -- 这意味着 GEP 索引与 ComputeClassLayout 的偏移不一致
+   -- **影响：** 基类字段无法通过正确的 GEP 访问（需要 GetRecordType 也包含基类字段）
+
+7. ⚠️ **vptr 位置假设始终在索引 0**（P2）
+   -- GetRecordType 将 vptr 放在 StructType 的第一个元素
+   -- ComputeClassLayout 将 vptr 放在基类之后（当无虚基类时）
+   -- 两者位置不一致：GetRecordType 放在 fields 之前，但 ComputeClassLayout 放在 bases 之后
+   -- **影响：** InitializeVTablePtr 和 EmitVirtualCall 假设 vptr 在索引 0，与布局计算不符
+
+---
+
+### Task 6.4.2.3 生成构造函数和析构函数
+
+文档要求 vs 实际实现：
+
+1. ✅ **EmitConstructor 四阶段构造** — 已实现
+   -- Phase 1: 基类初始化（处理初始化列表 + 默认初始化）
+   -- Phase 2: vptr 初始化（InitializeVTablePtr）
+   -- Phase 3: 成员初始化（处理初始化列表 + 默认零初始化）
+   -- Phase 4: 构造函数体（CGF.EmitStmt）
+
+2. ✅ **使用 CodeGenFunction 生成 IR** — 已实现
+   -- 构造函数体通过 CGF.EmitStmt 生成
+   -- 表达式求值通过 CGF.EmitExpr
+   -- this 指针通过 CGF.setThisPointer 管理
+
+3. ✅ **EmitDestructor 三阶段析构** — 已实现
+   -- Phase 1: 析构函数体
+   -- Phase 2: 成员析构（逆序）
+   -- Phase 3: 基类析构（逆序）
+
+4. ✅ **基类构造函数匹配** — 已实现
+   -- 遍历 BaseRD->methods() 查找 CXXConstructorDecl
+   -- 按参数数量匹配
+
+5. ⚠️ **基类初始化器匹配方式脆弱**（P1）
+   -- EmitConstructor 中通过 `BaseRD->getName() == BaseName || BaseName.empty()` 匹配
+   -- 当 BaseName 为空或多个基类同名时会错误匹配
+   -- 应改为直接在 CXXCtorInitializer 中存储基类类型信息或 Decl 指针
+   -- **对比 Clang：** Clang 的 CXXCtorInitializer 有 `getBaseClass()` 返回 TypeLoc
+
+6. ⚠️ **构造函数不处理 delegating initializer**（P2）
+   -- CXXCtorInitializer::isDelegatingInitializer() 未处理
+   -- 委托构造函数（ctor() : other_ctor() {}）未实现
+
+7. ⚠️ **成员初始化只取第一个参数**（P2）
+   -- `EmitMemberInitializer` 调用时 `Init->getArguments()[0]` 只传第一个参数
+   -- 如果初始化器有多个参数（如成员的构造函数调用），会丢失参数
+
+8. ⚠️ **默认成员初始化未使用 in-class initializer**（P2）
+   -- FieldDecl::hasInClassInitializer() 检查了但未使用
+   -- 应通过 CGF.EmitExpr(FD->getInClassInitializer()) 生成
+
+9. ⚠️ **vptr 初始化时机问题**（P1）
+   -- 当前 Phase 2 在所有基类初始化之后才初始化 vptr
+   -- 但在 Clang 中，vptr 在每个基类构造完成后立即更新
+   -- 当前实现：基类全部初始化 → vptr 初始化 → 成员初始化
+   -- 正确顺序：基类1初始化 → vptr更新 → 基类2初始化 → vptr更新 → ... → 成员初始化
+   -- **影响：** 基类构造函数体中调用虚函数时，vptr 可能指向错误的 vtable
+
+---
+
+### Task 6.4.2.4 生成虚函数表
+
+文档关键点提示 vs 实际实现：
+
+1. ✅ **offset-to-top** — 已实现
+   -- 使用 ConstantExpr::getIntToPtr(ConstantInt::get(i64, 0), ptr)
+
+2. ✅ **RTTI 指针** — 已实现
+   -- 占位为 ConstantPointerNull（待后续 RTTI 支持）
+
+3. ✅ **虚函数指针数组** — 已实现
+   -- 基类虚函数（含覆盖检测）+ 自身新增虚函数
+   -- 覆盖检测：遍历 RD->methods() 查找同名同参数数量的虚函数
+
+4. ✅ **EmitVirtualCall 完整流程** — 已实现
+   -- vptr load (StructGEP index 0) → vtable load → GEP[idx] → load func ptr → indirect call
+   -- 使用 GetFunctionTypeForDecl 获取正确的函数类型
+   -- 参数包含 this + 显式参数
+
+5. ✅ **虚函数调用集成到 EmitCallExpr** — 已实现
+   -- 检测 CXXMethodDecl::isVirtual()
+   -- 调用 CGM.getCXX().EmitVirtualCall
+   -- fallback 到普通 CreateCall
+
+6. ✅ **VTable 在 EmitTranslationUnit 中触发** — 已实现
+   -- EmitClassLayout 记录有虚函数的类到 VTableClasses
+   -- EmitVTables 在函数体生成前调用
+   -- 确保函数体中可以引用 vtable 全局变量
+
+7. ⚠️ **VTable 布局顺序与文档不同**（P2）
+   -- 文档提示："首先是 RTTI 指针 → offset-to-top → 虚函数指针"
+   -- 实际实现："offset-to-top → RTTI → 虚函数指针"
+   -- 与 Itanium C++ ABI 实际一致（offset-to-top 在前），文档描述有误
+
+8. ⚠️ **覆盖检测仅用名称+参数数量匹配**（P2）
+   -- Clang 使用 Sema 提供的 override 信息（CXXMethodDecl::getOverriddenMethods）
+   -- 当前仅按方法名+参数数量匹配，可能误匹配重载函数
+   -- 未考虑 const/ volatile 限定符、ref-qualifier
+
+9. ⚠️ **虚析构函数未特殊处理**（P2）
+   -- 虚析构函数在 vtable 中应有特殊条目（deleting dtor + complete dtor）
+   -- 当前实现将析构函数当作普通虚函数处理
+
+10. ⚠️ **多重继承 vtable 未实现**（P2）
+    -- 当前只有主 vtable（offset-to-top = 0）
+    -- 多重继承需要多个 vtable（每个基类一个），offset-to-top 非零
+
+---
+
+## B. 对比 Clang 同模块特性
+
+---
+
+### CGCXX 对比 Clang CGCXX + CGClass + CGVTables
+
+1. ✅ **类布局基本思路** — 与 Clang ASTContext::getASTRecordLayout 一致
+   -- 基类子对象 → vptr → 字段 → 填充
+
+2. ⚠️ **缺少 ASTRecordLayout 缓存** — Clang 更精细
+   -- Clang 将布局信息封装为 ASTRecordLayout 类
+   -- BlockType 使用三个独立的 DenseMap（FieldOffsetCache / ClassSizeCache / BaseOffsetCache）
+   -- 功能等价，但缺少 CXXRecordDecl::isDynamicClass 等元信息（P2）
+
+3. ⚠️ **缺少 Empty Base Optimization (EBO)**（P2）
+   -- Clang 对空基类应用 EBO，空基类不占空间
+   -- BlockType 对空基类使用 GetClassSize()（至少 1 字节）
+
+4. ⚠️ **虚继承未实现**（P2）
+   -- 文档提到"处理继承（单一/多重/虚继承）"
+   -- 当前 EmitCastToBase / EmitCastToDerived 简化为偏移 0
+   -- 多重继承和虚继承的指针调整未实现
+
+---
+
+### 构造函数对比 Clang CGClass::EmitConstructorBody
+
+1. ✅ **四阶段构造** — 与 Clang 模式一致
+   -- 基类初始化 → vptr 初始化 → 成员初始化 → 函数体
+
+2. ⚠️ **vptr 更新时机** — 与 Clang 不同（P1）
+   -- Clang：在每个基类构造完成后立即更新 vptr
+   -- BlockType：所有基类初始化后才更新 vptr 一次
+   -- **影响：** 基类构造函数中调用的虚函数无法分派到派生类实现
+
+3. ⚠️ **缺少 CXXConstructExpr 的 elidable 优化**（P2）
+   -- Clang 在可能时省略临时对象的复制/移动构造（copy elision）
+   -- BlockType 未实现
+
+4. ⚠️ **缺少 constant initialization 支持**（P2）
+   -- Clang 对 constexpr 构造函数生成常量初始化器
+   -- BlockType 总是生成运行时构造代码
+
+---
+
+### 析构函数对比 Clang CGClass::EmitDestructorBody
+
+1. ✅ **三阶段析构顺序** — 与 Clang 一致
+   -- 函数体 → 成员析构（逆序）→ 基类析构（逆序）
+
+2. ⚠️ **缺少 Dtor deletion 标志**（P2）
+   -- Clang 区分 complete destructor 和 deleting destructor
+   -- BlockType 只生成一个版本
+
+3. ⚠️ **缺少基类虚析构函数调用时的 vptr 恢复**（P2）
+   -- Clang 在基类析构前将 vptr 恢复为基类的 vtable
+   -- BlockType 未实现（基类析构函数中的虚函数调用会使用错误的 vtable）
+
+---
+
+### VTable 对比 Clang VTableLayout
+
+1. ✅ **基本 vtable 结构** — 与 Itanium ABI 一致
+   -- [offset-to-top] [RTTI] [virtual function pointers]
+
+2. ✅ **覆盖检测** — 基本功能已实现
+   -- 查找同名同参数数量的派生类虚函数
+
+3. ⚠️ **缺少 thunk 生成**（P2）
+   -- 多重继承中，覆盖的虚函数需要 this 指针调整的 thunk
+   -- BlockType 未实现
+
+4. ⚠️ **缺少 VTT (Virtual Table Table)**（P2）
+   -- 虚继承需要 VTT 来定位虚基类子对象
+   -- BlockType 未实现
+
+5. ✅ **vptr 初始化** — 已实现
+   -- InitializeVTablePtr 在构造函数 Phase 2 调用
+   -- GEP 获取 vtable 地址，Store 到对象的 vptr 槽位
+
+---
+
+### EmitCXXConstructExpr 对比 Clang
+
+1. ✅ **调用实际构造函数** — 已实现（Stage 6.4 增强）
+   -- 之前是零初始化，现在分配 alloca + CreateCall(CtorFn, {alloca, args...})
+
+2. ⚠️ **缺少 Return Value Optimization (RVO)**（P2）
+   -- Clang 在可能时直接在目标地址上构造（不经过 alloca + load）
+   -- BlockType 总是 alloca + 构造 + load
+
+3. ⚠️ **缺少 in-place 构造支持**（P2）
+   -- new T(args) 应直接在 malloc 返回的地址上构造
+   -- 当前 EmitCXXNewExpr 和 EmitCXXConstructExpr 是分开的
+
+---
+
+### EmitCallExpr 虚函数路径对比 Clang
+
+1. ✅ **虚函数分派基本实现** — 已实现
+   -- 检测 isVirtual() → EmitVirtualCall → vptr load + GEP + load + indirect call
+
+2. ⚠️ **缺少 this 指针调整**（P1）
+   -- 多重继承中，虚函数调用可能需要调整 this 指针
+   -- 当前直接使用 BaseValue 作为 this，未做基类偏移调整
+   -- **影响：** 多重继承场景下虚函数调用的 this 指针可能不正确
+
+3. ⚠️ **缺少虚函数调用的 devirtualization 优化**（P2）
+   -- Clang 在可能时将虚函数调用去虚化为直接调用
+   -- BlockType 未实现
+
+---
+
+## C. 关联关系错误
+
+---
+
+1. ⚠️ **ComputeClassLayout 与 GetRecordType 的结构体布局不一致**（P1）
+   -- ComputeClassLayout 包含基类子对象空间 + vptr + fields
+   -- GetRecordType 只生成 vptr + fields（不包含基类子对象的字段）
+   -- 这意味着 GEP 索引访问基类字段时会偏移错误
+   -- **影响：** 有基类的 CXXRecordDecl 的成员访问可能生成错误的 GEP
+
+2. ⚠️ **EmitCastToBase 始终返回 DerivedPtr（偏移 0）**（P1）
+   -- BaseOffsetCache 中有正确的基类偏移
+   -- 但 EmitCastToBase 未使用，总是返回原始指针
+   -- **影响：** 基类子对象的初始化和析构使用错误的 this 指针
+
+3. ✅ **CXXConstructExpr::getConstructor** — 已添加
+   -- Expr.h 中新增 Constructor 成员和访问器
+   -- EmitCXXConstructExpr 使用 getConstructor() 获取构造函数
+
+4. ✅ **EmitFunction 构造/析构函数分派** — 正确
+   -- dyn_cast<CXXConstructorDecl> 和 dyn_cast<CXXDestructorDecl> 在 EmitFunction 中正确分派
+
+5. ✅ **EmitVTables 在 EmitDeferred 之后调用** — 正确
+   -- 确保全局变量已生成后再生成 vtable
+
+6. ⚠️ **EmitConstructor 中 CreateAlloca 可能失败**（P2）
+   -- CGF.CreateAlloca 依赖 CurFn 的 entry block
+   -- CGF.setCurrentFunction 设置了 CurFn，但未通过 EmitFunctionBody 的完整初始化
+   -- CurFD 未设置，某些 CGF 方法可能返回 null
+   -- **影响：** 构造函数体中的某些复杂表达式可能无法正确求值
+
+7. ⚠️ **VTable mangled name 不符合 Itanium ABI**（P2）
+   -- 使用 "_ZTV" + RD->getName() 简单拼接
+   -- 应使用完整的 mangled name（如 _ZTVN3foo3BarE）
+
+---
+
+## D. 汇总
+
+---
+
+### P0 问题（必须立即修复）— 0 个
+
+（无 P0 问题）
+
+### P1 问题（应尽快修复）— 4 个
+
+1. **ComputeClassLayout 与 GetRecordType 的结构体布局不一致**
+   -- ComputeClassLayout 包含基类子对象空间，但 GetRecordType 不包含
+   -- GEP 索引与偏移计算不一致，基类字段访问会偏移错误
+   -- 修复方案：让 GetRecordType 也包含基类字段（或将基类子对象作为第一个匿名字段）
+
+2. **EmitCastToBase 始终返回 DerivedPtr（偏移 0）**
+   -- BaseOffsetCache 有正确偏移但未使用
+   -- 基类初始化、析构使用错误的 this 指针
+   -- 修复方案：EmitCastToBase 使用 GetBaseOffset 获取偏移，GEP 调整指针
+
+3. **基类初始化器匹配方式脆弱**
+   -- 通过 BaseName 字符串匹配，空名称时会匹配第一个基类
+   -- 修复方案：在 CXXCtorInitializer 中存储基类 TypeSourceInfo 或 Decl 指针
+
+4. **vptr 初始化时机不正确**
+   -- 当前所有基类初始化后才更新 vptr 一次
+   -- 应在每个基类构造完成后立即更新 vptr
+   -- 修复方案：将 Phase 2 拆分到每个基类初始化之后
+
+### P2 问题（后续改进）— 18 个
+
+1. 接口签名与文档不一致（CGF 参数）
+2. 多重继承 vtable 未实现
+3. 虚继承未实现
+4. 缺少 Empty Base Optimization (EBO)
+5. 缺少 thunk 生成
+6. 缺少 VTT (Virtual Table Table)
+7. 虚析构函数未特殊处理（deleting/complete dtor）
+8. 覆盖检测仅用名称+参数数量匹配
+9. 缺少 delegating initializer 支持
+10. 成员初始化只取第一个参数
+11. 默认成员初始化未使用 in-class initializer
+12. 缺少 RVO (Return Value Optimization)
+13. 缺少 copy elision
+14. 缺少 constant initialization
+15. 缺少虚函数调用的 devirtualization
+16. EmitConstructor 中 CurFD 未设置
+17. VTable mangled name 不完整
+18. 基类析构前未恢复 vptr
+
+### P3 问题（观察项）— 2 个
+
+1. VTable 布局顺序与文档描述不同（实际与 ABI 一致）
+2. EmitBaseOffset / EmitDerivedOffset 方法返回 nullptr 未使用
