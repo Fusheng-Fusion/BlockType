@@ -1,5 +1,6 @@
 add_library(blocktype-codegen
   CGCXX.cpp
+  CGDebugInfo.cpp
   CodeGenConstant.cpp
   CodeGenFunction.cpp
   CodeGenModule.cpp

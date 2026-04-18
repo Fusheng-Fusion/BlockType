@@ -1,0 +1,11 @@
+// RUN: blocktype -emit-llvm %s 2>&1 | FileCheck %s
+
+// Basic type verification
+int x;
+// CHECK: @x = {{.*}}global i32
+
+double y;
+// CHECK: @y = {{.*}}global double
+
+bool b;
+// CHECK: @b = {{.*}}global i1

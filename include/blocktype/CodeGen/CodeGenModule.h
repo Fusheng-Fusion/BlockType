@@ -27,6 +27,7 @@ class CodeGenTypes;
 class CodeGenConstant;
 class CodeGenFunction;
 class CGCXX;
+class CGDebugInfo;
 class TargetInfo;
 
 /// CodeGenModule — 模块级代码生成引擎。
@@ -44,6 +45,7 @@ class CodeGenModule {
   std::unique_ptr<CodeGenTypes> Types;
   std::unique_ptr<CodeGenConstant> Constants;
   std::unique_ptr<CGCXX> CXX;
+  std::unique_ptr<CGDebugInfo> DebugInfo;
   std::unique_ptr<TargetInfo> Target;
 
   /// Decl → llvm::GlobalValue 映射
@@ -122,6 +124,7 @@ public:
   CodeGenTypes &getTypes() const { return *Types; }
   CodeGenConstant &getConstants() const { return *Constants; }
   CGCXX &getCXX() const { return *CXX; }
+  CGDebugInfo &getDebugInfo() const { return *DebugInfo; }
   TargetInfo &getTarget() const { return *Target; }
   ASTContext &getASTContext() const { return Context; }
   llvm::LLVMContext &getLLVMContext() const { return LLVMCtx; }

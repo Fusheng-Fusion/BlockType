@@ -11,6 +11,7 @@
 #include "blocktype/CodeGen/CodeGenConstant.h"
 #include "blocktype/CodeGen/CodeGenFunction.h"
 #include "blocktype/CodeGen/CGCXX.h"
+#include "blocktype/CodeGen/CGDebugInfo.h"
 #include "blocktype/CodeGen/TargetInfo.h"
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/Decl.h"
@@ -44,6 +45,7 @@ CodeGenModule::CodeGenModule(ASTContext &Ctx, llvm::LLVMContext &LLVMCtx,
   Types = std::make_unique<CodeGenTypes>(*this);
   Constants = std::make_unique<CodeGenConstant>(*this);
   CXX = std::make_unique<CGCXX>(*this);
+  DebugInfo = std::make_unique<CGDebugInfo>(*this);
 }
 
 CodeGenModule::~CodeGenModule() = default;
@@ -58,6 +60,10 @@ const llvm::DataLayout &CodeGenModule::getDataLayout() const {
 
 void CodeGenModule::EmitTranslationUnit(TranslationUnitDecl *TU) {
   if (!TU) return;
+
+  // 初始化调试信息
+  // 使用 "input.cpp" 作为默认文件名（真实编译器从 SourceManager 获取）
+  DebugInfo->Initialize("input.cpp", ".");
 
   // 第一遍：生成所有声明（前向引用）
   for (Decl *D : TU->decls()) {
@@ -96,6 +102,9 @@ void CodeGenModule::EmitTranslationUnit(TranslationUnitDecl *TU) {
 
   // 发射全局构造/析构
   EmitGlobalCtorDtors();
+
+  // 完成调试信息
+  DebugInfo->Finalize();
 }
 
 void CodeGenModule::EmitDeferred() {
@@ -147,6 +156,11 @@ llvm::GlobalVariable *CodeGenModule::EmitGlobalVar(VarDecl *VD) {
   // 注册映射
   GlobalValues[VD] = GV;
 
+  // 生成全局变量调试信息
+  if (DebugInfo->isInitialized()) {
+    DebugInfo->EmitGlobalVarDI(VD, GV);
+  }
+
   return GV;
 }
 
@@ -187,6 +201,12 @@ llvm::Function *CodeGenModule::EmitFunction(FunctionDecl *FD) {
 
   // 使用 CodeGenFunction 生成函数体
   CodeGenFunction CGF(*this);
+
+  // 生成函数调试信息
+  if (DebugInfo->isInitialized()) {
+    DebugInfo->setFunctionLocation(Fn, FD);
+  }
+
   CGF.EmitFunctionBody(FD, Fn);
 
   return Fn;

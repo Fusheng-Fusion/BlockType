@@ -49,14 +49,15 @@ void CodeGenFunction::EmitFunctionBody(FunctionDecl *FunctionDecl,
   Builder.SetInsertPoint(EntryBlock);
 
   // 为返回值创建 alloca（非 void 返回类型）
-  QualType ReturnType = FunctionDecl->getType().isNull()
-                            ? QualType()
-                            : FunctionDecl->getType();
+  QualType ReturnType;
+  QualType FDType = FunctionDecl->getType();
   // 获取函数类型的返回类型
-  if (auto *FunctionType =
-          llvm::dyn_cast<blocktype::FunctionType>(ReturnType.getTypePtr())) {
-    ReturnType =
-        QualType(FunctionType->getReturnType(), Qualifier::None);
+  if (!FDType.isNull()) {
+    if (auto *FunctionType =
+            llvm::dyn_cast<blocktype::FunctionType>(FDType.getTypePtr())) {
+      ReturnType =
+          QualType(FunctionType->getReturnType(), Qualifier::None);
+    }
   }
 
   if (!ReturnType.isNull() && !ReturnType->isVoidType()) {
@@ -272,7 +273,8 @@ void CodeGenFunction::EmitStmts(llvm::ArrayRef<Stmt *> Statements) {
 //===----------------------------------------------------------------------===//
 
 llvm::BasicBlock *CodeGenFunction::createBasicBlock(llvm::StringRef Name) {
-  return llvm::BasicBlock::Create(CGM.getLLVMContext(), Name, CurFn);
+  // 不在这里插入 CurFn，由 EmitBlock 负责插入
+  return llvm::BasicBlock::Create(CGM.getLLVMContext(), Name);
 }
 
 void CodeGenFunction::EmitBlock(llvm::BasicBlock *BasicBlock) {

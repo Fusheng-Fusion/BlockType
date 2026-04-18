@@ -8,7 +8,7 @@
 > - [`docs/AI_USAGE.md`](../AI_USAGE.md) - AI 功能使用指南
 > - Git 提交历史 - 详细实现记录
 > 
-> **项目代号：** BlockType（曾用名：ZetaCC, Nova）
+> **项目代号：** BlockType（曾用名：zetacc, Nova）
 > **目标：** 从零开发 C++26 标准编译器前端，后端使用 LLVM，支持 Linux x86_64 和 macOS ARM64
 > **代码生成：** GLM AI 大模型辅助开发
 > **文档版本：** v1.0 | 2026-04-14（最后更新：2026-04-17）
@@ -47,7 +47,7 @@
 ## 三、目录结构
 
 ```
-zetacc/
+blocktype/
 ├── CMakeLists.txt                 # 顶层 CMake
 ├── src/
 │   ├── Basic/                     # 基础设施
@@ -58,7 +58,7 @@ zetacc/
 │   ├── IRGen/                     # IR 生成
 │   └── Driver/                    # 编译器驱动
 ├── include/
-│   └── zetacc/
+│   └── blocktype/
 │       ├── Basic/
 │       ├── Lex/
 │       ├── Parse/

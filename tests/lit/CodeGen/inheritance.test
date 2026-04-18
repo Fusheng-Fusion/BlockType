@@ -1,0 +1,15 @@
+// RUN: blocktype -emit-llvm %s 2>&1 | FileCheck %s
+
+// Single inheritance
+class Base {
+  int base_val;
+};
+
+class Derived : public Base {
+  int derived_val;
+};
+
+int get_derived(Derived *d) {
+  return d->derived_val;
+}
+// CHECK: define {{.*}} @get_derived

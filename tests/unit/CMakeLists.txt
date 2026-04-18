@@ -28,6 +28,9 @@ add_subdirectory(Parse)
 # Sema 单元测试
 add_subdirectory(Sema)
 
+# CodeGen 单元测试
+add_subdirectory(CodeGen)
+
 # D19: Performance tests
 add_executable(PerformanceTest
   PerformanceTest.cpp

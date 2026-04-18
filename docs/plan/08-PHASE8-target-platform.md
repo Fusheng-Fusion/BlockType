@@ -28,14 +28,14 @@ Phase 8 包含 3 个 Stage，共 8 个 Task，预计 4 周完成。
 
 **开发要点：**
 
-- **E8.1.1.1** 创建 `include/zetacc/Basic/TargetInfo.h`：
+- **E8.1.1.1** 创建 `include/blocktype/Basic/TargetInfo.h`：
   ```cpp
   #pragma once
   
   #include "llvm/Target/TargetMachine.h"
   #include <string>
   
-  namespace zetacc {
+  namespace blocktype {
   
   class TargetInfo {
     std::string Triple;           // 目标三元组
@@ -80,7 +80,7 @@ Phase 8 包含 3 个 Stage，共 8 个 Task，预计 4 周完成。
     llvm::TargetMachine* createTargetMachine() const;
   };
   
-  } // namespace zetacc
+  } // namespace blocktype
   ```
 
 - **E8.1.1.2** 实现 Linux x86_64 和 macOS ARM64 平台配置
@@ -148,7 +148,7 @@ Phase 8 包含 3 个 Stage，共 8 个 Task，预计 4 周完成。
 
 **开发要点：**
 
-- **E8.1.3.1** 创建 `include/zetacc/CodeGen/Mangler.h`：
+- **E8.1.3.1** 创建 `include/blocktype/CodeGen/Mangler.h`：
   ```cpp
   class Mangler {
     TargetInfo &Target;

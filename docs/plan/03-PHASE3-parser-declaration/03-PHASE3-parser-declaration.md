@@ -133,7 +133,7 @@ Token 流 (from Preprocessor)
   ```
 
 **开发关键点提示：**
-> 请实现声明 AST 基础架构 `include/zetacc/AST/Decl.h` 和 `src/AST/Decl.cpp`。
+> 请实现声明 AST 基础架构 `include/blocktype/AST/Decl.h` 和 `src/AST/Decl.cpp`。
 >
 > **Decl 基类**：
 > - 继承自 ASTNode
@@ -515,7 +515,7 @@ Token 流 (from Preprocessor)
   ```
 
 **开发关键点提示：**
-> 请实现模板声明 AST 节点 `include/zetacc/AST/DeclTemplate.h`。
+> 请实现模板声明 AST 节点 `include/blocktype/AST/DeclTemplate.h`。
 >
 > **TemplateParameterList**：
 > - 管理模板参数列表
@@ -1606,7 +1606,7 @@ Token 流 (from Preprocessor)
 
 - **E4.5.2** 编写测试用例：
   ```lit
-  // RUN: zetacc -ast-dump %s | FileCheck %s
+  // RUN: blocktype -ast-dump %s | FileCheck %s
   
   int x = 10;
   // CHECK: VarDecl {{.*}} x 'int' cinit

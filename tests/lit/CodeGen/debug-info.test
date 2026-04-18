@@ -1,0 +1,12 @@
+// RUN: blocktype -emit-llvm %s 2>&1 | FileCheck %s
+
+// Debug information verification
+int global_var = 42;
+
+int debug_func(int x) {
+  return x + 1;
+}
+// CHECK: !llvm.dbg.cu
+// CHECK: !DICompileUnit
+// CHECK: !DIFile
+// CHECK: DISubprogram{{.*}}debug_func

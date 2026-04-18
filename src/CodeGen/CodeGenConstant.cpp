@@ -37,6 +37,8 @@ llvm::Constant *CodeGenConstant::EmitConstant(Expr *E) {
     return EmitStringLiteral(llvm::cast<StringLiteral>(E));
   case ASTNode::NodeKind::CharacterLiteralKind:
     return EmitCharLiteral(llvm::cast<CharacterLiteral>(E));
+  case ASTNode::NodeKind::CXXBoolLiteralKind:
+    return EmitBoolLiteral(llvm::cast<CXXBoolLiteral>(E)->getValue());
   case ASTNode::NodeKind::InitListExprKind:
     return EmitInitListExpr(llvm::cast<InitListExpr>(E));
   case ASTNode::NodeKind::DeclRefExprKind: {

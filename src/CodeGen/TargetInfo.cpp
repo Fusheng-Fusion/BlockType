@@ -7,11 +7,27 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/CodeGen/TargetInfo.h"
+#include "llvm/TargetParser/Triple.h"
 
 namespace blocktype {
 
+/// 根据目标三元组生成数据布局字符串
+static std::string getDataLayoutForTriple(llvm::StringRef TripleStr) {
+  llvm::Triple T(TripleStr);
+  if (T.isArch64Bit()) {
+    // 64-bit: pointers are 8 bytes, 64-bit aligned
+    // e-i64:64-f80:128-n8:16:32:64-S128
+    return "e-m:o-i64:64-i128:128-n32:64-S128";
+  } else if (T.isArch32Bit()) {
+    // 32-bit
+    return "e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128";
+  }
+  // Default 64-bit
+  return "e-m:o-i64:64-i128:128-n32:64-S128";
+}
+
 TargetInfo::TargetInfo(llvm::StringRef TargetTriple)
-    : DL(TargetTriple), TripleStr(TargetTriple.str()) {}
+    : DL(getDataLayoutForTriple(TargetTriple)), TripleStr(TargetTriple.str()) {}
 
 uint64_t TargetInfo::getTypeSize(QualType T) const {
   if (T.isNull()) return 0;

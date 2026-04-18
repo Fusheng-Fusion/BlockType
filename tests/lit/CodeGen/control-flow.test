@@ -1,0 +1,18 @@
+// RUN: blocktype -emit-llvm %s 2>&1 | FileCheck %s
+
+// Control flow IR verification
+int if_test(int x) {
+  if (x > 0) return 1;
+  return 0;
+}
+// CHECK: define {{.*}} @if_test
+// CHECK: br i1
+
+int for_test(int n) {
+  int sum = 0;
+  for (int i = 0; i < n; i = i + 1) {
+    sum = sum + i;
+  }
+  return sum;
+}
+// CHECK: define {{.*}} @for_test

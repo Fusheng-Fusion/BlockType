@@ -102,7 +102,7 @@ AST Root (TranslationUnitDecl)
 - **E1.1.5** 实现源位置追踪：每个 AST 节点记录开始和结束位置
 
 **开发关键点提示：**
-> 请为 zetacc 实现 AST 基础架构。
+> 请为 blocktype 实现 AST 基础架构。
 >
 > **ASTNode.h**：
 > - 基类 `ASTNode`：包含 `SourceLocation`、虚析构函数、`dump()` 方法
@@ -211,7 +211,7 @@ AST Root (TranslationUnitDecl)
 - **E1.2.3** 实现完整的 `dump()` 方法用于调试
 
 **开发关键点提示：**
-> 请为 zetacc 实现 `include/zetacc/AST/Expr.h` 和 `src/AST/Expr.cpp`。
+> 请为 blocktype 实现 `include/blocktype/AST/Expr.h` 和 `src/AST/Expr.cpp`。
 >
 > 定义所有 C++26 表达式的 AST 节点，包括：
 > - 字面量：IntegerLiteral, FloatingLiteral, StringLiteral, CharacterLiteral, CXXNullPtrLiteral, CXXBoolLiteral
@@ -306,7 +306,7 @@ AST Root (TranslationUnitDecl)
 - **E1.3.3** 实现 `getSourceRange()` 方法返回语句的源位置范围
 
 **开发关键点提示：**
-> 请为 zetacc 实现 `include/zetacc/AST/Stmt.h` 和 `src/AST/Stmt.cpp`。
+> 请为 blocktype 实现 `include/blocktype/AST/Stmt.h` 和 `src/AST/Stmt.cpp`。
 >
 > 定义所有 C++ 语句的 AST 节点，包括：
 > - 基础：NullStmt, CompoundStmt, ReturnStmt, ExprStmt
@@ -367,7 +367,7 @@ AST Root (TranslationUnitDecl)
 - **E1.4.4** 实现类型的规范化和比较
 
 **开发关键点提示：**
-> 请为 zetacc 实现类型系统基础 `include/zetacc/AST/Type.h` 和 `Type.cpp`。
+> 请为 blocktype 实现类型系统基础 `include/blocktype/AST/Type.h` 和 `Type.cpp`。
 >
 > 定义：
 > - `Type` 基类及其子类（BuiltinType, PointerType, ReferenceType, ArrayType, FunctionType, RecordType, EnumType）
@@ -433,7 +433,7 @@ AST Root (TranslationUnitDecl)
   ```
 
 **开发关键点提示：**
-> 请为 zetacc 实现 Parser 基础架构 `src/Parse/Parser.h` 和 `Parser.cpp`。
+> 请为 blocktype 实现 Parser 基础架构 `src/Parse/Parser.h` 和 `Parser.cpp`。
 >
 > **Parser 类核心成员**：
 > - `Preprocessor& PP`：预处理器的引用
@@ -577,7 +577,7 @@ AST Root (TranslationUnitDecl)
   ```
 
 **开发关键点提示：**
-> 请为 zetacc 实现完整的表达式解析 `src/Parse/ParseExpr.cpp`。
+> 请为 blocktype 实现完整的表达式解析 `src/Parse/ParseExpr.cpp`。
 >
 > **算法选择**：优先级爬升算法，比递归下降更灵活。
 >

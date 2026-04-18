@@ -268,6 +268,7 @@ llvm::FunctionType *CodeGenTypes::GetFunctionTypeForDecl(FunctionDecl *FD) {
   QualType FT = FD->getType();
   llvm::FunctionType *Result = nullptr;
 
+  if (!FT.isNull()) {
   if (auto *FnTy = llvm::dyn_cast<FunctionType>(FT.getTypePtr())) {
     // 非静态成员函数需要添加 this 指针作为第一个参数
     if (auto *MD = llvm::dyn_cast<CXXMethodDecl>(FD)) {
@@ -298,6 +299,7 @@ llvm::FunctionType *CodeGenTypes::GetFunctionTypeForDecl(FunctionDecl *FD) {
       Result = GetFunctionType(FnTy);
     }
   }
+  } // end !FT.isNull()
 
   if (!Result) {
     // Fallback: void()

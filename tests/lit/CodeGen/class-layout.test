@@ -1,0 +1,18 @@
+// RUN: blocktype -emit-llvm %s 2>&1 | FileCheck %s
+
+// Class layout and field access
+struct Point {
+  int x;
+  int y;
+};
+
+int get_x(Point *p) {
+  return p->x;
+}
+// CHECK: define {{.*}} @get_x
+// CHECK: getelementptr
+
+int get_y(Point *p) {
+  return p->y;
+}
+// CHECK: define {{.*}} @get_y

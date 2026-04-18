@@ -1,0 +1,11 @@
+// RUN: blocktype -emit-llvm %s 2>&1 | FileCheck %s
+
+// Function call IR verification
+int add(int a, int b) { return a + b; }
+
+int call_test() {
+  return add(1, 2);
+}
+// CHECK: define {{.*}} @add
+// CHECK: define {{.*}} @call_test
+// CHECK: call {{.*}} @add

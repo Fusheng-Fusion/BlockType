@@ -1,0 +1,19 @@
+// RUN: blocktype -emit-llvm %s 2>&1 | FileCheck %s
+
+// Virtual function call
+class Base {
+public:
+  virtual int foo() { return 1; }
+};
+
+class Derived : public Base {
+public:
+  int foo() override { return 2; }
+};
+
+int call_virtual(Base *b) {
+  return b->foo();
+}
+// CHECK: define {{.*}} @call_virtual
+// CHECK: load ptr, ptr
+// CHECK: call i32

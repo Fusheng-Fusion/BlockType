@@ -1,0 +1,14 @@
+// RUN: blocktype -emit-llvm %s 2>&1 | FileCheck %s
+
+// Arithmetic expression IR verification
+int add_test(int a, int b) {
+  return a + b;
+}
+// CHECK: define {{.*}} @add_test
+// CHECK: add i32
+
+int mul_test(int a, int b) {
+  return a * b;
+}
+// CHECK: define {{.*}} @mul_test
+// CHECK: mul i32
