@@ -700,3 +700,22 @@ void visitExpr(Expr *E) {
 **现状**：`ActOnPackIndexingExpr` 标记 TODO，未设 ExprTy。
 
 **目标**：在完整 variadic template 支持实现时一并完成。类型推导依赖包展开结果。
+
+### 9.6 诊断系统修复（已完成）
+
+**状态**：✅ 已完成（commit `5d6ed90`）
+
+**修复内容**：
+- P1: 语句上下文检查 — break/continue/case/default 深度计数器
+- P2: 符号重定义检查 — SymbolTable 注入 Diags + err_redefinition
+- P3: void 表达式检查 — binary/unary/conditional 操作数检查
+- P4: 未使用声明警告 — Decl::Used 标志 + DiagnoseUnusedDecls + 不可达代码
+- P5: 诊断精确化 — 7 个新诊断 ID 替代泛用 err_type_mismatch
+
+**激活的诊断 ID（12 个已定义未使用 + 7 个新增）**：
+err_break_outside_loop, err_continue_outside_loop, err_case_not_in_switch,
+err_redefinition, note_previous_definition, err_void_expr_not_allowed,
+warn_unused_variable, warn_unused_function, warn_unreachable_code,
+err_bin_op_type_invalid, err_condition_not_bool, err_subscript_not_pointer,
+err_cast_incompatible, err_member_access_type_invalid,
+err_too_few_args, err_too_many_args, err_arg_type_mismatch
