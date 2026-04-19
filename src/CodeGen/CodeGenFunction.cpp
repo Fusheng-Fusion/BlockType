@@ -274,6 +274,17 @@ void CodeGenFunction::EmitStmt(Stmt *Statement) {
     return;
   }
 
+  // P1 修复：为每条语句设置调试位置
+  if (CGM.getDebugInfo().isInitialized()) {
+    auto Loc = Statement->getLocation();
+    if (Loc.isValid()) {
+      auto *DILoc = CGM.getDebugInfo().getSourceLocation(Loc);
+      if (DILoc) {
+        Builder.SetCurrentDebugLocation(DILoc);
+      }
+    }
+  }
+
   switch (Statement->getKind()) {
   case ASTNode::NodeKind::CompoundStmtKind:
     EmitCompoundStmt(llvm::cast<CompoundStmt>(Statement));

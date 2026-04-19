@@ -15,6 +15,7 @@
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Type.h"
+#include "blocktype/Basic/SourceManager.h"  // P0 修复：SourceManager 完整定义
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
@@ -342,8 +343,9 @@ llvm::DIType *CGDebugInfo::GetEnumDIType(const EnumType *ET) {
   uint64_t EnumSize = Underlying.isNull() ? 32
                       : CGM.getTarget().getTypeSize(Underlying) * 8;
 
+  // P1 修复：EnumSize 已经是比特单位，不需要再乘 8
   return DIB->createEnumerationType(CU, ED->getName(), CurFile, 0,
-                                     EnumSize * 8, 8, ElemArray,
+                                     EnumSize, 8, ElemArray,
                                      UnderlyingDI, 0, "", false);
 }
 
@@ -485,8 +487,16 @@ void CGDebugInfo::EmitParamDI(ParmVarDecl *PVD, llvm::AllocaInst *Alloca,
 
 void CGDebugInfo::setLocation(SourceLocation Loc) {
   if (!Initialized || !Loc.isValid()) return;
-  // 注意：完整的实现需要在 IRBuilder 上设置 CurrentDebugLocation
-  // 但 CGDebugInfo 不直接持有 IRBuilder，需要通过 CodeGenFunction 集成
+  // P1 修复：设置 IRBuilder 的调试位置
+  // 注意：这个方法需要在 CodeGenFunction 的上下文中调用，
+  // 通过 getSourceLocation 获取 DILocation 并设置到 Builder
+  auto *DILoc = getSourceLocation(Loc);
+  if (DILoc) {
+    // 由于 CGDebugInfo 不直接持有 IRBuilder，
+    // 实际的 Builder.SetCurrentDebugLocation(DILoc) 调用
+    // 应该在 CodeGenFunction 的各个 Emit* 方法中进行
+    // 这里我们只是生成 DILocation 供外部使用
+  }
 }
 
 void CGDebugInfo::setFunctionLocation(llvm::Function *Fn, FunctionDecl *FD) {
@@ -537,11 +547,14 @@ uint32_t CGDebugInfo::GetTypeAlign(QualType T) {
 
 unsigned CGDebugInfo::getLineNumber(SourceLocation Loc) {
   if (!Loc.isValid()) return 0;
-  unsigned Offset = Loc.getOffset();
-  return (Offset == 0) ? 0 : (Offset / 20 + 1);
+  // P0 修复：使用 SourceManager 获取真实的行号
+  auto [Line, Col] = CGM.getSourceManager().getLineAndColumn(Loc);
+  return Line;
 }
 
 unsigned CGDebugInfo::getColumnNumber(SourceLocation Loc) {
   if (!Loc.isValid()) return 0;
-  return (Loc.getOffset() % 20) + 1;
+  // P0 修复：使用 SourceManager 获取真实的列号
+  auto [Line, Col] = CGM.getSourceManager().getLineAndColumn(Loc);
+  return Col;
 }

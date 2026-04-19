@@ -31,6 +31,7 @@ class CGCXX;
 class CGDebugInfo;
 class Mangler;
 class TargetInfo;
+class SourceManager;  // P0 修复：前向声明
 
 /// CodeGenModule — 模块级代码生成引擎。
 ///
@@ -72,6 +73,7 @@ enum class InitKind {
 class CodeGenModule {
   ASTContext &Context;
   llvm::LLVMContext &LLVMCtx;
+  SourceManager &SM;  // P0 修复：SourceManager 引用
   std::unique_ptr<llvm::Module> TheModule;
   std::unique_ptr<CodeGenTypes> Types;
   std::unique_ptr<CodeGenConstant> Constants;
@@ -105,6 +107,7 @@ class CodeGenModule {
 
 public:
   CodeGenModule(ASTContext &Ctx, llvm::LLVMContext &LLVMCtx,
+                SourceManager &SMRef,  // P0 修复：添加 SourceManager 参数
                 llvm::StringRef ModuleName, llvm::StringRef TargetTriple);
   ~CodeGenModule();
 
@@ -205,6 +208,7 @@ public:
   TargetInfo &getTarget() const { return *Target; }
   ASTContext &getASTContext() const { return Context; }
   llvm::LLVMContext &getLLVMContext() const { return LLVMCtx; }
+  SourceManager &getSourceManager() const { return SM; }  // P0 修复：SourceManager getter
 
   /// 获取模块的数据布局。
   const llvm::DataLayout &getDataLayout() const;

@@ -253,7 +253,8 @@ int main(int argc, char *argv[]) {
 #else
       std::string TargetTriple = "x86_64-unknown-linux-gnu";
 #endif
-      blocktype::CodeGenModule CGM(Context, LLVMCtx, ModuleName, TargetTriple);
+      // P0 修复：传递 SourceManager 给 CodeGenModule
+      blocktype::CodeGenModule CGM(Context, LLVMCtx, SM, ModuleName, TargetTriple);
       CGM.EmitTranslationUnit(TU);
       
       // 输出 LLVM IR

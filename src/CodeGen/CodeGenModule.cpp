@@ -34,9 +34,10 @@ using namespace blocktype;
 //===----------------------------------------------------------------------===//
 
 CodeGenModule::CodeGenModule(ASTContext &Ctx, llvm::LLVMContext &LLVMCtx,
+                             SourceManager &SMRef,  // P0 修复：SourceManager
                              llvm::StringRef ModuleName,
                              llvm::StringRef TargetTriple)
-    : Context(Ctx), LLVMCtx(LLVMCtx),
+    : Context(Ctx), LLVMCtx(LLVMCtx), SM(SMRef),
       TheModule(std::make_unique<llvm::Module>(ModuleName, LLVMCtx)) {
   // 设置目标三元组和数据布局
   TheModule->setTargetTriple(TargetTriple);
