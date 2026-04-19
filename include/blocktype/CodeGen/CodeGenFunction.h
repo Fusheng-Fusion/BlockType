@@ -73,6 +73,10 @@ class CodeGenFunction {
   /// Label → BasicBlock 映射（用于 goto/label 前向引用）
   llvm::DenseMap<const LabelDecl *, llvm::BasicBlock *> LabelMap;
 
+  /// Alloca 插入点 — 所有 alloca 指令统一在此位置之前插入。
+  /// 在 EmitFunctionBody 中参数 alloca 完成后保存，避免每次 saveIP/restoreIP。
+  llvm::AllocaInst *AllocaInsertPt = nullptr;
+
   //===------------------------------------------------------------------===//
   // 异常处理上下文
   //===------------------------------------------------------------------===//
@@ -84,6 +88,17 @@ class CodeGenFunction {
     llvm::BasicBlock *UnwindBB;
   };
   llvm::SmallVector<InvokeTarget, 4> InvokeTargets;
+
+  //===------------------------------------------------------------------===//
+  // Cleanup 栈（作用域结束时自动调用析构函数）
+  //===------------------------------------------------------------------===//
+
+  /// 记录需要析构的局部变量
+  struct CleanupEntry {
+    VarDecl *VD;
+    CXXRecordDecl *RD;
+  };
+  llvm::SmallVector<CleanupEntry, 8> CleanupStack;
 
 public:
   explicit CodeGenFunction(CodeGenModule &M);
@@ -134,8 +149,13 @@ public:
   // 局部变量管理
   //===------------------------------------------------------------------===//
 
-  /// 为局部变量创建 alloca 指令。
+  /// 为局部变量创建 alloca 指令（使用 AllocaInsertPt 插入点）。
   llvm::AllocaInst *CreateAlloca(QualType T, llvm::StringRef Name = "");
+
+  /// 在 entry 块的 AllocaInsertPt 位置创建原始 LLVM 类型的 alloca。
+  /// 供需要直接分配 LLVM 类型（而非 QualType）的场景使用。
+  llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Type *Ty,
+                                            llvm::StringRef Name = "");
 
   /// 注册局部变量的 alloca。
   void setLocalDecl(VarDecl *VD, llvm::AllocaInst *Alloca);
@@ -265,6 +285,31 @@ private:
 
   /// 离开 try 块
   void popInvokeTarget() { InvokeTargets.pop_back(); }
+
+  //===------------------------------------------------------------------===//
+  // Cleanup 栈辅助
+  //===------------------------------------------------------------------===//
+
+  /// 注册需要析构的局部变量到 cleanup 栈
+  void pushCleanup(VarDecl *VD);
+
+  /// 从栈顶到 OldSize 逆序调用析构函数
+  void EmitCleanupsForScope(unsigned OldSize);
+
+  /// RunCleanupsScope — RAII 包装，退出作用域时自动调用析构。
+  /// 用法：在 CompoundStmt/控制流 body 入口创建，析构时自动清理。
+  class RunCleanupsScope {
+    CodeGenFunction &CGF;
+    unsigned SavedCleanupDepth;
+
+  public:
+    RunCleanupsScope(CodeGenFunction &CGF)
+        : CGF(CGF), SavedCleanupDepth(CGF.CleanupStack.size()) {}
+    ~RunCleanupsScope() { CGF.EmitCleanupsForScope(SavedCleanupDepth); }
+
+    RunCleanupsScope(const RunCleanupsScope &) = delete;
+    RunCleanupsScope &operator=(const RunCleanupsScope &) = delete;
+  };
 };
 
 } // namespace blocktype

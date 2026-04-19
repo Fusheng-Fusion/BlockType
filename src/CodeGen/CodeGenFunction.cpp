@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/CodeGen/CodeGenFunction.h"
+#include "blocktype/CodeGen/CGCXX.h"
 #include "blocktype/CodeGen/CodeGenModule.h"
 #include "blocktype/CodeGen/CodeGenTypes.h"
 #include "blocktype/CodeGen/CodeGenConstant.h"
@@ -84,6 +85,15 @@ void CodeGenFunction::EmitFunctionBody(FunctionDecl *FunctionDecl,
     }
     ++ArgIndex;
   }
+
+  // 保存 AllocaInsertPt — 所有后续 alloca 在此位置之前插入
+  // 创建一个 dummy alloca 作为锚点，后续 alloca 在其之前插入
+  if (AllocaInsertPt) {
+    // 已经有 AllocaInsertPt（函数重入），清除旧的
+  }
+  AllocaInsertPt = Builder.CreateAlloca(
+      llvm::Type::getInt32Ty(CGM.getLLVMContext()), nullptr, "alloca.point");
+  // AllocaInsertPt 本身就是锚点，后续 alloca 在其之前插入
 
   // 生成函数体
   if (Stmt *Body = FunctionDecl->getBody()) {
@@ -312,19 +322,24 @@ llvm::AllocaInst *CodeGenFunction::CreateAlloca(QualType Type,
   if (!LLVMType) {
     return nullptr;
   }
+  return CreateEntryBlockAlloca(LLVMType, Name);
+}
 
-  // 在函数入口块创建 alloca（参照 Clang 的 alloca 插入模式）
-  llvm::BasicBlock *EntryBlock = &CurFn->getEntryBlock();
-  llvm::IRBuilder<>::InsertPoint SavedIP = Builder.saveIP();
-  llvm::Instruction *InsertPos = EntryBlock->getFirstNonPHIOrDbg();
-  if (InsertPos) {
-    Builder.SetInsertPoint(InsertPos);
-  } else {
-    Builder.SetInsertPoint(EntryBlock);
+llvm::AllocaInst *CodeGenFunction::CreateEntryBlockAlloca(llvm::Type *Ty,
+                                                            llvm::StringRef Name) {
+  if (AllocaInsertPt) {
+    // 在 AllocaInsertPt 之前插入
+    llvm::IRBuilder<>::InsertPoint SavedIP = Builder.saveIP();
+    Builder.SetInsertPoint(AllocaInsertPt);
+    llvm::AllocaInst *AllocaInst = Builder.CreateAlloca(Ty, nullptr, Name);
+    // 更新 AllocaInsertPt 指向新创建的 alloca（保持插入顺序）
+    AllocaInsertPt = AllocaInst;
+    Builder.restoreIP(SavedIP);
+    return AllocaInst;
   }
-  llvm::AllocaInst *AllocaInst = Builder.CreateAlloca(LLVMType, nullptr, Name);
-  Builder.restoreIP(SavedIP);
-  return AllocaInst;
+
+  // Fallback: 没有 AllocaInsertPt（函数外或初始化前），在当前位置创建
+  return Builder.CreateAlloca(Ty, nullptr, Name);
 }
 
 void CodeGenFunction::setLocalDecl(VarDecl *VariableDecl,
@@ -401,4 +416,39 @@ llvm::Value *CodeGenFunction::EmitDeclRefExpr(DeclRefExpr *Expression) {
   }
 
   return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
+// Cleanup 栈
+//===----------------------------------------------------------------------===//
+
+void CodeGenFunction::pushCleanup(VarDecl *VD) {
+  if (!VD)
+    return;
+
+  QualType VarType = VD->getType();
+  // 检查类型是否是 record 且有非 trivial 析构函数
+  if (VarType.isNull() || !VarType->isRecordType())
+    return;
+
+  auto *RT = llvm::dyn_cast<RecordType>(VarType.getTypePtr());
+  if (!RT)
+    return;
+
+  auto *CXXRecord = llvm::dyn_cast<CXXRecordDecl>(RT->getDecl());
+  if (!CXXRecord || !CXXRecord->hasDestructor())
+    return;
+
+  CleanupStack.push_back({VD, CXXRecord});
+}
+
+void CodeGenFunction::EmitCleanupsForScope(unsigned OldSize) {
+  // 逆序调用析构函数（后构造的先析构）
+  while (CleanupStack.size() > OldSize) {
+    CleanupEntry Entry = CleanupStack.pop_back_val();
+    llvm::AllocaInst *Alloca = getLocalDecl(Entry.VD);
+    if (Alloca && haveInsertPoint()) {
+      CGM.getCXX().EmitDestructorCall(*this, Entry.RD, Alloca);
+    }
+  }
 }

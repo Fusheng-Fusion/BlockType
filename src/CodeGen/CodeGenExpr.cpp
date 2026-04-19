@@ -112,13 +112,12 @@ llvm::Value *CodeGenFunction::EmitLogicalAnd(BinaryOperator *BinaryOp) {
   llvm::BasicBlock *AndBB = createBasicBlock("and.rhs");
   llvm::BasicBlock *MergeBB = createBasicBlock("and.end");
 
-  // 保存 LHS 所在的基本块（在 CreateICmpNE 之前）
+  // 保存 LHS 所在的基本块（在 EmitConversionToBool 之前）
   llvm::BasicBlock *LHBB = getCurrentBlock();
 
   // 转换为 i1
-  LeftHandSide = Builder.CreateICmpNE(
-      LeftHandSide,
-      llvm::Constant::getNullValue(LeftHandSide->getType()), "and.cond");
+  LeftHandSide = EmitConversionToBool(LeftHandSide,
+                                       BinaryOp->getLHS()->getType());
 
   Builder.CreateCondBr(LeftHandSide, AndBB, MergeBB);
 
@@ -128,9 +127,8 @@ llvm::Value *CodeGenFunction::EmitLogicalAnd(BinaryOperator *BinaryOp) {
   if (!RightHandSide) {
     RightHandSide = llvm::ConstantInt::getFalse(CGM.getLLVMContext());
   }
-  RightHandSide = Builder.CreateICmpNE(
-      RightHandSide,
-      llvm::Constant::getNullValue(RightHandSide->getType()), "and.cond");
+  RightHandSide = EmitConversionToBool(RightHandSide,
+                                         BinaryOp->getRHS()->getType());
 
   Builder.CreateBr(MergeBB);
 
@@ -154,12 +152,11 @@ llvm::Value *CodeGenFunction::EmitLogicalOr(BinaryOperator *BinaryOp) {
   llvm::BasicBlock *OrBB = createBasicBlock("or.rhs");
   llvm::BasicBlock *MergeBB = createBasicBlock("or.end");
 
-  // 保存 LHS 所在的基本块（在 CreateICmpNE 之前）
+  // 保存 LHS 所在的基本块（在 EmitConversionToBool 之前）
   llvm::BasicBlock *LHBB = getCurrentBlock();
 
-  LeftHandSide = Builder.CreateICmpNE(
-      LeftHandSide,
-      llvm::Constant::getNullValue(LeftHandSide->getType()), "or.cond");
+  LeftHandSide = EmitConversionToBool(LeftHandSide,
+                                       BinaryOp->getLHS()->getType());
 
   Builder.CreateCondBr(LeftHandSide, MergeBB, OrBB);
 
@@ -169,9 +166,8 @@ llvm::Value *CodeGenFunction::EmitLogicalOr(BinaryOperator *BinaryOp) {
   if (!RightHandSide) {
     RightHandSide = llvm::ConstantInt::getFalse(CGM.getLLVMContext());
   }
-  RightHandSide = Builder.CreateICmpNE(
-      RightHandSide,
-      llvm::Constant::getNullValue(RightHandSide->getType()), "or.cond");
+  RightHandSide = EmitConversionToBool(RightHandSide,
+                                         BinaryOp->getRHS()->getType());
 
   Builder.CreateBr(MergeBB);
 
@@ -1160,8 +1156,8 @@ llvm::Value *CodeGenFunction::EmitConditionalOperator(
   llvm::BasicBlock *ElseBB = createBasicBlock("cond.else");
   llvm::BasicBlock *MergeBB = createBasicBlock("cond.end");
 
-  Condition = Builder.CreateICmpNE(
-      Condition, llvm::Constant::getNullValue(Condition->getType()), "cond");
+  Condition = EmitConversionToBool(Condition,
+                                    Conditional->getCond()->getType());
   Builder.CreateCondBr(Condition, ThenBB, ElseBB);
 
   // Then
@@ -1509,18 +1505,8 @@ llvm::Value *CodeGenFunction::EmitCXXNewExpr(CXXNewExpr *NewExpression) {
               llvm::BasicBlock::Create(Ctx, "arr.ctor.exit", CurFn);
 
           // i = 0 — 在 entry 块创建 alloca
-          llvm::AllocaInst *Counter = nullptr;
-          {
-            llvm::IRBuilder<>::InsertPoint SavedIP = B.saveIP();
-            llvm::Instruction *InsertPos =
-                CurFn->getEntryBlock().getFirstNonPHIOrDbg();
-            if (InsertPos)
-              B.SetInsertPoint(InsertPos);
-            else
-              B.SetInsertPoint(&CurFn->getEntryBlock());
-            Counter = B.CreateAlloca(Int64Ty, nullptr, "arr.ctor.i");
-            B.restoreIP(SavedIP);
-          }
+          llvm::AllocaInst *Counter =
+              CreateEntryBlockAlloca(Int64Ty, "arr.ctor.i");
           B.CreateStore(llvm::ConstantInt::get(Int64Ty, 0), Counter);
           B.CreateBr(LoopBB);
 
@@ -1677,18 +1663,8 @@ llvm::Value *CodeGenFunction::EmitCXXDeleteExpr(
             llvm::BasicBlock::Create(Ctx, "del.dtor.exit", CurFn);
 
         // i = count - 1
-        llvm::AllocaInst *Counter = nullptr;
-        {
-          llvm::IRBuilder<>::InsertPoint SavedIP = B.saveIP();
-          llvm::Instruction *InsertPos =
-              CurFn->getEntryBlock().getFirstNonPHIOrDbg();
-          if (InsertPos)
-            B.SetInsertPoint(InsertPos);
-          else
-            B.SetInsertPoint(&CurFn->getEntryBlock());
-          Counter = B.CreateAlloca(Int64Ty, nullptr, "del.dtor.i");
-          B.restoreIP(SavedIP);
-        }
+        llvm::AllocaInst *Counter =
+            CreateEntryBlockAlloca(Int64Ty, "del.dtor.i");
         llvm::Value *CountMinusOne = B.CreateSub(
             ArrayCount, llvm::ConstantInt::get(Int64Ty, 1), "count.dec");
         B.CreateStore(CountMinusOne, Counter);

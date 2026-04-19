@@ -31,6 +31,7 @@ void CodeGenFunction::EmitCompoundStmt(CompoundStmt *CompoundStatement) {
   if (!CompoundStatement) {
     return;
   }
+  RunCleanupsScope Scope(*this);
   EmitStmts(CompoundStatement->getBody());
 }
 
@@ -72,6 +73,7 @@ void CodeGenFunction::EmitIfStmt(IfStmt *IfStatement) {
   // Then
   EmitBlock(ThenBB);
   if (IfStatement->getThen()) {
+    RunCleanupsScope ThenScope(*this);
     EmitStmt(IfStatement->getThen());
   }
   if (haveInsertPoint()) {
@@ -82,7 +84,10 @@ void CodeGenFunction::EmitIfStmt(IfStmt *IfStatement) {
   if (ElseBB) {
     EmitBlock(ElseBB);
     // else if 链：递归处理嵌套的 IfStmt
-    EmitStmt(IfStatement->getElse());
+    {
+      RunCleanupsScope ElseScope(*this);
+      EmitStmt(IfStatement->getElse());
+    }
     if (haveInsertPoint()) {
       Builder.CreateBr(MergeBB);
     }
@@ -311,6 +316,7 @@ void CodeGenFunction::EmitForStmt(ForStmt *ForStatement) {
   // Body
   EmitBlock(BodyBB);
   if (ForStatement->getBody()) {
+    RunCleanupsScope BodyScope(*this);
     EmitStmt(ForStatement->getBody());
   }
   if (haveInsertPoint()) {
@@ -368,6 +374,7 @@ void CodeGenFunction::EmitWhileStmt(WhileStmt *WhileStatement) {
   // Body
   EmitBlock(BodyBB);
   if (WhileStatement->getBody()) {
+    RunCleanupsScope BodyScope(*this);
     EmitStmt(WhileStatement->getBody());
   }
   if (haveInsertPoint()) {
@@ -398,6 +405,7 @@ void CodeGenFunction::EmitDoStmt(DoStmt *DoStatement) {
   // Body
   EmitBlock(BodyBB);
   if (DoStatement->getBody()) {
+    RunCleanupsScope BodyScope(*this);
     EmitStmt(DoStatement->getBody());
   }
   if (haveInsertPoint()) {
@@ -432,6 +440,9 @@ void CodeGenFunction::EmitReturnStmt(ReturnStmt *ReturnStatement) {
   if (!ReturnStatement) {
     return;
   }
+
+  // 在 return 前清理所有活跃的局部变量析构函数
+  EmitCleanupsForScope(0);
 
   if (Expr *ReturnExpr = ReturnStatement->getRetValue()) {
     llvm::Value *ReturnValue = EmitExpr(ReturnExpr);
@@ -476,6 +487,9 @@ void CodeGenFunction::EmitDeclStmt(DeclStmt *DeclarationStatement) {
       if (CGM.getDebugInfo().isInitialized()) {
         CGM.getDebugInfo().EmitLocalVarDI(VariableDecl, Alloca);
       }
+
+      // 注册析构 cleanup（如果类型有非 trivial 析构函数）
+      pushCleanup(VariableDecl);
 
       // 初始化
       if (Expr *Initializer = VariableDecl->getInit()) {
@@ -585,21 +599,12 @@ void CodeGenFunction::EmitCXXTryStmt(CXXTryStmt *TryStatement) {
     llvm::BasicBlock *LandingPadBB = createBasicBlock("lpad");
 
     // 保存 landingpad 结果的 alloca（在 entry 块创建）
-    llvm::IRBuilder<>::InsertPoint SavedIP = Builder.saveIP();
-    llvm::BasicBlock *EntryBlock = &CurFn->getEntryBlock();
-    llvm::Instruction *InsertPos = EntryBlock->getFirstNonPHIOrDbg();
-    if (InsertPos) {
-      Builder.SetInsertPoint(InsertPos);
-    } else {
-      Builder.SetInsertPoint(EntryBlock);
-    }
     llvm::StructType *LPadResultType = llvm::StructType::get(
         CGM.getLLVMContext(),
         {llvm::PointerType::get(CGM.getLLVMContext(), 0),
          llvm::Type::getInt32Ty(CGM.getLLVMContext())});
     llvm::AllocaInst *LPadAlloca =
-        Builder.CreateAlloca(LPadResultType, nullptr, "lpad.result");
-    Builder.restoreIP(SavedIP);
+        CreateEntryBlockAlloca(LPadResultType, "lpad.result");
 
     // 正常返回块（invoke 成功后跳转）
     llvm::BasicBlock *NormalBB = createBasicBlock("try.normal");
@@ -804,18 +809,9 @@ void CodeGenFunction::EmitCXXForRangeStmt(CXXForRangeStmt *ForRangeStatement) {
         "range.end");
 
     // 创建迭代器变量（存储指向元素的指针）
-    // 直接在 entry 块创建 alloca，类型为 element pointer
-    llvm::IRBuilder<>::InsertPoint SavedIP = Builder.saveIP();
-    llvm::BasicBlock *EntryBlock = &CurFn->getEntryBlock();
-    llvm::Instruction *InsertPos = EntryBlock->getFirstNonPHIOrDbg();
-    if (InsertPos) {
-      Builder.SetInsertPoint(InsertPos);
-    } else {
-      Builder.SetInsertPoint(EntryBlock);
-    }
-    llvm::AllocaInst *IterPtrAlloca = Builder.CreateAlloca(
-        llvm::PointerType::get(ElemTy, 0), nullptr, "__iter.ptr");
-    Builder.restoreIP(SavedIP);
+    // 在 entry 块创建 alloca，类型为 element pointer
+    llvm::AllocaInst *IterPtrAlloca = CreateEntryBlockAlloca(
+        llvm::PointerType::get(ElemTy, 0), "__iter.ptr");
 
     // 初始化迭代器 = begin
     Builder.CreateStore(BeginPtr, IterPtrAlloca);
@@ -953,17 +949,7 @@ void CodeGenFunction::EmitCXXForRangeStmt(CXXForRangeStmt *ForRangeStatement) {
 
     // 成功获取 begin/end — 生成迭代器循环
     // 创建迭代器 alloca
-    llvm::IRBuilder<>::InsertPoint SavedIP = Builder.saveIP();
-    llvm::BasicBlock *EntryBlock = &CurFn->getEntryBlock();
-    llvm::Instruction *InsertPos = EntryBlock->getFirstNonPHIOrDbg();
-    if (InsertPos) {
-      Builder.SetInsertPoint(InsertPos);
-    } else {
-      Builder.SetInsertPoint(EntryBlock);
-    }
-    llvm::AllocaInst *IterAlloca = Builder.CreateAlloca(
-        IterTy, nullptr, "__iter");
-    Builder.restoreIP(SavedIP);
+    llvm::AllocaInst *IterAlloca = CreateEntryBlockAlloca(IterTy, "__iter");
 
     // 初始化迭代器 = begin
     Builder.CreateStore(BeginVal, IterAlloca);
