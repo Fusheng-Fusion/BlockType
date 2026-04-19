@@ -110,8 +110,8 @@ public:
       return BO; // No change
     }
     
-    // TODO: Create new BinaryOperator with NewLHS/NewRHS
-    return BO; // Placeholder
+    // Create new BinaryOperator with cloned operands
+    return new BinaryOperator(BO->getLocation(), NewLHS, NewRHS, BO->getOpcode());
   }
 
   Expr *VisitUnaryOperator(UnaryOperator *UO) {
@@ -122,8 +122,8 @@ public:
       return UO; // No change
     }
     
-    // TODO: Create new UnaryOperator with NewSub
-    return UO; // Placeholder
+    // Create new UnaryOperator with cloned subexpression
+    return new UnaryOperator(UO->getLocation(), NewSub, UO->getOpcode());
   }
 
   Expr *VisitCallExpr(CallExpr *CE) {
@@ -145,8 +145,8 @@ public:
       return CE; // No change
     }
     
-    // TODO: Create new CallExpr with NewCallee and NewArgs
-    return CE; // Placeholder
+    // Create new CallExpr with cloned callee and arguments
+    return new CallExpr(CE->getLocation(), NewCallee, NewArgs);
   }
 
   Expr *VisitDeclRefExpr(DeclRefExpr *DRE) {

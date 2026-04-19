@@ -109,9 +109,8 @@ Stmt *StmtCloner::CloneReturnStmt(ReturnStmt *RS) {
     return RS; // No change
   }
   
-  // TODO: Create new ReturnStmt with ClonedExpr
-  // For now, return original
-  return RS;
+  // Create new ReturnStmt with cloned expression
+  return new ReturnStmt(RS->getLocation(), ClonedExpr);
 }
 
 Stmt *StmtCloner::CloneIfStmt(IfStmt *IS) {
@@ -127,8 +126,9 @@ Stmt *StmtCloner::CloneIfStmt(IfStmt *IS) {
     return IS; // No change
   }
   
-  // TODO: Create new IfStmt with cloned components
-  return IS; // Placeholder
+  // Create new IfStmt with cloned components
+  return new IfStmt(IS->getLocation(), ClonedCond, ClonedThen, ClonedElse,
+                    IS->getConditionVariable(), IS->isConsteval(), IS->isNegated());
 }
 
 Stmt *StmtCloner::CloneWhileStmt(WhileStmt *WS) {
@@ -139,8 +139,9 @@ Stmt *StmtCloner::CloneWhileStmt(WhileStmt *WS) {
     return WS; // No change
   }
   
-  // TODO: Create new WhileStmt
-  return WS; // Placeholder
+  // Create new WhileStmt
+  return new WhileStmt(WS->getLocation(), ClonedCond, ClonedBody,
+                       WS->getConditionVariable());
 }
 
 Stmt *StmtCloner::CloneForStmt(ForStmt *FS) {
@@ -158,8 +159,9 @@ Stmt *StmtCloner::CloneForStmt(ForStmt *FS) {
     return FS; // No change
   }
   
-  // TODO: Create new ForStmt
-  return FS; // Placeholder
+  // Create new ForStmt
+  return new ForStmt(FS->getLocation(), ClonedInit, ClonedCond, ClonedInc,
+                     ClonedBody, FS->getConditionVariable());
 }
 
 Stmt *StmtCloner::CloneBreakStmt(BreakStmt *BS) {
