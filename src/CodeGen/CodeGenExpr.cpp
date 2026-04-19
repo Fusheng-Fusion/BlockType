@@ -1419,8 +1419,8 @@ llvm::Value *CodeGenFunction::EmitCXXConstructExpr(
         }
       }
 
-      // 调用构造函数
-      Builder.CreateCall(CtorFn, Args, "ctor.call");
+      // 调用构造函数（try 块内使用 invoke 以支持异常传播）
+      EmitCallOrInvoke(CtorFn, Args, "ctor.call");
     } else {
       // 无法获取构造函数，零初始化
       Builder.CreateStore(llvm::Constant::getNullValue(Type), ConstructAddr);
@@ -1568,7 +1568,7 @@ llvm::Value *CodeGenFunction::EmitCXXNewExpr(CXXNewExpr *NewExpression) {
               Offset, "elem.int");
           llvm::Value *ElemPtr = B.CreateIntToPtr(
               ElemIntPtr, llvm::PointerType::get(Ctx, 0), "elem.ptr");
-          B.CreateCall(CtorFn, {ElemPtr}, "arr.ctor.call");
+          EmitCallOrInvoke(CtorFn, {ElemPtr}, "arr.ctor.call");
 
           // i++
           llvm::Value *NextCounter = B.CreateAdd(
@@ -1606,7 +1606,7 @@ llvm::Value *CodeGenFunction::EmitCXXNewExpr(CXXNewExpr *NewExpression) {
             llvm::Value *ArgVal = EmitExpr(Arg);
             if (ArgVal) Args.push_back(ArgVal);
           }
-          B.CreateCall(CtorFn, Args, "new.ctor");
+          EmitCallOrInvoke(CtorFn, Args, "new.ctor");
         }
       }
     }
@@ -1729,7 +1729,7 @@ llvm::Value *CodeGenFunction::EmitCXXDeleteExpr(
             Offset, "del.elem.int");
         llvm::Value *ElemPtr = B.CreateIntToPtr(
             ElemIntPtr, llvm::PointerType::get(Ctx, 0), "del.elem.ptr");
-        B.CreateCall(DtorFn, {ElemPtr}, "del.dtor.call");
+        EmitNounwindCall(DtorFn, {ElemPtr}, "del.dtor.call");
 
         // --i
         llvm::Value *NextCounter = B.CreateSub(
@@ -1767,30 +1767,95 @@ llvm::Value *CodeGenFunction::EmitCXXThrowExpr(CXXThrowExpr *ThrowExpression) {
     return nullptr;
   }
 
-  // 简化实现：调用 __cxa_throw 或 __cxa_rethrow
-  if (ThrowExpression->getSubExpr()) {
-    // throw expr: 分配异常对象并抛出
-    llvm::Value *ExceptionValue = EmitExpr(ThrowExpression->getSubExpr());
+  auto &Ctx = CGM.getLLVMContext();
+  auto &B = Builder;
 
-    // 简化：使用 __cxa_begin_catch / __cxa_throw 的占位
-    // 实际实现需要调用 __cxa_allocate_exception + 构造 + __cxa_throw
-    // 这里简化为 unreachable（throw 后不会继续执行）
-    if (haveInsertPoint()) {
-      Builder.CreateUnreachable();
+  if (ThrowExpression->getSubExpr()) {
+    // throw expr: __cxa_allocate_exception(sizeof(T)) → memcpy → __cxa_throw
+    Expr *SubExpr = ThrowExpression->getSubExpr();
+    QualType ThrowType = SubExpr->getType();
+    llvm::Type *ThrowLLVMTy = CGM.getTypes().ConvertType(ThrowType);
+
+    if (ThrowType.isNull() || !ThrowLLVMTy) {
+      if (haveInsertPoint()) Builder.CreateUnreachable();
+      return nullptr;
     }
+
+    uint64_t ThrowSize = CGM.getTarget().getTypeSize(ThrowType);
+
+    // 声明 __cxa_allocate_exception(size_t) → i8*
+    llvm::FunctionType *AllocExnTy = llvm::FunctionType::get(
+        llvm::PointerType::get(Ctx, 0),
+        {llvm::Type::getInt64Ty(Ctx)}, false);
+    llvm::FunctionCallee AllocExn =
+        CGM.getModule()->getOrInsertFunction("__cxa_allocate_exception", AllocExnTy);
+
+    // 调用 __cxa_allocate_exception
+    llvm::Value *ExnPtr = B.CreateCall(AllocExn,
+        {llvm::ConstantInt::get(llvm::Type::getInt64Ty(Ctx), ThrowSize)},
+        "exn.alloc");
+
+    // 求值 throw 表达式
+    llvm::Value *ThrowVal = EmitExpr(SubExpr);
+    if (!ThrowVal) {
+      if (haveInsertPoint()) Builder.CreateUnreachable();
+      return nullptr;
+    }
+
+    // 将异常值存入 __cxa_allocate_exception 返回的内存
+    llvm::Value *TypedExnPtr = B.CreateBitCast(ExnPtr,
+        llvm::PointerType::get(ThrowLLVMTy, 0), "exn.typed");
+    B.CreateStore(ThrowVal, TypedExnPtr);
+
+    // 获取 typeinfo（如果有 record 类型）
+    llvm::Value *TypeInfoPtr = llvm::ConstantPointerNull::get(
+        llvm::PointerType::get(Ctx, 0));
+    if (ThrowType->isRecordType()) {
+      if (auto *RT = llvm::dyn_cast<RecordType>(ThrowType.getTypePtr())) {
+        if (auto *CXXRD = llvm::dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+          if (auto *TI = CGM.getCXX().EmitTypeInfo(CXXRD)) {
+            TypeInfoPtr = B.CreateBitCast(TI,
+                llvm::PointerType::get(Ctx, 0), "ti.ptr");
+          }
+        }
+      }
+    }
+
+    // 析构函数指针（异常对象销毁回调）— 简化为 null（trivial 析构）
+    // TODO: 如果类型有非 trivial 析构函数，需要生成一个适配函数
+    llvm::Value *DtorPtr = llvm::ConstantPointerNull::get(
+        llvm::PointerType::get(Ctx, 0));
+
+    // 声明 __cxa_throw(void*, typeinfo*, dtor*) → noreturn
+    llvm::FunctionType *ThrowTy = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(Ctx),
+        {llvm::PointerType::get(Ctx, 0),
+         llvm::PointerType::get(Ctx, 0),
+         llvm::PointerType::get(Ctx, 0)}, false);
+    llvm::FunctionCallee CxaThrow =
+        CGM.getModule()->getOrInsertFunction("__cxa_throw", ThrowTy);
+
+    auto *ThrowCall = B.CreateCall(CxaThrow,
+        {ExnPtr, TypeInfoPtr, DtorPtr}, "throw");
+    ThrowCall->setDoesNotReturn();
   } else {
     // throw; （rethrow）
-    // 简化：标记为 unreachable
-    if (haveInsertPoint()) {
-      Builder.CreateUnreachable();
-    }
+    llvm::FunctionType *RethrowTy = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(Ctx), false);
+    llvm::FunctionCallee CxaRethrow =
+        CGM.getModule()->getOrInsertFunction("__cxa_rethrow", RethrowTy);
+    auto *RethrowCall = B.CreateCall(CxaRethrow, {}, "rethrow");
+    RethrowCall->setDoesNotReturn();
   }
 
-  // throw 后创建新的基本块（dead code）
+  // throw/rethrow 之后是 dead code
   if (haveInsertPoint()) {
-    llvm::BasicBlock *AfterThrow = createBasicBlock("throw.cont");
-    Builder.SetInsertPoint(AfterThrow);
+    Builder.CreateUnreachable();
   }
+
+  // 创建新的基本块用于后续 dead code
+  llvm::BasicBlock *AfterThrow = createBasicBlock("throw.cont");
+  Builder.SetInsertPoint(AfterThrow);
 
   return nullptr;
 }

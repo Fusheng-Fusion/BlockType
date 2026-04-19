@@ -191,6 +191,16 @@ Stmt *Parser::parseStatement() {
 
   Stmt *Result = nullptr;
 
+  // 检查前置属性 [[likely]]/[[unlikely]] 等
+  class AttributeListDecl *PrefixAttrs = nullptr;
+  if (Tok.is(TokenKind::l_square)) {
+    Token NextTok = peekToken();
+    if (NextTok.is(TokenKind::l_square)) {
+      SourceLocation AttrLoc = Tok.getLocation();
+      PrefixAttrs = parseAttributeSpecifier(AttrLoc);
+    }
+  }
+
   switch (Tok.getKind()) {
   case TokenKind::l_brace:
     Result = parseCompoundStatement();
@@ -277,6 +287,12 @@ Stmt *Parser::parseStatement() {
   }
 
   popContext();
+
+  // 将前置属性（[[likely]]/[[unlikely]]等）附加到语句上
+  if (Result && PrefixAttrs) {
+    Result->setAttrs(PrefixAttrs);
+  }
+
   return Result;
 }
 

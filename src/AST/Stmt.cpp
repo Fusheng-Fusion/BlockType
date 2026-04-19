@@ -14,6 +14,25 @@
 namespace blocktype {
 
 //===----------------------------------------------------------------------===//
+// Stmt base class
+//===----------------------------------------------------------------------===//
+
+bool Stmt::hasAttr(llvm::StringRef Name) const {
+  if (!Attrs) return false;
+  for (auto *A : Attrs->getAttributes()) {
+    if (A->getAttributeName() == Name) return true;
+    if (A->getFullName() == Name) return true;
+  }
+  return false;
+}
+
+BranchLikelihood Stmt::getBranchLikelihood() const {
+  if (hasAttr("likely")) return BranchLikelihood::Likely;
+  if (hasAttr("unlikely")) return BranchLikelihood::Unlikely;
+  return BranchLikelihood::None;
+}
+
+//===----------------------------------------------------------------------===//
 // CompoundStmt
 //===----------------------------------------------------------------------===//
 

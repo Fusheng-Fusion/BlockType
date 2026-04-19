@@ -190,6 +190,33 @@ public:
   /// 获取 this 指针
   llvm::Value *getThisPointer() const { return ThisValue; }
 
+  /// 根据 isInTryBlock() 自动选择 call 或 invoke。
+  llvm::CallBase *EmitCallOrInvoke(llvm::FunctionCallee Callee,
+                                    llvm::ArrayRef<llvm::Value *> Args,
+                                    llvm::StringRef Name = "");
+
+  /// 生成 nounwind 的 call（用于析构函数等不抛异常的调用）。
+  llvm::CallBase *EmitNounwindCall(llvm::FunctionCallee Callee,
+                                    llvm::ArrayRef<llvm::Value *> Args,
+                                    llvm::StringRef Name = "");
+
+  /// 创建 BranchWeights 元数据（用于 [[likely]]/[[unlikely]] 分支提示）
+  /// TrueWeight: true 分支权重, FalseWeight: false 分支权重
+  static llvm::MDNode *createBranchWeights(llvm::LLVMContext &Ctx,
+                                            unsigned TrueWeight,
+                                            unsigned FalseWeight);
+
+  /// 根据语句的 [[likely]]/[[unlikely]] 属性创建 BranchWeights 元数据
+  /// ThenStmt: then 分支语句, HasElse: 是否有 else 分支
+  static llvm::MDNode *createIfBranchWeights(llvm::LLVMContext &Ctx,
+                                              const Stmt *ThenStmt,
+                                              bool HasElse);
+
+  /// 创建循环条件的 BranchWeights 元数据
+  /// LoopBody: 循环体语句（[[likely]] 表示循环更可能继续）
+  static llvm::MDNode *createLoopBranchWeights(llvm::LLVMContext &Ctx,
+                                                 const Stmt *LoopBody);
+
 private:
   //===------------------------------------------------------------------===//
   // 表达式生成子方法

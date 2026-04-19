@@ -22,6 +22,14 @@ class Expr;
 class Decl;
 class VarDecl;
 class LabelDecl;
+class AttributeListDecl;
+
+/// BranchLikelihood - 提示分支的可能方向（用于 BranchWeights 元数据）
+enum class BranchLikelihood {
+  None,     // 无提示
+  Likely,   // [[likely]]
+  Unlikely  // [[unlikely]]
+};
 
 //===----------------------------------------------------------------------===//
 // Stmt - Base class for all statements
@@ -29,6 +37,9 @@ class LabelDecl;
 
 /// Stmt - Base class for all statement nodes.
 class Stmt : public ASTNode {
+  /// 可选的属性列表（[[likely]], [[unlikely]] 等）
+  class AttributeListDecl *Attrs = nullptr;
+
 protected:
   Stmt(SourceLocation Loc) : ASTNode(Loc) {}
 
@@ -37,6 +48,16 @@ public:
     return N->getKind() >= NodeKind::NullStmtKind &&
            N->getKind() < NodeKind::NamedDeclKind;
   }
+
+  /// 获取语句的属性列表
+  class AttributeListDecl *getAttrs() const { return Attrs; }
+  void setAttrs(class AttributeListDecl *A) { Attrs = A; }
+
+  /// 检查语句是否有特定属性（按名称）
+  bool hasAttr(llvm::StringRef Name) const;
+
+  /// 获取分支可能性提示（[[likely]]/[[unlikely]]）
+  BranchLikelihood getBranchLikelihood() const;
 };
 
 //===----------------------------------------------------------------------===//

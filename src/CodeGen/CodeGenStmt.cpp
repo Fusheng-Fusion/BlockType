@@ -8,6 +8,7 @@
 
 #include "blocktype/CodeGen/CodeGenFunction.h"
 #include "blocktype/CodeGen/CodeGenModule.h"
+#include "blocktype/CodeGen/CGCXX.h"
 #include "blocktype/CodeGen/CodeGenTypes.h"
 #include "blocktype/CodeGen/CodeGenConstant.h"
 #include "blocktype/CodeGen/CGDebugInfo.h"
@@ -44,16 +45,31 @@ void CodeGenFunction::EmitIfStmt(IfStmt *IfStatement) {
     return;
   }
 
+  // consteval if — 编译时已确定分支，只生成对应分支
+  // C++20 语义：if consteval 在常量求值上下文中为 true，运行时为 false。
+  // CodeGen 生成的是运行时代码，因此：
+  //   if consteval  → false（生成 else 分支）
+  //   if !consteval → true（生成 then 分支）
+  if (IfStatement->isConsteval()) {
+    if (IfStatement->isNegated()) {
+      // if !consteval → always true → 只生成 then 分支
+      if (IfStatement->getThen()) {
+        RunCleanupsScope Scope(*this);
+        EmitStmt(IfStatement->getThen());
+      }
+    } else {
+      // if consteval → always false → 只生成 else 分支
+      if (IfStatement->getElse()) {
+        RunCleanupsScope Scope(*this);
+        EmitStmt(IfStatement->getElse());
+      }
+    }
+    return;
+  }
+
   // 处理条件变量（如 if (int x = expr)）
   if (VarDecl *CondVar = IfStatement->getConditionVariable()) {
     EmitCondVarDecl(CondVar);
-  }
-
-  // consteval if — 编译时已确定分支，只生成对应分支
-  if (IfStatement->isConsteval()) {
-    // 简化：在 CodeGen 阶段无法真正评估 consteval，
-    // 保守地生成两个分支（实际编译器会移除死分支）
-    // TODO: 配合 Sema 传播 consteval 结果
   }
 
   // 生成条件
@@ -67,8 +83,16 @@ void CodeGenFunction::EmitIfStmt(IfStmt *IfStatement) {
   llvm::BasicBlock *MergeBB = createBasicBlock("if.end");
 
   Condition = EmitConversionToBool(Condition, IfStatement->getCond()->getType());
-  Builder.CreateCondBr(Condition, ThenBB,
+
+  // 检测 then 分支的 [[likely]]/[[unlikely]] 属性，附加 BranchWeights 元数据
+  llvm::MDNode *Weights = createIfBranchWeights(
+      CGM.getLLVMContext(), IfStatement->getThen(),
+      IfStatement->getElse() != nullptr);
+  auto *CondBr = Builder.CreateCondBr(Condition, ThenBB,
                        ElseBB ? ElseBB : MergeBB);
+  if (Weights) {
+    CondBr->setMetadata(llvm::LLVMContext::MD_prof, Weights);
+  }
 
   // Then
   EmitBlock(ThenBB);
@@ -321,7 +345,12 @@ void CodeGenFunction::EmitForStmt(ForStmt *ForStatement) {
     llvm::Value *Cond = EmitExpr(ForStatement->getCond());
     if (Cond) {
       Cond = EmitConversionToBool(Cond, ForStatement->getCond()->getType());
-      Builder.CreateCondBr(Cond, BodyBB, EndBB);
+      auto *CondBr = Builder.CreateCondBr(Cond, BodyBB, EndBB);
+      // [[likely]]/[[unlikely]] 分支权重
+      if (auto *Weights = createLoopBranchWeights(CGM.getLLVMContext(),
+                                                    ForStatement->getBody())) {
+        CondBr->setMetadata(llvm::LLVMContext::MD_prof, Weights);
+      }
     } else {
       Builder.CreateBr(BodyBB);
     }
@@ -379,7 +408,12 @@ void CodeGenFunction::EmitWhileStmt(WhileStmt *WhileStatement) {
     llvm::Value *Cond = EmitExpr(WhileStatement->getCond());
     if (Cond) {
       Cond = EmitConversionToBool(Cond, WhileStatement->getCond()->getType());
-      Builder.CreateCondBr(Cond, BodyBB, EndBB);
+      auto *CondBr = Builder.CreateCondBr(Cond, BodyBB, EndBB);
+      // [[likely]]/[[unlikely]] 分支权重
+      if (auto *Weights = createLoopBranchWeights(CGM.getLLVMContext(),
+                                                    WhileStatement->getBody())) {
+        CondBr->setMetadata(llvm::LLVMContext::MD_prof, Weights);
+      }
     } else {
       Builder.CreateBr(EndBB);
     }
@@ -434,7 +468,12 @@ void CodeGenFunction::EmitDoStmt(DoStmt *DoStatement) {
     llvm::Value *Cond = EmitExpr(DoStatement->getCond());
     if (Cond) {
       Cond = EmitConversionToBool(Cond, DoStatement->getCond()->getType());
-      Builder.CreateCondBr(Cond, BodyBB, EndBB);
+      auto *CondBr = Builder.CreateCondBr(Cond, BodyBB, EndBB);
+      // [[likely]]/[[unlikely]] 分支权重
+      if (auto *Weights = createLoopBranchWeights(CGM.getLLVMContext(),
+                                                    DoStatement->getBody())) {
+        CondBr->setMetadata(llvm::LLVMContext::MD_prof, Weights);
+      }
     } else {
       Builder.CreateBr(EndBB);
     }
@@ -621,14 +660,21 @@ void CodeGenFunction::EmitCXXTryStmt(CXXTryStmt *TryStatement) {
     return;
   }
 
-  // 基本 try/catch 代码生成
+  // try/catch 代码生成（Itanium C++ ABI）
   // 使用 invoke + landingpad 模式
   //
   // 结构：
-  //   try block: invoke @func to normalBB unwind landingpadBB
+  //   try block: invoke @func to normalBB unwind lpad
   //   normalBB: → try.cont
-  //   landingpadBB: catch dispatch → catch handlers → try.cont
+  //   lpad: catch dispatch using typeinfo → catch handlers → try.cont
   //   eh.resume: resume 未捕获的异常
+  //
+  // catch(T e) 的处理流程：
+  //   1. landingpad clause 使用 RTTI typeinfo（而非 catch-all）
+  //   2. __cxa_begin_catch(exception_ptr) 获取异常对象
+  //   3. 将异常对象存入 catch 参数的 alloca
+  //   4. 执行 handler body
+  //   5. __cxa_end_catch()
 
   llvm::BasicBlock *TryContBB = createBasicBlock("try.cont");
 
@@ -672,17 +718,36 @@ void CodeGenFunction::EmitCXXTryStmt(CXXTryStmt *TryStatement) {
     llvm::LandingPadInst *LPad = Builder.CreateLandingPad(
         LPadResultType,
         TryStatement->getCatchBlocks().size(), "lpad");
+    LPad->setCleanup(true); // 允许 catch-all 和类型匹配共存
 
-    // 为每个 catch 块添加 catch clause 到 landingpad
+    // 为每个 catch 块添加 catch clause 到 landingpad（使用 RTTI typeinfo）
     for (Stmt *CatchBlock : TryStatement->getCatchBlocks()) {
       if (auto *Catch = llvm::dyn_cast<CXXCatchStmt>(CatchBlock)) {
         if (!Catch->getExceptionDecl()) {
-          // catch(...) — catch-all clause
+          // catch(...) — catch-all clause（null clause）
           LPad->addClause(nullptr);
         } else {
-          // catch(T e) — 需要类型信息（简化：也用 catch-all）
-          // TODO: 使用 RTTI 类型信息作为 clause
-          LPad->addClause(nullptr);
+          // catch(T e) — 使用 RTTI 类型信息作为 clause
+          QualType CatchType = Catch->getExceptionDecl()->getType();
+          llvm::Value *TypeInfoClause = nullptr;
+
+          if (CatchType->isRecordType()) {
+            if (auto *RT = llvm::dyn_cast<RecordType>(CatchType.getTypePtr())) {
+              if (auto *CXXRD = llvm::dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+                if (auto *TI = CGM.getCXX().EmitTypeInfo(CXXRD)) {
+                  TypeInfoClause = Builder.CreateBitCast(TI,
+                      llvm::PointerType::get(CGM.getLLVMContext(), 0));
+                }
+              }
+            }
+          }
+
+          if (TypeInfoClause) {
+            LPad->addClause(llvm::cast<llvm::Constant>(TypeInfoClause));
+          } else {
+            // 无法生成 typeinfo，fallback 到 catch-all
+            LPad->addClause(nullptr);
+          }
         }
       } else {
         LPad->addClause(llvm::Constant::getNullValue(
@@ -693,12 +758,35 @@ void CodeGenFunction::EmitCXXTryStmt(CXXTryStmt *TryStatement) {
     // 保存 landingpad 结果
     Builder.CreateStore(LPad, LPadAlloca);
 
+    // 声明 __cxa_begin_catch 和 __cxa_end_catch
+    auto &Ctx = CGM.getLLVMContext();
+    llvm::FunctionType *BeginCatchTy = llvm::FunctionType::get(
+        llvm::PointerType::get(Ctx, 0),
+        {llvm::PointerType::get(Ctx, 0)}, false);
+    llvm::FunctionCallee BeginCatch =
+        CGM.getModule()->getOrInsertFunction("__cxa_begin_catch", BeginCatchTy);
+
+    llvm::FunctionType *EndCatchTy = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(Ctx), false);
+    llvm::FunctionCallee EndCatch =
+        CGM.getModule()->getOrInsertFunction("__cxa_end_catch", EndCatchTy);
+
     // 生成每个 catch handler
     for (Stmt *CatchBlock : TryStatement->getCatchBlocks()) {
       llvm::BasicBlock *CatchBB = createBasicBlock("catch");
       EmitBlock(CatchBB);
 
       if (auto *Catch = llvm::dyn_cast<CXXCatchStmt>(CatchBlock)) {
+        // 从 landingpad 结果中提取异常对象指针
+        llvm::Value *LPadResult = Builder.CreateLoad(LPadResultType,
+                                                     LPadAlloca, "lpad");
+        llvm::Value *ExceptionPtr = Builder.CreateExtractValue(
+            LPadResult, {0}, "exception.ptr");
+
+        // 调用 __cxa_begin_catch 获取异常对象
+        llvm::Value *CatchObj = Builder.CreateCall(BeginCatch,
+            {ExceptionPtr}, "catch.obj");
+
         // 为 catch 参数创建 alloca（如果有异常声明）
         if (Catch->getExceptionDecl()) {
           llvm::AllocaInst *CatchAlloca =
@@ -706,17 +794,12 @@ void CodeGenFunction::EmitCXXTryStmt(CXXTryStmt *TryStatement) {
                            Catch->getExceptionDecl()->getName());
           setLocalDecl(Catch->getExceptionDecl(), CatchAlloca);
 
-          // 从 landingpad 结果中提取异常对象指针
-          llvm::Value *LPadResult = Builder.CreateLoad(LPadResultType,
-                                                       LPadAlloca, "lpad");
-          llvm::Value *ExceptionPtr = Builder.CreateExtractValue(
-              LPadResult, {0}, "exception.ptr");
-          // 将异常指针转换为 catch 参数类型
+          // 将异常对象转换为 catch 参数类型并加载值
           llvm::Type *CatchTy =
               CGM.getTypes().ConvertType(Catch->getExceptionDecl()->getType());
-          if (CatchTy && ExceptionPtr) {
+          if (CatchTy && CatchObj) {
             llvm::Value *TypedPtr = Builder.CreateBitCast(
-                ExceptionPtr, llvm::PointerType::get(CatchTy, 0), "catch.obj");
+                CatchObj, llvm::PointerType::get(CatchTy, 0), "catch.typed");
             llvm::Value *CatchVal = Builder.CreateLoad(CatchTy, TypedPtr,
                                                        "catch.val");
             Builder.CreateStore(CatchVal, CatchAlloca);
@@ -724,6 +807,11 @@ void CodeGenFunction::EmitCXXTryStmt(CXXTryStmt *TryStatement) {
         }
         if (Catch->getHandlerBlock()) {
           EmitStmt(Catch->getHandlerBlock());
+        }
+
+        // 调用 __cxa_end_catch 通知运行时异常处理完成
+        if (haveInsertPoint()) {
+          Builder.CreateCall(EndCatch, {}, "end.catch");
         }
       } else {
         EmitStmt(CatchBlock);

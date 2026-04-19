@@ -21,6 +21,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/Support/Casting.h"
 
 using namespace blocktype;
@@ -423,6 +424,81 @@ void CodeGenFunction::StoreLocalVar(VarDecl *VariableDecl,
   if (Alloca && Value) {
     Builder.CreateStore(Value, Alloca);
   }
+}
+
+//===----------------------------------------------------------------------===//
+// 异常处理辅助
+//===----------------------------------------------------------------------===//
+
+llvm::CallBase *CodeGenFunction::EmitCallOrInvoke(
+    llvm::FunctionCallee Callee, llvm::ArrayRef<llvm::Value *> Args,
+    llvm::StringRef Name) {
+  if (isInTryBlock()) {
+    const auto &Target = getCurrentInvokeTarget();
+    return Builder.CreateInvoke(Callee, Target.NormalBB, Target.UnwindBB,
+                                Args, Name);
+  }
+  return Builder.CreateCall(Callee, Args, Name);
+}
+
+llvm::CallBase *CodeGenFunction::EmitNounwindCall(
+    llvm::FunctionCallee Callee, llvm::ArrayRef<llvm::Value *> Args,
+    llvm::StringRef Name) {
+  auto *Call = Builder.CreateCall(Callee, Args, Name);
+  Call->setDoesNotThrow();
+  return Call;
+}
+
+llvm::MDNode *CodeGenFunction::createBranchWeights(llvm::LLVMContext &Ctx,
+                                                     unsigned TrueWeight,
+                                                     unsigned FalseWeight) {
+  llvm::Metadata *Weights[] = {
+      llvm::MDString::get(Ctx, "branch_weights"),
+      llvm::ConstantAsMetadata::get(
+          llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), TrueWeight)),
+      llvm::ConstantAsMetadata::get(
+          llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), FalseWeight))};
+  return llvm::MDNode::get(Ctx, Weights);
+}
+
+llvm::MDNode *CodeGenFunction::createIfBranchWeights(llvm::LLVMContext &Ctx,
+                                                       const Stmt *ThenStmt,
+                                                       bool HasElse) {
+  if (!ThenStmt) return nullptr;
+  BranchLikelihood BL = ThenStmt->getBranchLikelihood();
+  // if HasElse: true branch → ThenBB, false branch → ElseBB
+  // if !HasElse: true branch → ThenBB, false branch → MergeBB
+  // [[likely]] on then → true weight 高
+  // [[unlikely]] on then → false weight 高
+  switch (BL) {
+  case BranchLikelihood::Likely:
+    // then 分支更可能执行
+    return createBranchWeights(Ctx, /*TrueWeight=*/2000, /*FalseWeight=*/1);
+  case BranchLikelihood::Unlikely:
+    // then 分支不太可能执行
+    return createBranchWeights(Ctx, /*TrueWeight=*/1, /*FalseWeight=*/2000);
+  case BranchLikelihood::None:
+    return nullptr;
+  }
+  return nullptr;
+}
+
+llvm::MDNode *CodeGenFunction::createLoopBranchWeights(llvm::LLVMContext &Ctx,
+                                                          const Stmt *LoopBody) {
+  if (!LoopBody) return nullptr;
+  BranchLikelihood BL = LoopBody->getBranchLikelihood();
+  // 循环条件: true → BodyBB (继续循环), false → EndBB (退出循环)
+  // [[likely]] on body → 继续循环更可能 → true weight 高
+  // [[unlikely]] on body → 退出循环更可能 → false weight 高
+  switch (BL) {
+  case BranchLikelihood::Likely:
+    return createBranchWeights(Ctx, /*TrueWeight=*/2000, /*FalseWeight=*/1);
+  case BranchLikelihood::Unlikely:
+    return createBranchWeights(Ctx, /*TrueWeight=*/1, /*FalseWeight=*/2000);
+  case BranchLikelihood::None:
+    return nullptr;
+  }
+  return nullptr;
 }
 
 //===----------------------------------------------------------------------===//

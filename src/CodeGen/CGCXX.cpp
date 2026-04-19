@@ -395,7 +395,8 @@ void CGCXX::EmitDestructorCall(CodeGenFunction &CGF, CXXRecordDecl *RD,
                                  llvm::Value *Ptr) {
   llvm::Function *DtorFn = GetDestructor(RD);
   if (DtorFn && Ptr) {
-    CGF.getBuilder().CreateCall(DtorFn, {Ptr}, "dtor.call");
+    // 析构函数标记 nounwind（C++ 析构函数不应抛异常）
+    CGF.EmitNounwindCall(DtorFn, {Ptr}, "dtor.call");
   }
 }
 

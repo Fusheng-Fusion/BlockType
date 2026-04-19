@@ -151,6 +151,7 @@ class FunctionDecl : public ValueDecl {
   Stmt *Body; // CompoundStmt or nullptr
   bool IsInline;
   bool IsConstexpr;
+  bool IsConsteval;
   bool HasNoexceptSpec;
   bool NoexceptValue; // true if noexcept(true), false if noexcept(false)
   Expr *NoexceptExpr; // noexcept(expression)
@@ -160,11 +161,13 @@ public:
   FunctionDecl(SourceLocation Loc, llvm::StringRef Name, QualType T,
                llvm::ArrayRef<ParmVarDecl *> Params, Stmt *Body = nullptr,
                bool IsInline = false, bool IsConstexpr = false,
+               bool IsConsteval = false,
                bool HasNoexceptSpec = false, bool NoexceptValue = false,
                Expr *NoexceptExpr = nullptr,
                class AttributeListDecl *Attrs = nullptr)
       : ValueDecl(Loc, Name, T), Params(Params.begin(), Params.end()),
         Body(Body), IsInline(IsInline), IsConstexpr(IsConstexpr),
+        IsConsteval(IsConsteval),
         HasNoexceptSpec(HasNoexceptSpec), NoexceptValue(NoexceptValue),
         NoexceptExpr(NoexceptExpr), Attrs(Attrs) {}
 
@@ -177,6 +180,7 @@ public:
 
   bool isInline() const { return IsInline; }
   bool isConstexpr() const { return IsConstexpr; }
+  bool isConsteval() const { return IsConsteval; }
   bool hasNoexceptSpec() const { return HasNoexceptSpec; }
   bool getNoexceptValue() const { return NoexceptValue; }
   Expr *getNoexceptExpr() const { return NoexceptExpr; }

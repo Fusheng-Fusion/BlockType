@@ -8,7 +8,7 @@ Audit Findings
 
 1.✅ EmitIfStmt — 已实现，超出文档要求
 --CondVar 支持（if (int x = expr)）：通过 EmitCondVarDecl 处理
---consteval if 框架：检测 isConsteval()，预留 TODO
+--consteval if 分支裁剪：CodeGen 阶段确定分支，只生成 then/else
 --EmitConversionToBool 通用条件转换：替代文档中的 CreateICmpNE 硬编码
 --无 else 时不创建空 ElseBB，避免 LLVM 验证失败（优化）
 --else if 链递归处理：正确传递嵌套 IfStmt
@@ -123,13 +123,18 @@ Audit Findings
 2. ✅ else if 链 — 与 Clang 一致
 --递归处理嵌套 IfStmt
 
-3. ⚠️ 缺少 BranchWeights 元数据
---Clang 在 CondBr 上附加分支权重（__builtin_expect 支持）
---BlockType 未处理（P2）
+3. ✅ BranchWeights 元数据已实现
+--Stmt 基类添加 AttributeListDecl* 字段，支持 [[likely]]/[[unlikely]] 属性
+--parseStatement 在解析前消费 [[...]] 属性并附加到 Stmt
+--EmitIfStmt: CondBr 附加 BranchWeights 元数据（likely=2000:1, unlikely=1:2000）
+--EmitForStmt/EmitWhileStmt/EmitDoStmt: 循环条件 CondBr 同样支持 BranchWeights
+--Stmt::getBranchLikelihood() 统一提取分支提示
 
-4. ⚠️ consteval if 未真正实现
---检测了 isConsteval() 但未只生成对应分支
---需要配合 Sema 传播 consteval 结果（P2，需要 Sema 支持）
+4. ✅ consteval if 已实现分支裁剪
+--检测 isConsteval() + isNegated()，CodeGen 阶段确定分支
+--if consteval → false（运行时上下文，生成 else 分支）
+--if !consteval → true（运行时上下文，生成 then 分支）
+--FunctionDecl 已添加 IsConsteval 字段，Sema/模板实例化正确传递
 
 5. ✅ 条件变量处理 — 与 Clang 模式一致
 --在条件求值前声明变量
@@ -304,8 +309,8 @@ Audit Findings
 --catch-all fallback：指针类型和无法查找 begin/end 时降级处理
 
 ## P2 问题（后续改进）— 13 个
-1. 缺少 BranchWeights 元数据（__builtin_expect 支持）
-2. consteval if 未真正实现（需要 Sema 配合）
+1. ✅ BranchWeights 元数据已实现（[[likely]]/[[unlikely]] → CondBr 附加 MD_prof）
+2. ✅ consteval if 已实现分支裁剪
 3. GNU case range (case LHS...RHS) 未完全实现
 4. switch 条件 lifetime 扩展未处理
 5. default case 后可能产生不可达 EndBB（不影响正确性）

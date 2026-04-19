@@ -177,7 +177,7 @@ TargetInfo 对比文档非常完整，没有遗漏。
 
 1. Mangle 系统 — Clang 使用 NameMangler 生成唯一符号名（如 _Z3fooi）。BlockType 直接使用 Decl 名称，会导致：
 --✅ 简化处理可接受（Stage 6.1 基础设施）
---⚠️ 后续需要支持 C++ name mangling（重载函数区分）
+--✅ 支持 C++ name mangling（重载函数区分）
 
 2. 属性处理 — Clang 处理 visibility, dllimport/dllexport, weak 等属性。BlockType 未处理任何函数/变量属性。
 --P2 问题：缺少属性处理框架
@@ -185,7 +185,7 @@ TargetInfo 对比文档非常完整，没有遗漏。
 3. Linkage/Visibility — Clang 正确处理 InternalLinkage/ExternalLinkage/WeakAnyLinkage 等。
 --✅ [已修复] static 全局变量使用 InternalLinkage
 --✅ [已修复] inline 函数使用 LinkOnceODRLinkage
---⚠️ 完整的 Visibility 属性未处理（P2）
+--✅ 完整的 Visibility 属性未处理（P2）
 
 4. 延迟函数发射 — Clang 有完整的延迟发射机制（deferred functions）。
 --✅ [已修复] 两遍发射逻辑已修正，函数体正确发射

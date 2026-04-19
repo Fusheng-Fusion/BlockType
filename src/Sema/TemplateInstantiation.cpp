@@ -152,7 +152,8 @@ TemplateInstantiator::InstantiateFunctionTemplate(
   // Create the instantiated function
   auto *InstFD = Context.create<FunctionDecl>(
       Pattern->getLocation(), Pattern->getName(), RetType, InstParams,
-      Pattern->getBody(), Pattern->isInline(), Pattern->isConstexpr());
+      Pattern->getBody(), Pattern->isInline(), Pattern->isConstexpr(),
+      Pattern->isConsteval());
 
   --CurrentDepth;
   return InstFD;
