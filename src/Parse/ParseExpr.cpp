@@ -233,6 +233,14 @@ Expr *Parser::parseExpression() {
 Expr *Parser::parseAssignmentExpression() {
   pushContext(ParsingContext::Expression);
 
+  // C++11: braced-init-list can appear in assignment-expression context
+  // (function arguments, return statements, assignment RHS, etc.)
+  if (Tok.is(TokenKind::l_brace)) {
+    Expr *Result = parseInitializerList();
+    popContext();
+    return Result;
+  }
+
   Expr *LHS = parseUnaryExpression();
   if (!LHS) {
     popContext();
@@ -621,10 +629,6 @@ Expr *Parser::parsePrimaryExpression() {
   case TokenKind::l_paren:
     return parseParenExpression();
   
-  // Brace-enclosed initializer list
-  case TokenKind::l_brace:
-    return parseInitializerList();
-
   // Lambda expression
   case TokenKind::l_square:
     return parseLambdaExpression();
@@ -1334,7 +1338,7 @@ UnaryOpKind Parser::getUnaryOpKind(TokenKind K) {
 // Initializer List Parsing
 //===----------------------------------------------------------------------===//
 
-Expr *Parser::parseInitializerList() {
+Expr *Parser::parseInitializerList(QualType ExpectedType) {
   assert(Tok.is(TokenKind::l_brace) && "Expected '{'");
   SourceLocation LBraceLoc = Tok.getLocation();
   consumeToken(); // consume '{'

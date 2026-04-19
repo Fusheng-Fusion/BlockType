@@ -272,7 +272,7 @@ public:
   Expr *parsePrimaryExpression();
   
   /// Parses an initializer list (brace-enclosed list).
-  Expr *parseInitializerList();
+  Expr *parseInitializerList(QualType ExpectedType = QualType());
 
   /// Parses a designated initializer (C++20).
   Expr *parseDesignatedInitializer();

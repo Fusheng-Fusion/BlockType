@@ -1593,7 +1593,7 @@ VarDecl *Parser::buildVarDecl(Declarator &D) {
     expectAndConsume(TokenKind::r_paren, "expected ')' after initializer");
     Init = Actions.ActOnCXXConstructExpr(NameLoc, T, Args).get();
   } else if (Tok.is(TokenKind::l_brace)) {
-    Init = parseInitializerList();
+    Init = parseInitializerList(T);
     if (!Init)
       return nullptr;
   }

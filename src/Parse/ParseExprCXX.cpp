@@ -72,7 +72,7 @@ Expr *Parser::parseCXXNewExpression() {
     }
   } else if (Tok.is(TokenKind::l_brace)) {
     // Brace initialization
-    Initializer = parseInitializerList();
+    Initializer = parseInitializerList(Type);
   }
 
   // Create CXXNewExpr via Sema
