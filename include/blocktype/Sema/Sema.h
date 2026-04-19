@@ -706,6 +706,20 @@ public:
   /// Emit warnings for unused declarations and unreachable code.
   /// Should be called after parsing is complete.
   void DiagnoseUnusedDecls(TranslationUnitDecl *TU);
+
+  //===------------------------------------------------------------------===//
+  // InitListExpr type propagation helpers
+  //===------------------------------------------------------------------===//
+
+  /// Propagate expected types to nested InitListExpr children.
+  /// This serves as a safety net for cases where Parser-level type
+  /// propagation (Plan A) could not determine the type.
+  void propagateTypesToNestedInitLists(InitListExpr *ILE,
+                                       QualType ExpectedType);
+
+  /// Deduce the expected type for the Index-th element of an aggregate.
+  /// Used by propagateTypesToNestedInitLists to determine child types.
+  QualType deduceElementTypeForInitList(QualType AggrType, unsigned Index);
 };
 
 } // namespace blocktype

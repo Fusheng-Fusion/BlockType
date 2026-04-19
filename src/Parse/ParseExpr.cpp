@@ -13,10 +13,12 @@
 #include "blocktype/Parse/Parser.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
+#include "blocktype/AST/Type.h"
 #include "blocktype/Sema/Scope.h"
 #include "blocktype/Sema/Sema.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace blocktype {
@@ -1338,6 +1340,49 @@ UnaryOpKind Parser::getUnaryOpKind(TokenKind K) {
 // Initializer List Parsing
 //===----------------------------------------------------------------------===//
 
+QualType Parser::deduceSubElementType(QualType AggrType, unsigned Index) {
+  if (AggrType.isNull())
+    return QualType();
+
+  const Type *Ty = AggrType.getTypePtr();
+
+  // Peel wrapper types (loop for chained wrappers like const A::B&)
+  while (Ty) {
+    if (auto *ET = llvm::dyn_cast<ElaboratedType>(Ty)) {
+      Ty = ET->getNamedType();
+      continue;
+    }
+    if (auto *RT = llvm::dyn_cast<ReferenceType>(Ty)) {
+      Ty = RT->getReferencedType();
+      continue;
+    }
+    if (auto *TT = llvm::dyn_cast<TypedefType>(Ty)) {
+      // TypedefType — try to resolve to underlying type
+      // (Phase 4: full canonical type resolution not yet complete)
+      break;
+    }
+    break;
+  }
+
+  if (!Ty)
+    return QualType();
+
+  // ArrayType → all elements share the same element type
+  if (auto *AT = llvm::dyn_cast<ArrayType>(Ty))
+    return QualType(AT->getElementType(), AggrType.getQualifiers());
+
+  // RecordType → field type by index
+  if (auto *RT = llvm::dyn_cast<RecordType>(Ty)) {
+    auto Fields = RT->getDecl()->fields();
+    if (Index < Fields.size())
+      return Fields[Index]->getType();
+    return QualType(); // Index out of bounds
+  }
+
+  // Cannot decompose (scalar, pointer, function, etc.)
+  return QualType();
+}
+
 Expr *Parser::parseInitializerList(QualType ExpectedType) {
   assert(Tok.is(TokenKind::l_brace) && "Expected '{'");
   SourceLocation LBraceLoc = Tok.getLocation();
@@ -1346,11 +1391,15 @@ Expr *Parser::parseInitializerList(QualType ExpectedType) {
   llvm::SmallVector<Expr *, 8> Inits;
 
   // Parse initializer clauses
+  unsigned ElemIndex = 0;
   while (!Tok.is(TokenKind::r_brace) && !Tok.is(TokenKind::eof)) {
+    // Deduce expected type for this element from the aggregate type
+    QualType ElemType = deduceSubElementType(ExpectedType, ElemIndex);
     // Parse an initializer clause (can be expression or designated initializer)
-    Expr *Init = parseInitializerClause();
+    Expr *Init = parseInitializerClause(ElemType);
     if (Init) {
       Inits.push_back(Init);
+      ++ElemIndex;
     } else {
       // Error recovery: skip to next comma or '}'
       while (!Tok.is(TokenKind::comma) && !Tok.is(TokenKind::r_brace) &&
@@ -1380,7 +1429,7 @@ Expr *Parser::parseInitializerList(QualType ExpectedType) {
   SourceLocation RBraceLoc = Tok.getLocation();
   consumeToken(); // consume '}'
 
-  return Actions.ActOnInitListExpr(LBraceLoc, Inits, RBraceLoc).get();
+  return Actions.ActOnInitListExpr(LBraceLoc, Inits, RBraceLoc, ExpectedType).get();
 }
 
 /// parseInitializerClause - Parse an initializer clause.
@@ -1388,15 +1437,15 @@ Expr *Parser::parseInitializerList(QualType ExpectedType) {
 /// initializer-clause ::= assignment-expression
 ///                      | braced-init-list
 ///                      | designated-initializer-clause (C++20)
-Expr *Parser::parseInitializerClause() {
+Expr *Parser::parseInitializerClause(QualType ExpectedType) {
   // Check for designated initializer (C++20): .field = value
   if (Tok.is(TokenKind::period)) {
-    return parseDesignatedInitializer();
+    return parseDesignatedInitializer(ExpectedType);
   }
 
   // Check for nested braced-init-list
   if (Tok.is(TokenKind::l_brace)) {
-    return parseInitializerList();
+    return parseInitializerList(ExpectedType);
   }
 
   // Otherwise, parse assignment expression
@@ -1408,7 +1457,7 @@ Expr *Parser::parseInitializerClause() {
 /// designated-initializer-clause ::= designator '=' initializer-clause
 /// designator ::= '.' identifier
 ///             | '[' constant-expression ']'
-Expr *Parser::parseDesignatedInitializer() {
+Expr *Parser::parseDesignatedInitializer(QualType ExpectedType) {
   assert(Tok.is(TokenKind::period) && "Expected '.'");
   SourceLocation DotLoc = Tok.getLocation();
   consumeToken(); // consume '.'
@@ -1434,8 +1483,21 @@ Expr *Parser::parseDesignatedInitializer() {
   }
   consumeToken(); // consume '='
 
+  // Look up field type from ExpectedType (RecordType) if available
+  QualType FieldType;
+  if (!ExpectedType.isNull()) {
+    if (auto *RT = llvm::dyn_cast<RecordType>(ExpectedType.getTypePtr())) {
+      for (auto *F : RT->getDecl()->fields()) {
+        if (F->getName() == FieldName) {
+          FieldType = F->getType();
+          break;
+        }
+      }
+    }
+  }
+
   // Parse initializer clause
-  Expr *Init = parseInitializerClause();
+  Expr *Init = parseInitializerClause(FieldType);
   if (!Init) {
     return nullptr;
   }

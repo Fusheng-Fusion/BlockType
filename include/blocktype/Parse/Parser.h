@@ -275,10 +275,17 @@ public:
   Expr *parseInitializerList(QualType ExpectedType = QualType());
 
   /// Parses a designated initializer (C++20).
-  Expr *parseDesignatedInitializer();
+  /// \param ExpectedType The expected aggregate type for field lookup.
+  Expr *parseDesignatedInitializer(QualType ExpectedType = QualType());
 
   /// Parses an initializer clause (can be expression or designated initializer).
-  Expr *parseInitializerClause();
+  /// \param ExpectedType The expected type for this initializer clause.
+  Expr *parseInitializerClause(QualType ExpectedType = QualType());
+
+  /// Deduce the expected type for the Index-th element of an aggregate type.
+  /// Handles ArrayType (element type), RecordType (field type by index),
+  /// and peels wrapper types (ElaboratedType, ReferenceType).
+  QualType deduceSubElementType(QualType AggrType, unsigned Index);
 
   /// Parses an integer literal.
   Expr *parseIntegerLiteral();

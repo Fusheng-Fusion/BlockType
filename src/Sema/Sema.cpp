@@ -712,6 +712,8 @@ ExprResult Sema::ActOnInitListExpr(SourceLocation LBraceLoc,
   if (!ExpectedType.isNull()) {
     // Use the expected type from context (variable decl type, function param type, etc.)
     ILE->setType(ExpectedType);
+    // Propagate types to nested InitListExpr children (Plan B safety net)
+    propagateTypesToNestedInitLists(ILE, ExpectedType);
   } else if (!Inits.empty()) {
     // Fallback: if all initializers have the same type, derive array type.
     // For simple cases, use the first initializer's type.
@@ -720,6 +722,72 @@ ExprResult Sema::ActOnInitListExpr(SourceLocation LBraceLoc,
       ILE->setType(FirstType); // Simplified; full impl would create ArrayType
   }
   return ExprResult(ILE);
+}
+
+void Sema::propagateTypesToNestedInitLists(InitListExpr *ILE,
+                                            QualType ExpectedType) {
+  if (ExpectedType.isNull())
+    return;
+
+  auto Inits = ILE->getInits();
+  for (unsigned i = 0; i < Inits.size(); ++i) {
+    // Only handle nested InitListExpr children
+    auto *NestedILE = llvm::dyn_cast<InitListExpr>(Inits[i]);
+    if (!NestedILE)
+      continue;
+
+    // Deduce the expected type for this child from the aggregate
+    QualType ElemType = deduceElementTypeForInitList(ExpectedType, i);
+
+    // Only set type if not already set by Parser-level propagation (Plan A)
+    if (!ElemType.isNull() && NestedILE->getType().isNull()) {
+      NestedILE->setType(ElemType);
+    }
+
+    // Recurse into nested InitListExpr
+    if (!ElemType.isNull())
+      propagateTypesToNestedInitLists(NestedILE, ElemType);
+    else
+      propagateTypesToNestedInitLists(NestedILE, NestedILE->getType());
+  }
+}
+
+QualType Sema::deduceElementTypeForInitList(QualType AggrType,
+                                             unsigned Index) {
+  if (AggrType.isNull())
+    return QualType();
+
+  const Type *Ty = AggrType.getTypePtr();
+
+  // Peel wrapper types
+  while (Ty) {
+    if (auto *ET = llvm::dyn_cast<ElaboratedType>(Ty)) {
+      Ty = ET->getNamedType();
+      continue;
+    }
+    if (auto *RT = llvm::dyn_cast<ReferenceType>(Ty)) {
+      Ty = RT->getReferencedType();
+      continue;
+    }
+    break;
+  }
+
+  if (!Ty)
+    return QualType();
+
+  // ArrayType → element type
+  if (auto *AT = llvm::dyn_cast<ArrayType>(Ty))
+    return QualType(AT->getElementType(), AggrType.getQualifiers());
+
+  // RecordType → field type by index
+  if (auto *RT = llvm::dyn_cast<RecordType>(Ty)) {
+    auto Fields = RT->getDecl()->fields();
+    if (Index < Fields.size())
+      return Fields[Index]->getType();
+    return QualType();
+  }
+
+  return QualType();
 }
 
 ExprResult Sema::ActOnDesignatedInitExpr(
