@@ -599,10 +599,10 @@ void ReflexprExpr::dump(raw_ostream &OS, unsigned Indent) const {
     Argument->dump(OS, Indent + 2);
   }
 
-  if (ResultType.getTypePtr()) {
+  if (getType().getTypePtr()) {
     printIndent(OS, Indent + 1);
     OS << "ResultType: ";
-    ResultType.getTypePtr()->dump(OS);
+    getType().getTypePtr()->dump(OS);
   }
 }
 

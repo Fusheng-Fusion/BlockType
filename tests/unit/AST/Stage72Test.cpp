@@ -80,16 +80,16 @@ TEST(ReflexprExprTest, ResultType) {
   SourceLocation Loc(1);
 
   QualType IntType = Context.getIntType();
-  auto *RE = Context.create<ReflexprExpr>(Loc, IntType);
 
-  // Initially no result type
-  EXPECT_TRUE(RE->getResultType().isNull());
+  // Without result type (default-constructed)
+  auto *RE1 = Context.create<ReflexprExpr>(Loc, IntType);
+  EXPECT_TRUE(RE1->getResultType().isNull());
 
-  // Set result type
+  // With result type passed through constructor
   QualType MetaType = Context.getMetaInfoType();
-  RE->setResultType(MetaType);
-  EXPECT_FALSE(RE->getResultType().isNull());
-  EXPECT_EQ(RE->getResultType().getTypePtr(), MetaType.getTypePtr());
+  auto *RE2 = Context.create<ReflexprExpr>(Loc, IntType, MetaType);
+  EXPECT_FALSE(RE2->getResultType().isNull());
+  EXPECT_EQ(RE2->getResultType().getTypePtr(), MetaType.getTypePtr());
 }
 
 TEST(ReflexprExprTest, TypeDependence) {

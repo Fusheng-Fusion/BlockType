@@ -187,9 +187,7 @@ ExprResult SemaReflection::ActOnReflectType(SourceLocation Loc, Expr *E) {
   // __reflect_type(expr) is equivalent to reflexpr(decltype(expr))
   // Create a ReflexprExpr with the type operand
   auto &Ctx = S.getASTContext();
-  auto *RE = Ctx.create<ReflexprExpr>(Loc, ET);
-  RE->setType(Ctx.getMetaInfoType());
-  RE->setResultType(Ctx.getMetaInfoType());
+  auto *RE = Ctx.create<ReflexprExpr>(Loc, ET, Ctx.getMetaInfoType());
 
   // Suppress unused warning — Info serves as the intermediate handle
   (void)Info;
@@ -214,9 +212,7 @@ ExprResult SemaReflection::ActOnReflectMembers(SourceLocation Loc, QualType T) {
   // __reflect_members(type) reflects all members of the type.
   // This creates a ReflexprExpr whose result can be queried for members.
   auto &Ctx = S.getASTContext();
-  auto *RE = Ctx.create<ReflexprExpr>(Loc, T);
-  RE->setType(Ctx.getMetaInfoType());
-  RE->setResultType(Ctx.getMetaInfoType());
+  auto *RE = Ctx.create<ReflexprExpr>(Loc, T, Ctx.getMetaInfoType());
 
   // Suppress unused warnings — Info/MDName serve as intermediate handles
   (void)Info;

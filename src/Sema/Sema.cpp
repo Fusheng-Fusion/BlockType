@@ -943,9 +943,7 @@ ExprResult Sema::ActOnReflexprExpr(SourceLocation Loc, Expr *Arg) {
   if (!Refl.ValidateReflexprExpr(Arg, Loc))
     return ExprResult(nullptr);
 
-  auto *RE = Context.create<ReflexprExpr>(Loc, Arg);
-  RE->setType(Context.getMetaInfoType());
-  RE->setResultType(Context.getMetaInfoType());
+  auto *RE = Context.create<ReflexprExpr>(Loc, Arg, Context.getMetaInfoType());
   return ExprResult(RE);
 }
 
@@ -954,9 +952,7 @@ ExprResult Sema::ActOnReflexprTypeExpr(SourceLocation Loc, QualType T) {
   if (!Refl.ValidateReflexprType(T, Loc))
     return ExprResult(nullptr);
 
-  auto *RE = Context.create<ReflexprExpr>(Loc, T);
-  RE->setType(Context.getMetaInfoType());
-  RE->setResultType(Context.getMetaInfoType());
+  auto *RE = Context.create<ReflexprExpr>(Loc, T, Context.getMetaInfoType());
   return ExprResult(RE);
 }
 

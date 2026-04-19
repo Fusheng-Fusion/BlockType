@@ -157,11 +157,12 @@ AccessSpecifier getAccessSpecifier(const Decl *D) {
 
 llvm::StringRef getAccessSpecifierName(AccessSpecifier AS) {
   switch (AS) {
+  case AccessSpecifier::AS_none:      return "none";
   case AccessSpecifier::AS_public:    return "public";
   case AccessSpecifier::AS_protected: return "protected";
   case AccessSpecifier::AS_private:   return "private";
-  default:                            return "";
   }
+  return "";
 }
 
 } // namespace meta

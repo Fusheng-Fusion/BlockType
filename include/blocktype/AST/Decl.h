@@ -40,6 +40,7 @@ class VarTemplateSpecializationDecl; // Forward declaration
 
 /// AccessSpecifier - Access control for class members.
 enum class AccessSpecifier {
+  AS_none,       ///< Not a class member (sentinel value)
   AS_public,
   AS_protected,
   AS_private

@@ -26,10 +26,10 @@
 namespace blocktype {
 namespace meta {
 
-// Re-export AccessSpecifier from Decl.h with an additional sentinel value.
-// AS_none indicates "not a class member".
+// Re-export AccessSpecifier from Decl.h.
+// AS_none (in AccessSpecifier enum) indicates "not a class member".
 using ::blocktype::AccessSpecifier;
-constexpr AccessSpecifier AS_none = static_cast<AccessSpecifier>(-1);
+using ::blocktype::AccessSpecifier::AS_none;
 
 //===----------------------------------------------------------------------===//
 // MemberInfo - Reflected member descriptor

@@ -532,6 +532,9 @@ void AccessSpecDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << "AccessSpecDecl ";
   switch (Access) {
+  case AccessSpecifier::AS_none:
+    OS << "<no access>";
+    break;
   case AccessSpecifier::AS_public:
     OS << "public";
     break;

@@ -1399,7 +1399,7 @@ public:
 /// ReflexprExpr - C++26 reflexpr expression.
 ///
 /// Represents `reflexpr(type-id)` or `reflexpr(expression)`.
-/// The result type is MetaInfoType (std::meta::info).
+/// The result type (via getType()) is MetaInfoType (std::meta::info).
 ///
 /// **Clang reference**: Clang's reflection TS uses a similar approach in
 /// clang::Sema::ActOnReflectionTraitExpr.
@@ -1421,21 +1421,18 @@ private:
   /// The reflected expression (valid when OpKind == OK_Expression)
   Expr *Argument;
 
-  /// The result type (always MetaInfoType after semantic analysis)
-  QualType ResultType;
-
 public:
   /// Construct for reflexpr(type-id)
   ReflexprExpr(SourceLocation Loc, QualType T,
                QualType ResultTy = QualType())
-      : Expr(Loc), OpKind(OK_Type), ReflectedType(T),
-        Argument(nullptr), ResultType(ResultTy) {}
+      : Expr(Loc, ResultTy), OpKind(OK_Type), ReflectedType(T),
+        Argument(nullptr) {}
 
   /// Construct for reflexpr(expression)
   ReflexprExpr(SourceLocation Loc, Expr *Arg,
                QualType ResultTy = QualType())
-      : Expr(Loc), OpKind(OK_Expression), ReflectedType(),
-        Argument(Arg), ResultType(ResultTy) {}
+      : Expr(Loc, ResultTy), OpKind(OK_Expression), ReflectedType(),
+        Argument(Arg) {}
 
   /// Operand kind query
   OperandKind getOperandKind() const { return OpKind; }
@@ -1446,11 +1443,9 @@ public:
   /// @{
   QualType getReflectedType() const { return ReflectedType; }
   Expr *getArgument() const { return Argument; }
-  QualType getResultType() const { return ResultType; }
+  /// getResultType is an alias for getType() (the MetaInfoType).
+  QualType getResultType() const { return getType(); }
   /// @}
-
-  /// Set the result type after semantic analysis
-  void setResultType(QualType T) { ResultType = T; }
 
   NodeKind getKind() const override { return NodeKind::ReflexprExprKind; }
 
