@@ -614,10 +614,23 @@ void Preprocessor::handleIncludeDirective(Token &IncludeTok, bool IsAngled) {
 
   StringRef Filename;
   if (FilenameTok.isStringLiteral()) {
+    // Handle: #include "file.h"
     Filename = FilenameTok.getText();
     if (Filename.size() >= 2) {
       Filename = Filename.substr(1, Filename.size() - 2);
     }
+  } else if (FilenameTok.is(TokenKind::less)) {
+    // P7.4.3: Handle: #include <file.h>
+    // Collect tokens until '>'
+    std::string AngledName;
+    Token NextTok;
+    while (lexFromLexer(NextTok)) {
+      if (NextTok.is(TokenKind::greater)) {
+        break;
+      }
+      AngledName += NextTok.getText().str();
+    }
+    Filename = AngledName;
   } else {
     Diags.report(FilenameTok.getLocation(), DiagLevel::Error, "expected filename string");
     return;

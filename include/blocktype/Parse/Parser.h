@@ -157,6 +157,9 @@ public:
   /// namespace, template, using, typedef, extern, static_assert, etc.).
   /// Returns true if a declaration start was found, false if EOF.
   bool skipUntilNextDeclaration();
+  
+  // P7.4.3: Skip preprocessing directive (#include, #define, etc.)
+  void skipPreprocessingDirective();
 
   /// Tries to recover from a missing semicolon.
   /// If the current token looks like it could start a new statement or

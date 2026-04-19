@@ -39,6 +39,12 @@ TranslationUnitDecl *Parser::parseTranslationUnit() {
   
   // Parse declarations
   while (!Tok.is(TokenKind::eof)) {
+    // P7.4.3: Skip preprocessing directives (#include, #define, etc.)
+    if (Tok.is(TokenKind::hash)) {
+      skipPreprocessingDirective();
+      continue;
+    }
+    
     Decl *D = parseDeclaration();
     if (D) {
       // Sema's ActOn methods already register to CurContext (which is TU at top level)
@@ -213,6 +219,25 @@ bool Parser::skipUntilNextDeclaration() {
   }
 
   return false;
+}
+
+// P7.4.3: Skip preprocessing directive (#include, #define, etc.)
+void Parser::skipPreprocessingDirective() {
+  // Consume the '#' token
+  consumeToken();
+  
+  // Skip all tokens until newline or EOF
+  // In BlockType's lexer, newlines are not tokens, so we skip until:
+  // 1. We hit EOF
+  // 2. We hit a token that looks like it starts a new line (heuristic)
+  // For simplicity, just skip until we see something that looks like a declaration
+  while (!Tok.is(TokenKind::eof)) {
+    // Check if next token could start a declaration
+    if (isDeclarationStart()) {
+      break;
+    }
+    consumeToken();
+  }
 }
 
 bool Parser::tryRecoverMissingSemicolon() {
