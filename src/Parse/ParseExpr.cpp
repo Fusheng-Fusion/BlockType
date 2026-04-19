@@ -676,6 +676,12 @@ Expr *Parser::parsePrimaryExpression() {
     return nullptr;
   }
 
+  // C++11: braced-init-list as primary expression
+  case TokenKind::l_brace: {
+    // Parse as initializer list with unknown type
+    return parseInitializerList(QualType());
+  }
+
   default:
     // Emit error for unexpected token
     emitError(DiagID::err_expected_expression);
