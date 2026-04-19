@@ -457,6 +457,30 @@ void CGDebugInfo::EmitLocalVarDI(VarDecl *VD, llvm::AllocaInst *Alloca) {
   }
 }
 
+// P7.4.3: BindingDecl debug info for structured bindings
+void CGDebugInfo::EmitLocalVarDI(BindingDecl *BD, llvm::AllocaInst *Alloca) {
+  if (!BD || !Alloca || !Initialized) return;
+
+  llvm::DIType *TyDI = GetDIType(BD->getType());
+  if (!TyDI) return;
+
+  unsigned Line = getLineNumber(BD->getLocation());
+
+  llvm::DIScope *Scope = getCurrentScope();
+  if (!Scope) Scope = CU;
+
+  // Create debug info for binding variable
+  auto *DILV = DIB->createAutoVariable(Scope, BD->getName(), CurFile,
+                                         Line, TyDI, false);
+  auto *DILoc = getSourceLocation(BD->getLocation());
+
+  llvm::BasicBlock *BB = Alloca->getParent();
+  if (BB && !BB->empty()) {
+    DIB->insertDeclare(Alloca, DILV, DIB->createExpression(),
+                        DILoc, &*BB->getFirstInsertionPt());
+  }
+}
+
 void CGDebugInfo::EmitParamDI(ParmVarDecl *PVD, llvm::AllocaInst *Alloca,
                                 unsigned ArgNo) {
   if (!PVD || !Alloca || !Initialized) return;

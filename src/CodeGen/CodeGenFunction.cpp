@@ -484,6 +484,11 @@ void CodeGenFunction::setLocalDecl(VarDecl *VariableDecl,
   LocalDecls[VariableDecl] = Alloca;
 }
 
+// P7.4.3: BindingDecl support for structured bindings
+void CodeGenFunction::setLocalDecl(BindingDecl *BD, llvm::AllocaInst *Alloca) {
+  BindingDecls[BD] = Alloca;
+}
+
 llvm::AllocaInst *CodeGenFunction::getLocalDecl(VarDecl *VariableDecl) const {
   auto Iterator = LocalDecls.find(VariableDecl);
   if (Iterator != LocalDecls.end()) {

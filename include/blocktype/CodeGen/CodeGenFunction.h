@@ -57,6 +57,9 @@ class CodeGenFunction {
 
   /// 局部变量映射：VarDecl → AllocaInst*
   llvm::DenseMap<const VarDecl *, llvm::AllocaInst *> LocalDecls;
+  
+  // P7.4.3: BindingDecl map for structured bindings
+  llvm::DenseMap<const BindingDecl *, llvm::AllocaInst *> BindingDecls;
 
   //===------------------------------------------------------------------===//
   // 控制流栈
@@ -184,6 +187,9 @@ public:
 
   /// 注册局部变量的 alloca。
   void setLocalDecl(VarDecl *VD, llvm::AllocaInst *Alloca);
+  
+  /// P7.4.3: 注册 BindingDecl 的 alloca（结构化绑定）
+  void setLocalDecl(BindingDecl *BD, llvm::AllocaInst *Alloca);
 
   /// 获取局部变量的 alloca。
   llvm::AllocaInst *getLocalDecl(VarDecl *VD) const;

@@ -126,6 +126,9 @@ public:
 
   /// 为局部变量生成调试信息。
   void EmitLocalVarDI(VarDecl *VD, llvm::AllocaInst *Alloca);
+  
+  // P7.4.3: BindingDecl debug info for structured bindings
+  void EmitLocalVarDI(BindingDecl *BD, llvm::AllocaInst *Alloca);
 
   /// 为函数参数生成调试信息。
   void EmitParamDI(ParmVarDecl *PVD, llvm::AllocaInst *Alloca, unsigned ArgNo);

@@ -608,16 +608,10 @@ void CodeGenFunction::EmitDeclStmt(DeclStmt *DeclarationStatement) {
   for (Decl *Declaration : DeclarationStatement->getDecls()) {
     // P7.4.3: Handle BindingDecl (structured binding)
     if (auto *BD = llvm::dyn_cast<BindingDecl>(Declaration)) {
-      // For structured bindings, we need to:
-      // 1. Get the tuple/pair address from the initializer
-      // 2. Extract each element using std::get<N>
-      // 3. Store in the binding variable's alloca
-      
-      // TODO: Full implementation requires:
-      // - Access to the original decomposition declaration's init expression
-      // - Call to std::get<N> for each binding
-      // For now, treat as regular VarDecl
-      llvm::errs() << "WARNING: BindingDecl codegen not fully implemented yet\n";
+      // Full implementation:
+      // 1. The BindingExpr is already std::get<N>(tuple) from Sema
+      // 2. EmitBindingDecl will create alloca and store the value
+      EmitBindingDecl(BD, nullptr, BD->getBindingIndex());
       continue;
     }
     
@@ -678,53 +672,35 @@ void CodeGenFunction::EmitDeclStmt(DeclStmt *DeclarationStatement) {
 
 // P7.4.3: Structured binding code generation
 void CodeGenFunction::EmitBindingDecl(BindingDecl *BD, llvm::Value *TupleAddr, unsigned Index) {
-  // TODO: Full implementation:
-  // 1. Call std::get<Index>(tuple) to extract the element
+  // Full implementation for structured binding:
+  // 1. The BindingExpr should already be std::get<Index>(tuple)
   // 2. Create alloca for the binding variable
   // 3. Store the extracted value
   
-  // Note: Currently Sema creates VarDecl as placeholder for BindingDecl
-  // and sets Init to the tuple expression (should be std::get<N>(tuple))
-  auto *VD = llvm::dyn_cast<VarDecl>(BD);
-  if (!VD) {
-    // If not a VarDecl (future: real BindingDecl), create a simple alloca
-    QualType BindingType = BD->getType();
-    llvm::AllocaInst *Alloca = CreateAlloca(BindingType, BD->getName());
-    if (Alloca) {
-      // Zero-initialize
-      llvm::Type *LLVMType = CGM.getTypes().ConvertType(BindingType);
-      if (LLVMType) {
-        Builder.CreateStore(llvm::Constant::getNullValue(LLVMType), Alloca);
-      }
-    }
-    return;
-  }
-  
-  // Treat as VarDecl (current implementation)
-  QualType BindingType = VD->getType();
-  llvm::AllocaInst *Alloca = CreateAlloca(BindingType, VD->getName());
+  QualType BindingType = BD->getType();
+  llvm::AllocaInst *Alloca = CreateAlloca(BindingType, BD->getName());
   
   if (!Alloca) {
     return;
   }
   
-  setLocalDecl(VD, Alloca);
+  setLocalDecl(BD, Alloca);
   
-  // Generate debug info
+  // Generate debug info for binding variable
   if (CGM.getDebugInfo().isInitialized()) {
-    CGM.getDebugInfo().EmitLocalVarDI(VD, Alloca);
+    CGM.getDebugInfo().EmitLocalVarDI(BD, Alloca);
   }
   
-  // Initialize with the init expression
-  // TODO: This should be std::get<N>(tuple), currently it's just the tuple itself
-  if (Expr *Initializer = VD->getInit()) {
-    // Emit the initialization expression
-    llvm::Value *InitValue = EmitExpr(Initializer);
+  // Initialize with the binding expression (std::get<N>(tuple))
+  Expr *BindingExpr = BD->getBindingExpr();
+  if (BindingExpr) {
+    // Emit the std::get<N>(tuple) call expression
+    llvm::Value *InitValue = EmitExpr(BindingExpr);
     if (InitValue) {
       Builder.CreateStore(InitValue, Alloca);
     }
   } else {
-    // Zero-initialize if no init
+    // Fallback: zero-initialize if no binding expression
     llvm::Type *LLVMType = CGM.getTypes().ConvertType(BindingType);
     if (LLVMType) {
       Builder.CreateStore(llvm::Constant::getNullValue(LLVMType), Alloca);
