@@ -244,9 +244,10 @@ Audit Findings
 --生成 begin()/end() 调用 + 完整迭代器循环
 --fallback：无法查找时降级处理
 
-3. ⚠️ 迭代器变量未使用 CreateAlloca
---手动 saveIP/restoreIP 创建 alloca
---应使用 CreateAlloca 保持一致性（P2）
+3. ✅ 迭代器变量已使用 CreateAlloca
+--添加 CreateAlloca(llvm::Type*, StringRef) 重载，统一 alloca 创建入口
+--所有 CreateEntryBlockAlloca 直接调用已替换为 CreateAlloca
+--包括 CXXForRangeStmt 迭代器、landingpad 结果、sret.save、数组构造/析构计数器
 
 ## CoreturnStmt / CoyieldStmt 对比 Clang
 
@@ -261,18 +262,20 @@ Audit Findings
 1. ✅ EmitConversionToBool — 与 Clang EmitConversionToBool 模式一致
 --分类型处理：bool/int/float/pointer
 
-2. ⚠️ 缺少条件表达式的 signed 比较
---整数 0 使用 `ConstantInt::get(SrcTy, 0, false)` — isSigned=false
---对于 signed 整数条件（如 if (x) 其中 x 是 int），结果正确
---但对于 while (p) 其中 p 是函数指针等，ICmpNE 与 null 是正确的
+2. ✅ EmitConversionToBool signed 比较正确性已验证
+--ICmpNE 是按位不等比较，不受 signedness 影响
+--ConstantInt::get(SrcTy, 0) 对值 0 无 signed 区分（有符号/无符号表示相同）
+--对所有整数类型（signed/unsigned）和指针类型均正确
+--移除了多余的 isSigned=false 参数，使用默认值
 --无实际问题（P3，观察项）
 
 ## 通用问题
 
-1. ⚠️ EmitStmt 分派表覆盖
+1. ✅ EmitStmt 分派表覆盖完整
+--21 个 Stmt 节点全部有对应处理（18 个 Emit 函数 + 3 个内部处理标记）
 --新增 CXXForRangeStmt / CoreturnStmt / CoyieldStmt 已加入分派
 --CaseStmt / DefaultStmt / CXXCatchStmt 正确标记为内部处理
---覆盖完整
+--NodeKinds.def 中所有 STMT 类型均已覆盖
 
 2. ✅ BreakContinueStack 嵌套正确性
 --for/while/do 均在 push 后 pop
@@ -327,7 +330,7 @@ Audit Findings
 8. ✅ NRVO 优化已实现（analyzeNRVOCandidates + ReturnValue alloca 复用）
 9. ✅ catch 类型匹配已实现（llvm.eh.typeid.for + selector dispatch + EmitCatchTypeInfo）
 10. ✅ CatchDispatchBB 已用于类型匹配 dispatch（catch.dispatch 块链式比较 selector）
-11. EmitCXXForRangeStmt 中手动 alloca 未用 CreateAlloca
+11. ✅ CXXForRangeStmt 手动 alloca 已统一为 CreateAlloca（添加 llvm::Type* 重载）
 12. range 临时变量 lifetime 管理
 13. 协程完全简化（需要完整 coroutine lowering）
 

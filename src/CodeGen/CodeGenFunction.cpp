@@ -76,7 +76,7 @@ void CodeGenFunction::EmitFunctionBody(FunctionDecl *FunctionDecl,
       // 跳过 sret 隐式首参数后才是真正的用户参数
       auto ArgIt = Function->arg_begin();
       if (ArgIt != Function->arg_end()) {
-        llvm::AllocaInst *SRetSave = CreateEntryBlockAlloca(
+          llvm::AllocaInst *SRetSave = CreateAlloca(
             llvm::PointerType::get(CGM.getLLVMContext(), 0), "sret.save");
         Builder.CreateStore(&*ArgIt, SRetSave);
         ReturnValue = SRetSave;
@@ -383,6 +383,11 @@ llvm::AllocaInst *CodeGenFunction::CreateAlloca(QualType Type,
     return nullptr;
   }
   return CreateEntryBlockAlloca(LLVMType, Name);
+}
+
+llvm::AllocaInst *CodeGenFunction::CreateAlloca(llvm::Type *Ty,
+                                                  llvm::StringRef Name) {
+  return CreateEntryBlockAlloca(Ty, Name);
 }
 
 llvm::AllocaInst *CodeGenFunction::CreateEntryBlockAlloca(llvm::Type *Ty,

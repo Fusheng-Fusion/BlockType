@@ -168,8 +168,12 @@ public:
   /// 为局部变量创建 alloca 指令（使用 AllocaInsertPt 插入点）。
   llvm::AllocaInst *CreateAlloca(QualType T, llvm::StringRef Name = "");
 
+  /// 为原始 LLVM 类型创建 alloca（使用 AllocaInsertPt 插入点）。
+  /// 统一的 alloca 创建入口，所有 alloca 都应通过此方法或 QualType 版本。
+  llvm::AllocaInst *CreateAlloca(llvm::Type *Ty, llvm::StringRef Name = "");
+
   /// 在 entry 块的 AllocaInsertPt 位置创建原始 LLVM 类型的 alloca。
-  /// 供需要直接分配 LLVM 类型（而非 QualType）的场景使用。
+  /// 内部实现，由 CreateAlloca 调用，外部不应直接使用。
   llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Type *Ty,
                                             llvm::StringRef Name = "");
 

@@ -1548,9 +1548,9 @@ llvm::Value *CodeGenFunction::EmitCXXNewExpr(CXXNewExpr *NewExpression) {
           llvm::BasicBlock *ExitBB =
               llvm::BasicBlock::Create(Ctx, "arr.ctor.exit", CurFn);
 
-          // i = 0 — 在 entry 块创建 alloca
+          // i = 0 — 使用统一的 CreateAlloca
           llvm::AllocaInst *Counter =
-              CreateEntryBlockAlloca(Int64Ty, "arr.ctor.i");
+              CreateAlloca(Int64Ty, "arr.ctor.i");
           B.CreateStore(llvm::ConstantInt::get(Int64Ty, 0), Counter);
           B.CreateBr(LoopBB);
 
@@ -1708,7 +1708,7 @@ llvm::Value *CodeGenFunction::EmitCXXDeleteExpr(
 
         // i = count - 1
         llvm::AllocaInst *Counter =
-            CreateEntryBlockAlloca(Int64Ty, "del.dtor.i");
+            CreateAlloca(Int64Ty, "del.dtor.i");
         llvm::Value *CountMinusOne = B.CreateSub(
             ArrayCount, llvm::ConstantInt::get(Int64Ty, 1), "count.dec");
         B.CreateStore(CountMinusOne, Counter);

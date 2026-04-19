@@ -764,7 +764,7 @@ void CodeGenFunction::EmitCXXTryStmt(CXXTryStmt *TryStatement) {
         {llvm::PointerType::get(CGM.getLLVMContext(), 0),
          llvm::Type::getInt32Ty(CGM.getLLVMContext())});
     llvm::AllocaInst *LPadAlloca =
-        CreateEntryBlockAlloca(LPadResultType, "lpad.result");
+        CreateAlloca(LPadResultType, "lpad.result");
 
     // 正常返回块（invoke 成功后跳转）
     llvm::BasicBlock *NormalBB = createBasicBlock("try.normal");
@@ -1092,8 +1092,7 @@ void CodeGenFunction::EmitCXXForRangeStmt(CXXForRangeStmt *ForRangeStatement) {
         "range.end");
 
     // 创建迭代器变量（存储指向元素的指针）
-    // 在 entry 块创建 alloca，类型为 element pointer
-    llvm::AllocaInst *IterPtrAlloca = CreateEntryBlockAlloca(
+    llvm::AllocaInst *IterPtrAlloca = CreateAlloca(
         llvm::PointerType::get(ElemTy, 0), "__iter.ptr");
 
     // 初始化迭代器 = begin
@@ -1232,7 +1231,7 @@ void CodeGenFunction::EmitCXXForRangeStmt(CXXForRangeStmt *ForRangeStatement) {
 
     // 成功获取 begin/end — 生成迭代器循环
     // 创建迭代器 alloca
-    llvm::AllocaInst *IterAlloca = CreateEntryBlockAlloca(IterTy, "__iter");
+    llvm::AllocaInst *IterAlloca = CreateAlloca(IterTy, "__iter");
 
     // 初始化迭代器 = begin
     Builder.CreateStore(BeginVal, IterAlloca);
@@ -1343,9 +1342,12 @@ CodeGenFunction::EmitConversionToBool(llvm::Value *SrcValue, QualType SrcType) {
   }
 
   // 整数类型：与 0 比较
+  // ICmpNE 是按位不等比较，不受 signedness 影响。
+  // ConstantInt::get(SrcTy, 0, /*isSigned=*/false) 中 isSigned 对值 0 无意义
+  // （0 的有符号和无符号表示相同），因此对所有整数类型均正确。
   if (SrcTy->isIntegerTy()) {
     return Builder.CreateICmpNE(
-        SrcValue, llvm::ConstantInt::get(SrcTy, 0, false), "tobool");
+        SrcValue, llvm::ConstantInt::get(SrcTy, 0), "tobool");
   }
 
   // 浮点类型：与 0.0 比较
