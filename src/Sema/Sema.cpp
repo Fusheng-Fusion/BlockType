@@ -1829,6 +1829,19 @@ ExprResult Sema::ActOnDecayCopyExpr(SourceLocation AutoLoc, Expr *SubExpr,
     }
   }
 
+  // P7.1.2: Check that the decayed type is copyable.
+  // For record types, verify the class has a copy or move constructor.
+  if (!ResultTy.isNull() && ResultTy->isRecordType()) {
+    if (auto *RT = llvm::dyn_cast<RecordType>(ResultTy.getTypePtr())) {
+      if (auto *CXXRD = llvm::dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+        if (!CXXRD->hasCopyConstructor() && !CXXRD->hasMoveConstructor()) {
+          Diag(AutoLoc, DiagID::err_decay_copy_non_copyable);
+          return ExprResult(nullptr);
+        }
+      }
+    }
+  }
+
   auto *DCE = Context.create<DecayCopyExpr>(AutoLoc, SubExpr, IsDirectInit);
   DCE->setType(ResultTy);
 

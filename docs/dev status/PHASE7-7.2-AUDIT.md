@@ -45,7 +45,7 @@
 **⚠️ 与文档差异：**
 1. 文档用 `union { QualType; Expr*; }` 节省内存，实际实现用独立字段 `QualType ReflectedType` + `Expr* Argument`。功能正确但内存稍冗余（P2）。
 2. 文档方法名 `getReflectedExpr()`，实际为 `getArgument()`。不影响功能但与文档命名不一致。
-3. 新增 `setResultType()` 设置器和 `isTypeDependent()` 覆写——文档未要求但合理增强。
+3. ~~新增 `setResultType()` 设置器~~ 和 `isTypeDependent()` 覆写——`setResultType` 已移除（P2-2），结果类型通过构造函数传递；`isTypeDependent()` 保留。
 
 ---
 
@@ -185,7 +185,7 @@ reflexpr(MyClass) // ❌ IsType=false, 走 parseExpression() 路径
 | AST 节点 | 实验性分支中 `ReflectionTraitExpr` / `ReflexprExpr` | `ReflexprExpr` 独立字段（非 union） | ✅ 对等 |
 | 操作数类型 | 同时支持 type-id 和 expression | 双构造函数重载 + `OperandKind` 区分 | ✅ |
 | Parser type/expr 消歧 | 使用 tentative parsing（回溯机制） | 启发式 `isTypeKeyword()` + `kw_*` + `identifier` 符号表查找 | ⚠️ 已覆盖基本场景 |
-| 类型结果 | 反射类型为特殊的不透明类型 `std::meta::info` | `MetaInfoType` 单例，不携带具体反射数据 | ⚠️ P2 |
+| 类型结果 | 反射类型为特殊的不透明类型 `std::meta::info` | `MetaInfoType` 单例，通过构造函数设置结果类型 | ✅ ResultType 冗余已消除 |
 | Sema 验证 | `Sema::ActOnReflectionTrait` 中完整检查 | `ActOnReflexprExpr` / `ActOnReflexprTypeExpr` 基本检查 | ⚠️ P2 |
 | CodeGen | 反射信息作为编译期常量，可能不出现在运行时 IR 中 | 生成全局常量结构体（含类型名字符串） | ⚠️ P2 |
 
@@ -288,7 +288,7 @@ constexpr AccessSpecifier AS_none = static_cast<AccessSpecifier>(-1);
 4. **✅ `meta::InfoType` 已在生产代码中使用（已修复）**
    在 `SemaReflection::ActOnReflectType` 和 `ActOnReflectMembers` 中创建 `meta::InfoType` 实例作为编译器层反射信息句柄。`SemaReflection::getTypeInfo` 和 `getMetadataName` 在 `ActOnReflectMembers` 中被调用。`forEachMember` 委托给 `getTypeInfo().getMembers()`。
 
-## P2 问题（后续改进） — 6 个
+## P2 问题（后续改进） — 6 个（已修复 2 个，剩余 4 个）
 
 1. **`MetaInfoType` 单例的 `Reflectee`/`RefKind` 字段无运行时意义**  
    建议简化 `MetaInfoType` 为无字段的标记类型，或改为每次反射创建携带具体数据的实例。
@@ -296,14 +296,14 @@ constexpr AccessSpecifier AS_none = static_cast<AccessSpecifier>(-1);
 2. **`ReflexprExpr` 用独立字段替代 union 导致内存冗余**  
    文档要求用 `union` 节省内存，实际用两个独立字段。对编译器性能影响微乎其微。
 
-3. **`ResultType` 与 `Expr::Type` 冗余**  
-   建议移除 `ResultType` 字段，统一使用基类 `getType()`/`setType()`。
+3. **✅ `ResultType` 与 `Expr::Type` 冗余（已修复 — commit bec760c）**  
+   已移除独立 `ResultType` 字段，统一使用基类 `getType()`/`setType()`。
 
 4. **元数据生成不完整（缺少成员列表、基类列表）**  
    CodeGen 仅生成 `{i32 kind, ptr name}`，缺少成员和基类的序列化。
 
-5. **`AS_none` 实现定义行为**  
-   建议在 `Decl.h` 的 `AccessSpecifier` 枚举中正式添加 `AS_none`。
+5. **✅ `AS_none` 实现定义行为（已修复 — commit bec760c）**  
+   已在 `Decl.h` 的 `AccessSpecifier` 枚举中正式添加 `AS_none`。
 
 6. **Clang 对比缺失项**  
    - Parser 缺少 tentative parsing 机制

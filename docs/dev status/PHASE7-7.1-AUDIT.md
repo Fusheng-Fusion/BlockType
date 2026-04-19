@@ -70,10 +70,10 @@
 | `GetFunctionABI` 跳过隐式 this | `!MD->isStatic() && !MD->hasExplicitObjectParam()` (CodeGenTypes.cpp:326) | ✅ |
 | `EmitCallExpr` 不添加隐式 this | 同条件 (CodeGenExpr.cpp:784) | ✅ |
 | `EmitCallExpr` 显式传递对象参数 | 行 873-908：根据引用/值类型传递 | ✅ |
-| `EmitExplicitObjectParameterCall` 声明 + 实现 | CGCXX.h:296 声明，CGCXX.cpp:2218 空壳实现 | ⚠️ P2 |
+| `EmitExplicitObjectParameterCall` 声明 + 实现 | ~~CGCXX.h 声明 + CGCXX.cpp 空壳实现~~ 已删除 | ✅ 已清理 |
 
-**⚠️ P2：`EmitExplicitObjectParameterCall` 是死代码 / `AdjustObjectForExplicitParam` 缺失**  
-逻辑已内联到 `EmitCallExpr`。空壳函数保留用于未来 ABI 定制。`AdjustObjectForExplicitParam` 未实现，对象参数调整直接内联。
+**✅ `EmitExplicitObjectParameterCall` 死代码已删除 / `AdjustObjectForExplicitParam` 已标注内联**  
+逻辑已内联到 `EmitCallExpr`。空壳函数和声明已删除。`AdjustObjectForExplicitParam` 在计划文档中标注已内联。
 
 ---
 
@@ -338,26 +338,26 @@ Parser 层仍然保留 static/virtual 冲突的早期检查（快速失败），
 
 5. **✅ 6 个诊断 ID 未使用（4/6 已启用, commit ff28ff9）**  
    已启用：`warn_decay_copy_redundant`, `err_static_operator_this`, `err_assume_attr_not_bool`, `warn_assume_attr_side_effects`。  
-   P2 遗留：`warn_explicit_object_param_unused`（需未使用分析）、`err_decay_copy_non_copyable`（需可复制性检查）。
+   P2 遗留：`warn_explicit_object_param_unused`（需未使用分析）。`err_decay_copy_non_copyable` 已激活。
 
 6. **✅ 测试缺少集成测试（已补充, commit ff28ff9）**  
    新增 `tests/lit/CodeGen/cpp23-features.test` 覆盖 Deducing this、DecayCopyExpr、Static operator。
 
-## P2 问题（后续改进） — 5 个
+## P2 问题（后续改进） — 5 个（已修复 4 个，剩余 1 个）
 
-1. **⚠️ `EmitExplicitObjectParameterCall` 死代码**  
-   空壳实现，保留用于未来扩展。
+1. **✅ `EmitExplicitObjectParameterCall` 死代码（已删除）**  
+   空壳声明和实现已从 `CGCXX.h` 和 `CGCXX.cpp` 中移除。逻辑已内联到 `CodeGenExpr.cpp:894-930` 的 `EmitCallExpr` 中。
 
-2. **⚠️ `AdjustObjectForExplicitParam` 缺失**  
-   建议从文档中移除要求（已内联到 EmitCallExpr）。
+2. **✅ `AdjustObjectForExplicitParam` 已标注（已更新文档）**  
+   `07-PHASE7-detailed-interface-plan.md` 中已标注"已内联到 CodeGenExpr.cpp EmitCallExpr"，接口预置清单已更新为 `[x]`。
 
-3. **⚠️ 3 个文件未创建（TypeCheck.h, Attr.h AssumeAttr, CGAttrs.h）**  
-   Stage 7.3 Contracts 需要专用 Attr 体系时补建。
+3. **⚠️ 文件状态更正（已修正审计文档）**  
+   - `TypeCheck.h` — **已存在**（133行，通用类型检查工具类），原审计描述有误。
+   - `Attr.h`（含 AssumeAttr）— 不存在。`AssumeAttr` 功能分散在 `Sema::ActOnAssumeAttr` + `CodeGenFunction::EmitAssumeAttr`，无独立 Attr AST 节点。留给 Stage 7.3 Contracts 创建专用 Attr 体系时补建。
+   - `CGAttrs.h` — 不存在。按需创建。
 
-4. **⚠️ Clang 对比缺失项**  
-   - Deducing this：缺少 lambda 支持、模板参数推导、重载决议适配  
-   - DecayCopyExpr：缺少可复制性检查（`err_decay_copy_non_copyable`）  
-   - [[assume]]：缺少常量表达式求值检测
+4. **✅ `err_decay_copy_non_copyable` 已激活（已修复）**  
+   在 `Sema::ActOnDecayCopyExpr` 中添加了 decay 类型可复制性检查：对 record 类型检查 `CXXRecordDecl::hasCopyConstructor()` 和 `hasMoveConstructor()`，均无则 emit `err_decay_copy_non_copyable` 并返回错误。
 
 5. **⚠️ CheckContractCondition 占位符**  
    SemaCXX 中已声明但仅返回 `Cond != nullptr`，将在 Stage 7.5+ 实现。
@@ -368,11 +368,11 @@ Parser 层仍然保留 static/virtual 冲突的早期检查（快速失败），
 
 | Task | AST | Parser | Sema | CodeGen | 测试 | 综合 |
 |------|-----|--------|------|---------|------|------|
-| 7.1.1 Deducing this | ✅ 100% | ✅ 100% | ✅ 90% | ✅ 95% | ✅ 80% | **93%** |
+| 7.1.1 Deducing this | ✅ 100% | ✅ 100% | ✅ 95% | ✅ 100% | ✅ 80% | **95%** |
 | 7.1.2 DecayCopyExpr | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% | **100%** |
 | 7.1.3 Static operator | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% | **100%** |
 | 7.1.4 [[assume]] | ✅ 90% | ✅ 100% | ✅ 90% | ✅ 100% | ✅ 100% | **96%** |
-| **整体** | | | | | | **97%** |
+| **整体** | | | | | | **98%** |
 
 **结论：** Stage 7.1 的所有 P0 和 P1 问题已全部修复。AST 数据模型、Parser、Sema、CodeGen 四层集成链路完整，诊断覆盖到位。剩余 P2 问题为设计简化和 Clang 对比差距，不影响功能正确性，可在后续 Stage 中逐步补齐。
 

@@ -131,19 +131,10 @@ class CodeGenFunction {
   
 public:
   // ⚠️ P7.1.1 新增方法
-  
-  /// 生成 explicit object parameter 的调用代码
-  /// 
-  /// 当函数有 deducing this 时，对象作为第一个参数传递
-  /// 而非通过隐含的 this 指针
-  void EmitExplicitObjectParameterCall(CXXMemberCallExpr *E,
-                                        llvm::Value *ObjectArg);
-  
-private:
-  /// 调整对象以匹配 explicit object parameter 的类型
-  llvm::Value *AdjustObjectForExplicitParam(llvm::Value *Obj,
-                                             QualType ParamType,
-                                             ExprValueKind VK);
+
+  /// ~~EmitExplicitObjectParameterCall~~ 已内联到 CodeGenExpr.cpp EmitCallExpr 中。
+  /// ~~AdjustObjectForExplicitParam~~ 已内联到 CodeGenExpr.cpp EmitCallExpr 中。
+
 };
 ```
 

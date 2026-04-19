@@ -283,24 +283,6 @@ public:
                            llvm::Value *This);
 
   //===------------------------------------------------------------------===//
-  // P7.1.1: Deducing this (P0847R7)
-  //===------------------------------------------------------------------===//
-
-  /// Generate code for a member call with explicit object parameter.
-  ///
-  /// When the callee has an explicit object parameter, the object is passed
-  /// as the first argument (not via implicit this pointer).
-  ///
-  /// @param CGF       Current codegen function
-  /// @param E         Member call expression
-  /// @param ObjectArg The object argument value
-  /// @param CallArgs  [in/out] Arguments to prepend the object to
-  void EmitExplicitObjectParameterCall(CodeGenFunction &CGF,
-                                        CXXMemberCallExpr *E,
-                                        llvm::Value *ObjectArg,
-                                        llvm::SmallVectorImpl<llvm::Value *> &CallArgs);
-
-  //===------------------------------------------------------------------===//
   // P7.1.3: Static operator (P1169R4, P2589R1)
   //===------------------------------------------------------------------===//
 
