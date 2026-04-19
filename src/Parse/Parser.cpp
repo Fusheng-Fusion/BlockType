@@ -31,8 +31,7 @@ Parser::~Parser() = default;
 //===----------------------------------------------------------------------===//
 
 TranslationUnitDecl *Parser::parseTranslationUnit() {
-  // Create translation unit scope
-  pushScope(ScopeFlags::TranslationUnitScope);
+  // Sema's constructor already created a TU scope — nothing to sync.
   
   // Create TranslationUnitDecl
   SourceLocation StartLoc = Tok.getLocation();
@@ -44,12 +43,7 @@ TranslationUnitDecl *Parser::parseTranslationUnit() {
     if (D) {
       TU->addDecl(D);
       
-      // Add to symbol table if it's a named declaration
-      if (auto *ND = llvm::dyn_cast<NamedDecl>(D)) {
-        if (CurrentScope) {
-          CurrentScope->addDecl(ND);
-        }
-      }
+      // Sema's ActOn methods already register to Scope + SymbolTable
     } else {
       // Error recovery: skip to next declaration boundary
       if (!skipUntilNextDeclaration()) {
@@ -59,7 +53,7 @@ TranslationUnitDecl *Parser::parseTranslationUnit() {
     }
   }
   
-  popScope();
+  // Don't pop the TU scope — Sema's destructor will clean it up.
   return TU;
 }
 
@@ -376,21 +370,6 @@ Expr *Parser::createRecoveryExpr(SourceLocation Loc) {
 }
 
 //===----------------------------------------------------------------------===//
-// Scope management
-//===----------------------------------------------------------------------===//
-
-void Parser::pushScope(ScopeFlags Flags) {
-  CurrentScope = new Scope(CurrentScope, Flags);
-}
-
-void Parser::popScope() {
-  if (CurrentScope) {
-    Scope *Parent = CurrentScope->getParent();
-    delete CurrentScope;
-    CurrentScope = Parent;
-  }
-}
-
 //===----------------------------------------------------------------------===//
 // Internal helpers
 //===----------------------------------------------------------------------===//

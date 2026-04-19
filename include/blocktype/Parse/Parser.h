@@ -20,7 +20,7 @@
 #include "blocktype/Lex/Token.h"
 #include "blocktype/Parse/Declarator.h"
 #include "blocktype/Parse/OperatorPrecedence.h"
-#include "blocktype/Sema/Scope.h"
+#include "blocktype/Sema/Sema.h"
 #include "llvm/ADT/SmallVector.h"
 #include <initializer_list>
 #include <vector>
@@ -88,8 +88,7 @@ class Parser {
   // Parsing context stack
   std::vector<ParsingContext> ContextStack;
 
-  // Scope management
-  Scope *CurrentScope = nullptr;
+  // Scope management is fully delegated to Sema (Actions).
 
   // Error recovery state
   unsigned ErrorCount = 0;
@@ -234,19 +233,6 @@ public:
     }
     return false;
   }
-
-  //===--------------------------------------------------------------------===//
-  // Scope management
-  //===--------------------------------------------------------------------===//
-
-  /// Returns the current scope.
-  Scope *getCurrentScope() const { return CurrentScope; }
-
-  /// Pushes a new scope.
-  void pushScope(ScopeFlags Flags = ScopeFlags::None);
-
-  /// Pops the current scope.
-  void popScope();
 
   //===--------------------------------------------------------------------===//
   // Accessors

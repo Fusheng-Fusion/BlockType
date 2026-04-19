@@ -924,12 +924,10 @@ Expr *Parser::parseIdentifier() {
     }
 
     // Layer 2: Check if the identifier is a known template in the symbol table
-    if (CurrentScope) {
-      if (NamedDecl *D = CurrentScope->lookup(Name)) {
+    if (NamedDecl *D = Actions.LookupName(Name)) {
         if (llvm::isa<TemplateDecl>(D)) {
           return parseTemplateSpecializationExpr(Loc, Name);
         }
-      }
     }
 
     // Layer 3: Tentative parsing
@@ -941,11 +939,9 @@ Expr *Parser::parseIdentifier() {
 
   // Lookup the declaration in the current scope
   ValueDecl *VD = nullptr;
-  if (CurrentScope) {
-    if (NamedDecl *D = CurrentScope->lookup(Name)) {
+  if (NamedDecl *D = Actions.LookupName(Name)) {
       // Found the declaration, create a DeclRefExpr
       VD = dyn_cast<ValueDecl>(D);
-    }
   }
 
   // Create DeclRefExpr via Sema (with or without declaration)
@@ -984,12 +980,10 @@ Expr *Parser::parseQualifiedName(SourceLocation StartLoc, llvm::StringRef FirstN
     }
 
     // Layer 2: Check if the identifier is a known template in the symbol table
-    if (CurrentScope) {
-      if (NamedDecl *D = CurrentScope->lookup(FullName)) {
+    if (NamedDecl *D = Actions.LookupName(FullName)) {
         if (llvm::isa<TemplateDecl>(D)) {
           return parseTemplateSpecializationExpr(StartLoc, FullName);
         }
-      }
     }
 
     // Layer 3: Tentative parsing
@@ -1001,10 +995,8 @@ Expr *Parser::parseQualifiedName(SourceLocation StartLoc, llvm::StringRef FirstN
 
   // Lookup the declaration in the current scope
   ValueDecl *VD = nullptr;
-  if (CurrentScope) {
-    if (NamedDecl *D = CurrentScope->lookup(FullName)) {
+  if (NamedDecl *D = Actions.LookupName(FullName)) {
       VD = dyn_cast<ValueDecl>(D);
-    }
   }
 
   // Create DeclRefExpr via Sema
@@ -1026,10 +1018,8 @@ Expr *Parser::parseTemplateSpecializationExpr(SourceLocation StartLoc, llvm::Str
   if (!Tok.is(TokenKind::less)) {
     // Not a template specialization, just return a DeclRefExpr via Sema
     ValueDecl *VD = nullptr;
-    if (CurrentScope) {
-      if (NamedDecl *D = CurrentScope->lookup(TemplateName)) {
-        VD = dyn_cast<ValueDecl>(D);
-      }
+    if (NamedDecl *D = Actions.LookupName(TemplateName)) {
+      VD = dyn_cast<ValueDecl>(D);
     }
     return Actions.ActOnDeclRefExpr(StartLoc, VD).get();
   }
@@ -1052,10 +1042,8 @@ Expr *Parser::parseTemplateSpecializationExpr(SourceLocation StartLoc, llvm::Str
     }
     // Return a TemplateSpecializationExpr with partial information
     ValueDecl *VD = nullptr;
-    if (CurrentScope) {
-      if (NamedDecl *D = CurrentScope->lookup(TemplateName)) {
-        VD = dyn_cast<ValueDecl>(D);
-      }
+    if (NamedDecl *D = Actions.LookupName(TemplateName)) {
+      VD = dyn_cast<ValueDecl>(D);
     }
     return Actions.ActOnTemplateSpecializationExpr(StartLoc, TemplateName,
                                                    TemplateArgs, VD).get();
@@ -1065,10 +1053,8 @@ Expr *Parser::parseTemplateSpecializationExpr(SourceLocation StartLoc, llvm::Str
 
   // Look up the template declaration (may be nullptr if not found)
   ValueDecl *VD2 = nullptr;
-  if (CurrentScope) {
-    if (NamedDecl *D = CurrentScope->lookup(TemplateName)) {
-      VD2 = dyn_cast<ValueDecl>(D);
-    }
+  if (NamedDecl *D = Actions.LookupName(TemplateName)) {
+    VD2 = dyn_cast<ValueDecl>(D);
   }
 
   // Create TemplateSpecializationExpr via Sema

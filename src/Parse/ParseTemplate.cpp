@@ -84,10 +84,8 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
       // Class template explicit specialization
       // Try to look up the primary template in the current scope
       ClassTemplateDecl *PrimaryTemplate = nullptr;
-      if (CurrentScope) {
-        if (NamedDecl *D = CurrentScope->lookup(ClassDecl->getName())) {
+      if (NamedDecl *D = Actions.LookupName(ClassDecl->getName())) {
           PrimaryTemplate = llvm::dyn_cast<ClassTemplateDecl>(D);
-        }
       }
       
       if (PrimaryTemplate) {
@@ -104,17 +102,15 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
     } else if (auto *VD = llvm::dyn_cast<VarDecl>(SpecializedDecl)) {
       // Variable template specialization
       VarTemplateDecl *PrimaryTemplate = nullptr;
-      if (CurrentScope) {
-        if (NamedDecl *D = CurrentScope->lookup(VD->getName())) {
+      if (NamedDecl *D = Actions.LookupName(VD->getName())) {
           // Could be wrapped in a VarTemplateDecl
           if (auto *VTD = llvm::dyn_cast<VarTemplateDecl>(D))
             PrimaryTemplate = VTD;
           else if (auto *TD = llvm::dyn_cast<TemplateDecl>(D)) {
             // Check if it's a variable template by looking at templated decl
           }
-        }
       }
-      
+
       if (PrimaryTemplate) {
         auto *Spec = llvm::cast<VarTemplateSpecializationDecl>(
             Actions.ActOnVarTemplateSpecDecl(VD->getLocation(), VD->getName(), VD->getType(),
@@ -128,10 +124,8 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
     } else if (auto *FuncDecl = llvm::dyn_cast<FunctionDecl>(SpecializedDecl)) {
       // Function template specialization
       FunctionTemplateDecl *PrimaryTemplate = nullptr;
-      if (CurrentScope) {
-        if (NamedDecl *D = CurrentScope->lookup(FuncDecl->getName())) {
+      if (NamedDecl *D = Actions.LookupName(FuncDecl->getName())) {
           PrimaryTemplate = llvm::dyn_cast<FunctionTemplateDecl>(D);
-        }
       }
       
       if (PrimaryTemplate) {
@@ -166,19 +160,19 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
   // Enter template scope: template parameters are visible within the
   // template body. This allows LookupUnqualifiedName to detect that
   // we are inside a template definition via ScopeFlags::TemplateScope.
-  pushScope(ScopeFlags::TemplateScope);
+  Actions.PushScope(ScopeFlags::TemplateScope);
   for (auto *P : Params)
-    CurrentScope->addDeclAllowRedeclaration(P);
+    Actions.RegisterTemplateParam(P);
 
   // Check for concept definition (C++20)
   if (Tok.is(TokenKind::kw_concept)) {
     ConceptDecl *Concept = parseConceptDefinition(TemplateLoc, Params);
     if (!Concept) {
-      popScope();
+      Actions.PopScope();
       return nullptr;
     }
     // Return the concept's template
-    popScope();
+    Actions.PopScope();
     return Concept->getTemplate();
   }
 
@@ -191,7 +185,7 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
   // Parse the templated declaration
   Decl *TemplatedDecl = parseDeclaration();
   if (!TemplatedDecl) {
-    popScope();
+    Actions.PopScope();
     return nullptr;
   }
 
@@ -207,13 +201,11 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
     bool IsPartialSpec = false;
     ClassTemplateDecl *PrimaryTemplate = nullptr;
     
-    if (CurrentScope) {
-      if (NamedDecl *D = CurrentScope->lookup(ClassDecl->getName())) {
+    if (NamedDecl *D = Actions.LookupName(ClassDecl->getName())) {
         if (auto *CTD = llvm::dyn_cast<ClassTemplateDecl>(D)) {
           PrimaryTemplate = CTD;
           IsPartialSpec = true;
         }
-      }
     }
     
     if (IsPartialSpec && PrimaryTemplate) {
@@ -229,7 +221,7 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
       
       Template = llvm::cast<ClassTemplateDecl>(
           Actions.ActOnClassTemplateDeclFactory(TemplateLoc, ClassDecl->getName(), PartialSpec).get());
-      popScope();
+      Actions.PopScope();
       return Template;
     }
     
@@ -241,13 +233,11 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
     bool IsPartialSpec = false;
     VarTemplateDecl *PrimaryTemplate = nullptr;
     
-    if (CurrentScope) {
-      if (NamedDecl *D = CurrentScope->lookup(VD->getName())) {
+    if (NamedDecl *D = Actions.LookupName(VD->getName())) {
         if (auto *VTD = llvm::dyn_cast<VarTemplateDecl>(D)) {
           PrimaryTemplate = VTD;
           IsPartialSpec = true;
         }
-      }
     }
     
     if (IsPartialSpec && PrimaryTemplate) {
@@ -262,7 +252,7 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
       
       Template = llvm::cast<VarTemplateDecl>(
           Actions.ActOnVarTemplateDeclFactory(TemplateLoc, VD->getName(), PartialSpec).get());
-      popScope();
+      Actions.PopScope();
       return Template;
     }
     
@@ -284,7 +274,7 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
       TemplateLoc, LAngleLoc, RAngleLoc, Params, RequiresClause);
   Template->setTemplateParameterList(TPL);
 
-  popScope();
+  Actions.PopScope();
   return Template;
 }
 
@@ -638,10 +628,8 @@ TemplateTemplateParmDecl *Parser::parseTemplateTemplateParameter() {
       
       // Look up the template in the symbol table
       TemplateDecl *DefaultTemplate = nullptr;
-      if (CurrentScope) {
-        if (NamedDecl *Found = CurrentScope->lookup(TemplateName)) {
+      if (NamedDecl *Found = Actions.LookupName(TemplateName)) {
           DefaultTemplate = llvm::dyn_cast<TemplateDecl>(Found);
-        }
       }
       
       // If not found, create a placeholder TemplateDecl
@@ -841,10 +829,8 @@ Expr *Parser::parseTypeConstraint() {
   // Simple concept name (no args) - create a DeclRefExpr
   // In a full implementation, this would be resolved to the ConceptDecl
   ValueDecl *ConceptValueDecl = nullptr;
-  if (CurrentScope) {
-    if (NamedDecl *D = CurrentScope->lookup(ConceptName)) {
+  if (NamedDecl *D = Actions.LookupName(ConceptName)) {
       ConceptValueDecl = dyn_cast<ValueDecl>(D);
-    }
   }
   return Actions.ActOnDeclRefExpr(Loc, ConceptValueDecl).get();
 }

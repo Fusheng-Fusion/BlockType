@@ -68,9 +68,8 @@ bool Parser::isDeclarationStatement() {
   case TokenKind::identifier:
     // Look up the identifier in the symbol table
     // If it's a type name (TypeDecl), then this is a declaration statement
-    if (CurrentScope) {
-      NamedDecl *D = CurrentScope->lookup(Tok.getText());
-      if (D && llvm::isa<TypeDecl>(D)) {
+    if (NamedDecl *D = Actions.LookupName(Tok.getText())) {
+      if (llvm::isa<TypeDecl>(D)) {
         // This identifier is a type name, so this is likely a declaration
         // For example: "MyType x;" or "MyType* p;"
         return true;

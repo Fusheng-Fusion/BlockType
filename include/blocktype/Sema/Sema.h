@@ -152,6 +152,22 @@ class Sema {
   /// Scope stack - tracks the current lexical scope chain.
   Scope *CurrentScope = nullptr;
 
+  //===------------------------------------------------------------------===//
+  // Declaration registration helpers
+  //===------------------------------------------------------------------===//
+
+  /// Register a declaration in both the Scope chain and SymbolTable.
+  void registerDecl(NamedDecl *ND) {
+    if (CurrentScope) CurrentScope->addDecl(ND);
+    Symbols.addDecl(ND);
+  }
+
+  /// Register a declaration allowing redeclaration (e.g., template params).
+  void registerDeclAllowRedecl(NamedDecl *ND) {
+    if (CurrentScope) CurrentScope->addDeclAllowRedeclaration(ND);
+    Symbols.addDecl(ND);
+  }
+
   /// Current DeclContext - tracks the current semantic context.
   DeclContext *CurContext = nullptr;
 
@@ -217,6 +233,14 @@ public:
   void PushScope(ScopeFlags Flags);
   void PopScope();
   Scope *getCurrentScope() const { return CurrentScope; }
+
+  /// Look up a name: first in the Scope chain, then in SymbolTable.
+  NamedDecl *LookupName(llvm::StringRef Name) const;
+
+  /// Register a template parameter in the current scope (allows redeclaration).
+  void RegisterTemplateParam(NamedDecl *ND) {
+    registerDeclAllowRedecl(ND);
+  }
 
   /// Returns true if we are currently inside a template definition body.
   /// Checks both the explicit depth counter and the scope chain for

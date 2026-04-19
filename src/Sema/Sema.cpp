@@ -54,6 +54,17 @@ void Sema::PopScope() {
   CurrentScope = Parent;
 }
 
+NamedDecl *Sema::LookupName(llvm::StringRef Name) const {
+  // 1. Search the Scope chain (lexical scopes, up to TU)
+  if (CurrentScope) {
+    if (NamedDecl *D = CurrentScope->lookup(Name))
+      return D;
+  }
+  // 2. Fall back to the global SymbolTable
+  auto Decls = Symbols.lookup(Name);
+  return Decls.empty() ? nullptr : Decls.front();
+}
+
 //===----------------------------------------------------------------------===//
 // DeclContext management
 //===----------------------------------------------------------------------===//
@@ -92,7 +103,7 @@ DeclResult Sema::ActOnDeclarator(Decl *D) {
     return DeclResult::getInvalid();
 
   if (CurrentScope && llvm::isa<NamedDecl>(D)) {
-    Symbols.addDecl(llvm::cast<NamedDecl>(D));
+    registerDecl(llvm::cast<NamedDecl>(D));
   }
   return DeclResult(D);
 }
@@ -130,8 +141,7 @@ DeclResult Sema::ActOnFunctionDecl(SourceLocation Loc, llvm::StringRef Name,
                                     Stmt *Body) {
   auto *FD = Context.create<FunctionDecl>(Loc, Name, T, Params, Body);
 
-  if (CurrentScope)
-    Symbols.addDecl(FD);
+  registerDecl(FD);
   if (CurContext)
     CurContext->addDecl(FD);
 
@@ -146,7 +156,7 @@ void Sema::ActOnStartOfFunctionDef(FunctionDecl *FD) {
   if (FD) {
     for (unsigned I = 0; I < FD->getNumParams(); ++I) {
       if (auto *PVD = FD->getParamDecl(I))
-        Symbols.addDecl(PVD);
+        registerDecl(PVD);
     }
   }
 }
@@ -180,8 +190,7 @@ DeclResult Sema::ActOnEnumConstant(EnumConstantDecl *ECD) {
     ECD->setVal(llvm::APSInt(llvm::APInt(32, 0)));
   }
 
-  if (CurrentScope)
-    Symbols.addDecl(ECD);
+  registerDecl(ECD);
   if (CurContext)
     CurContext->addDecl(ECD);
 
@@ -231,7 +240,7 @@ DeclResult Sema::ActOnParmVarDecl(SourceLocation Loc, llvm::StringRef Name,
 DeclResult Sema::ActOnNamespaceDecl(SourceLocation Loc, llvm::StringRef Name,
                                     bool IsInline) {
   auto *NS = Context.create<NamespaceDecl>(Loc, Name, IsInline);
-  if (CurrentScope) Symbols.addDecl(NS);
+  registerDecl(NS);
   if (CurContext) CurContext->addDecl(NS);
   return DeclResult(NS);
 }
@@ -260,7 +269,7 @@ DeclResult Sema::ActOnNamespaceAliasDecl(SourceLocation Loc,
                                          llvm::StringRef NestedName) {
   auto *NAD = Context.create<NamespaceAliasDecl>(Loc, Alias, Target,
                                                   NestedName);
-  if (CurrentScope) Symbols.addDecl(NAD);
+  registerDecl(NAD);
   return DeclResult(NAD);
 }
 
@@ -289,7 +298,7 @@ DeclResult Sema::ActOnExportDecl(SourceLocation Loc, Decl *Exported) {
 
 DeclResult Sema::ActOnEnumDecl(SourceLocation Loc, llvm::StringRef Name) {
   auto *ED = Context.create<EnumDecl>(Loc, Name);
-  if (CurrentScope) Symbols.addDecl(ED);
+  registerDecl(ED);
   if (CurContext) CurContext->addDecl(ED);
   return DeclResult(ED);
 }
@@ -297,7 +306,7 @@ DeclResult Sema::ActOnEnumDecl(SourceLocation Loc, llvm::StringRef Name) {
 DeclResult Sema::ActOnTypedefDecl(SourceLocation Loc, llvm::StringRef Name,
                                   QualType T) {
   auto *TD = Context.create<TypedefDecl>(Loc, Name, T);
-  if (CurrentScope) Symbols.addDecl(TD);
+  registerDecl(TD);
   if (CurContext) CurContext->addDecl(TD);
   return DeclResult(TD);
 }
@@ -351,7 +360,7 @@ DeclResult Sema::ActOnVarDeclFull(SourceLocation Loc, llvm::StringRef Name,
                                   QualType T, Expr *Init, bool IsStatic) {
   if (!T.isNull()) RequireCompleteType(T, Loc);
   auto *VD = Context.create<VarDecl>(Loc, Name, T, Init, IsStatic);
-  if (CurrentScope) Symbols.addDecl(VD);
+  registerDecl(VD);
   if (CurContext) CurContext->addDecl(VD);
   return DeclResult(VD);
 }
@@ -375,18 +384,18 @@ DeclResult Sema::ActOnFunctionDeclFull(SourceLocation Loc, llvm::StringRef Name,
 
 void Sema::ActOnCXXRecordDecl(CXXRecordDecl *RD) {
   if (!RD) return;
-  if (CurrentScope) Symbols.addDecl(RD);
+  registerDecl(RD);
   if (CurContext) CurContext->addDecl(RD);
 }
 
 void Sema::ActOnCXXMethodDecl(CXXMethodDecl *MD) {
   if (!MD) return;
-  if (CurrentScope) Symbols.addDecl(MD);
+  registerDecl(MD);
 }
 
 void Sema::ActOnFieldDecl(FieldDecl *FD) {
   if (!FD) return;
-  if (CurrentScope) Symbols.addDecl(FD);
+  registerDecl(FD);
 }
 
 void Sema::ActOnAccessSpecDecl(AccessSpecDecl *ASD) {
@@ -395,12 +404,12 @@ void Sema::ActOnAccessSpecDecl(AccessSpecDecl *ASD) {
 
 void Sema::ActOnCXXConstructorDecl(CXXConstructorDecl *CD) {
   if (!CD) return;
-  if (CurrentScope) Symbols.addDecl(CD);
+  registerDecl(CD);
 }
 
 void Sema::ActOnCXXDestructorDecl(CXXDestructorDecl *DD) {
   if (!DD) return;
-  if (CurrentScope) Symbols.addDecl(DD);
+  registerDecl(DD);
 }
 
 void Sema::ActOnFriendDecl(FriendDecl *FD) {
@@ -602,7 +611,7 @@ DeclResult Sema::ActOnFieldDeclFactory(SourceLocation Loc, llvm::StringRef Name,
                                        AccessSpecifier Access) {
   auto *FD = Context.create<FieldDecl>(Loc, Name, Type, BitWidth, IsMutable,
                                         InClassInit, Access);
-  if (CurrentScope) Symbols.addDecl(FD);
+  registerDecl(FD);
   return DeclResult(FD);
 }
 
@@ -1379,8 +1388,7 @@ StmtResult Sema::ActOnExprStmt(SourceLocation Loc, Expr *E) {
 StmtResult Sema::ActOnLabelStmt(SourceLocation Loc, llvm::StringRef LabelName,
                                  Stmt *SubStmt) {
   auto *LD = Context.create<LabelDecl>(Loc, LabelName);
-  if (CurrentScope)
-    Symbols.addDecl(LD);
+  registerDecl(LD);
   auto *LS = Context.create<LabelStmt>(Loc, LD, SubStmt);
   return StmtResult(LS);
 }

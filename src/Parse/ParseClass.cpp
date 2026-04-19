@@ -75,10 +75,7 @@ CXXRecordDecl *Parser::parseClassDeclaration(SourceLocation ClassLoc,
   CXXRecordDecl *Class = llvm::cast<CXXRecordDecl>(
       Actions.ActOnCXXRecordDeclFactory(NameLoc, Name, TagDecl::TK_class).get());
 
-  // Add class to current scope before parsing body
-  if (CurrentScope) {
-    CurrentScope->addDecl(Class);
-  }
+  // Class registered by Sema
 
   // Parse base clause if present
   if (Tok.is(TokenKind::colon)) {
@@ -97,9 +94,9 @@ CXXRecordDecl *Parser::parseClassDeclaration(SourceLocation ClassLoc,
   consumeToken(); // consume '{'
 
   // Enter class scope
-  pushScope(ScopeFlags::ClassScope);
+  Actions.PushScope(ScopeFlags::ClassScope);
   parseClassBody(Class);
-  popScope();
+  Actions.PopScope();
 
   if (!Tok.is(TokenKind::r_brace)) {
     emitError(DiagID::err_expected_rbrace);
@@ -153,10 +150,7 @@ CXXRecordDecl *Parser::parseStructDeclaration(SourceLocation StructLoc,
   CXXRecordDecl *Struct = llvm::cast<CXXRecordDecl>(
       Actions.ActOnCXXRecordDeclFactory(NameLoc, Name, TagDecl::TK_struct).get());
 
-  // Add struct to current scope before parsing body
-  if (CurrentScope) {
-    CurrentScope->addDecl(Struct);
-  }
+  // Struct registered by Sema
 
   // Parse base clause if present (struct can inherit)
   if (Tok.is(TokenKind::colon)) {
@@ -204,10 +198,7 @@ CXXRecordDecl *Parser::parseUnionDeclaration(SourceLocation UnionLoc) {
   CXXRecordDecl *Union = llvm::cast<CXXRecordDecl>(
       Actions.ActOnCXXRecordDeclFactory(NameLoc, Name, TagDecl::TK_union).get());
 
-  // Add union to current scope before parsing body
-  if (CurrentScope) {
-    CurrentScope->addDecl(Union);
-  }
+  // Union is registered in Scope+SymbolTable by ActOnCXXRecordDeclFactory
 
   // Parse union body
   if (!Tok.is(TokenKind::l_brace)) {
@@ -617,10 +608,7 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
             RefQual, HasNoexceptSpec, NoexceptValue, NoexceptExpr,
             Access).get());
 
-    // Add method to current scope
-    if (CurrentScope) {
-      CurrentScope->addDecl(Method);
-    }
+    // Method is registered in Scope+SymbolTable by ActOnCXXMethodDeclFactory
 
     return Method;
   }
@@ -650,9 +638,7 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
   // Create VarDecl for static members, FieldDecl for non-static
   if (IsStatic) {
     VarDecl *VD = llvm::cast<VarDecl>(Actions.ActOnVarDeclFull(NameLoc, Name, Type, InClassInit, true).get());
-    if (CurrentScope) {
-      CurrentScope->addDecl(VD);
-    }
+    // VD registered by Sema
     return VD;
   }
   
@@ -822,10 +808,7 @@ CXXConstructorDecl *Parser::parseConstructorDeclaration(CXXRecordDecl *Class,
 
   Ctor->setBody(Body);
 
-  // Add constructor to current scope
-  if (CurrentScope) {
-    CurrentScope->addDecl(Ctor);
-  }
+  // Constructor registered by Sema
 
   return Ctor;
 }
@@ -855,10 +838,7 @@ CXXDestructorDecl *Parser::parseDestructorDeclaration(CXXRecordDecl *Class,
   CXXDestructorDecl *Dtor = llvm::cast<CXXDestructorDecl>(
       Actions.ActOnCXXDestructorDeclFactory(Loc, Class, Body).get());
 
-  // Add destructor to current scope
-  if (CurrentScope) {
-    CurrentScope->addDecl(Dtor);
-  }
+  // Destructor is registered in Scope+SymbolTable by ActOnCXXDestructorDeclFactory
 
   return Dtor;
 }

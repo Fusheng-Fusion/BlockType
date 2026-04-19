@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/Parse/Parser.h"
+#include "blocktype/Sema/Sema.h"
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Type.h"
@@ -105,8 +106,8 @@ QualType Parser::parseTypeSpecifier() {
           }
 
           // Layer 2: Check if the identifier is a known template in symbol table
-          if (!ShouldParseAsTemplate && CurrentScope) {
-            if (NamedDecl *D = CurrentScope->lookup(TypeName)) {
+          if (!ShouldParseAsTemplate) {
+            if (NamedDecl *D = Actions.LookupName(TypeName)) {
               if (llvm::isa<TemplateDecl>(D)) {
                 ShouldParseAsTemplate = true;
               }
@@ -163,14 +164,12 @@ QualType Parser::parseTypeSpecifier() {
         } else {
           // Try to look up the type name in the symbol table
           bool FoundInScope = false;
-          if (CurrentScope) {
-            if (NamedDecl *D = CurrentScope->lookup(TypeName)) {
+          if (NamedDecl *D = Actions.LookupName(TypeName)) {
               // Check if this is a type declaration
               if (auto *TD = llvm::dyn_cast<TypeDecl>(D)) {
                 Result = Context.getTypeDeclType(TD);
                 FoundInScope = true;
               }
-            }
           }
 
           // If not found in scope, create an unresolved type
