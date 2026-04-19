@@ -1,0 +1,96 @@
+// RUN: blocktype -emit-llvm %s 2>&1 | FileCheck %s
+
+// Test virtual inheritance layout and thunk generation
+
+class Base {
+public:
+  int base_val;
+  virtual void foo() { }
+};
+
+// Virtual inheritance test
+class Derived : public virtual Base {
+public:
+  int derived_val;
+  void foo() override { }
+};
+
+// CHECK: define {{.*}} @_ZN7Derived3fooEv
+// CHECK: define {{.*}} @_ZN4Base3fooEv
+
+// Multiple inheritance test
+class Base1 {
+public:
+  int val1;
+  virtual void method1() { }
+};
+
+class Base2 {
+public:
+  int val2;
+  virtual void method2() { }
+};
+
+class MultiDerived : public Base1, public Base2 {
+public:
+  int multi_val;
+  void method1() override { }
+  void method2() override { }
+};
+
+// CHECK: define {{.*}} @_ZN12MultiDerived7method1Ev
+// CHECK: define {{.*}} @_ZN12MultiDerived7method2Ev
+
+// Diamond inheritance test (virtual)
+class Left : public virtual Base {
+public:
+  int left_val;
+};
+
+class Right : public virtual Base {
+public:
+  int right_val;
+};
+
+class Diamond : public Left, public Right {
+public:
+  int diamond_val;
+};
+
+// Verify that Base appears only once in Diamond's layout
+// The virtual base should be at the end of the object
+
+int test_virtual_inheritance() {
+  Derived d;
+  d.base_val = 10;
+  d.derived_val = 20;
+  return d.base_val + d.derived_val;
+}
+
+// CHECK: define {{.*}} @test_virtual_inheritance
+// CHECK: alloca %class.Derived
+// CHECK: store i32 10
+// CHECK: store i32 20
+
+int test_multiple_inheritance() {
+  MultiDerived m;
+  m.val1 = 1;
+  m.val2 = 2;
+  m.multi_val = 3;
+  return m.val1 + m.val2 + m.multi_val;
+}
+
+// CHECK: define {{.*}} @test_multiple_inheritance
+// CHECK: alloca %class.MultiDerived
+
+int test_diamond_inheritance() {
+  Diamond d;
+  d.base_val = 100;
+  d.left_val = 200;
+  d.right_val = 300;
+  d.diamond_val = 400;
+  return d.base_val;
+}
+
+// CHECK: define {{.*}} @test_diamond_inheritance
+// CHECK: alloca %class.Diamond

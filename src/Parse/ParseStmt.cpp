@@ -308,6 +308,8 @@ Stmt *Parser::parseCompoundStatement() {
 
   // Parse statements until we hit '}'
   while (!Tok.is(TokenKind::r_brace) && !Tok.is(TokenKind::eof)) {
+    llvm::errs() << "DEBUG: parseCompoundStatement - Current token kind: " 
+                 << static_cast<int>(Tok.getKind()) << ", text: '" << Tok.getText() << "'\n";
     Stmt *S = parseStatement();
     if (S) {
       Body.push_back(S);
@@ -315,10 +317,13 @@ Stmt *Parser::parseCompoundStatement() {
   }
 
   SourceLocation RBraceLoc = Tok.getLocation();
+  llvm::errs() << "DEBUG: parseCompoundStatement - After loop, current token kind: " 
+               << static_cast<int>(Tok.getKind()) << ", text: '" << Tok.getText() << "'\n";
   if (!tryConsumeToken(TokenKind::r_brace)) {
     emitError(DiagID::err_expected_rbrace);
   }
 
+  llvm::errs() << "DEBUG: parseCompoundStatement - Returning\n";
   return Actions.ActOnCompoundStmt(Body, LBraceLoc, RBraceLoc).get();
 }
 

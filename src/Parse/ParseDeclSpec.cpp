@@ -150,6 +150,8 @@ void Parser::parseDeclSpecifierSeq(DeclSpec &DS) {
     // 4. Type specifier (only one allowed)
     if (!SeenType) {
       QualType Ty = parseTypeSpecifier();
+      llvm::errs() << "DEBUG: parseDeclSpecifierSeq - parseTypeSpecifier returned " 
+                   << (Ty.isNull() ? "null" : "non-null") << "\n";
       if (!Ty.isNull()) {
         DS.Type = Ty;
         DS.TypeLoc = Tok.getLocation();

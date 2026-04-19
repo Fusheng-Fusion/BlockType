@@ -214,6 +214,12 @@ QualType Parser::parseBuiltinType() {
   BuiltinKind Kind = BuiltinKind::NumBuiltinTypes;
   SourceLocation Loc = Tok.getLocation();
   
+  // DEBUG: Print current token
+  llvm::errs() << "DEBUG: parseBuiltinType - Current token kind: " 
+               << static_cast<int>(Tok.getKind()) 
+               << ", kw_int value: " << static_cast<int>(TokenKind::kw_int)
+               << ", text: '" << Tok.getText() << "'\n";
+  
   switch (Tok.getKind()) {
   case TokenKind::kw_void:
     Kind = BuiltinKind::Void;
@@ -246,6 +252,7 @@ QualType Parser::parseBuiltinType() {
     break;
     
   case TokenKind::kw_int:
+    llvm::errs() << "DEBUG: parseBuiltinType - Handling kw_int\n";
     Kind = BuiltinKind::Int;
     consumeToken();
     break;

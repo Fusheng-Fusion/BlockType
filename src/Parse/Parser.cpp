@@ -41,9 +41,8 @@ TranslationUnitDecl *Parser::parseTranslationUnit() {
   while (!Tok.is(TokenKind::eof)) {
     Decl *D = parseDeclaration();
     if (D) {
-      TU->addDecl(D);
-      
-      // Sema's ActOn methods already register to Scope + SymbolTable
+      // Sema's ActOn methods already register to CurContext (which is TU at top level)
+      // No need to call TU->addDecl() again
     } else {
       // Error recovery: skip to next declaration boundary
       if (!skipUntilNextDeclaration()) {

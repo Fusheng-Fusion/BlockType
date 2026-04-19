@@ -204,8 +204,10 @@ public:
                                 CXXRecordDecl *StaticType = nullptr);
 
   /// 初始化对象的 vptr 指针（在构造函数中调用）。
+  /// \param ConstructionVTable 构造时的 vtable（用于虚继承），可为 nullptr
   void InitializeVTablePtr(CodeGenFunction &CGF, llvm::Value *This,
-                            CXXRecordDecl *RD);
+                            CXXRecordDecl *RD,
+                            llvm::Value *ConstructionVTable = nullptr);
 
   //===------------------------------------------------------------------===//
   // RTTI（运行时类型信息）
@@ -248,6 +250,16 @@ public:
   /// 将基类指针调整为派生类指针。
   llvm::Value *EmitCastToDerived(CodeGenFunction &CGF, CXXRecordDecl *Derived,
                                   llvm::Value *BasePtr, CXXRecordDecl *Base);
+
+  /// === Issue 10: Thunk 和 VTT 支持 ===
+
+  /// 生成 thunk 函数用于多重继承中的 this 指针调整。
+  /// 当派生类覆盖基类的虚函数时，如果基类不是主基类，需要 thunk 来调整 this 指针。
+  llvm::Function *EmitThunk(CXXMethodDecl *MD, CXXRecordDecl *Base,
+                             int64_t ThisAdjustment);
+
+  /// 生成 VTT (Virtual Table Table) 用于虚继承构造时的虚基类定位。
+  llvm::GlobalVariable *EmitVTT(CXXRecordDecl *RD);
 
   //===------------------------------------------------------------------===//
   // 成员初始化

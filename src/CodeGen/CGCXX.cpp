@@ -435,11 +435,15 @@ llvm::SmallVector<uint64_t, 16> CGCXX::ComputeClassLayout(CXXRecordDecl *RD) {
     CurrentOffset += PtrSize;
   }
 
-  // 2. 基类子对象（按声明顺序排列）
+  // 2. 非虚基类子对象（按声明顺序排列）
+  // 虚基类将在后面单独处理（放在末尾）
   for (const auto &Base : RD->bases()) {
     QualType BaseType = Base.getType();
     if (auto *RT = llvm::dyn_cast<RecordType>(BaseType.getTypePtr())) {
       if (auto *BaseCXX = llvm::dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+        // 跳过虚基类，稍后处理
+        if (Base.isVirtual()) continue;
+        
         uint64_t BaseSize = GetClassSize(BaseCXX);
         uint64_t BaseAlign = 1;
         if (hasVirtualFunctionsInHierarchy(BaseCXX)) {
@@ -464,6 +468,31 @@ llvm::SmallVector<uint64_t, 16> CGCXX::ComputeClassLayout(CXXRecordDecl *RD) {
     FieldOffsets.push_back(CurrentOffset);
     FieldOffsetCache[FD] = CurrentOffset;
     CurrentOffset += FieldSize;
+  }
+
+  // 4. 虚基类子对象（放在末尾，符合 Itanium ABI）
+  // 虚基类的偏移量将在 vtable 中记录，运行时通过 vptr 查找
+  for (const auto &Base : RD->bases()) {
+    QualType BaseType = Base.getType();
+    if (auto *RT = llvm::dyn_cast<RecordType>(BaseType.getTypePtr())) {
+      if (auto *BaseCXX = llvm::dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+        // 只处理虚基类
+        if (!Base.isVirtual()) continue;
+        
+        uint64_t BaseSize = GetClassSize(BaseCXX);
+        uint64_t BaseAlign = 1;
+        if (hasVirtualFunctionsInHierarchy(BaseCXX)) {
+          BaseAlign = std::max(BaseAlign, CGM.getTarget().getPointerAlign());
+        }
+        for (FieldDecl *F : BaseCXX->fields()) {
+          BaseAlign = std::max(BaseAlign,
+                               CGM.getTarget().getTypeAlign(F->getType()));
+        }
+        CurrentOffset = llvm::alignTo(CurrentOffset, BaseAlign);
+        BaseOffsetCache[{RD, BaseCXX}] = CurrentOffset;
+        CurrentOffset += BaseSize;
+      }
+    }
   }
 
   // 缓存类大小（含尾部填充）
@@ -606,6 +635,35 @@ void CGCXX::EmitConstructor(CXXConstructorDecl *Ctor, llvm::Function *Fn) {
   // === Phase 1 + Phase 2 交织: 基类初始化 + 每个基类后更新 vptr ===
   llvm::SmallVector<const CXXRecordDecl *, 4> InitializedBases;
 
+  // 检查是否有虚基类，如果有，需要使用 VTT
+  bool HasVirtualBase = false;
+  for (const auto &BaseSpec : Class->bases()) {
+    if (BaseSpec.isVirtual()) {
+      HasVirtualBase = true;
+      break;
+    }
+  }
+
+  // 如果有虚基类，从 VTT 加载构造时的 vtable
+  llvm::Value *ConstructionVTable = nullptr;
+  if (HasVirtualBase) {
+    llvm::GlobalVariable *VTT = EmitVTT(Class);
+    if (VTT) {
+      auto &Ctx = CGM.getLLVMContext();
+      // VTT 布局: [primary vtable ptr, construction vtables...]
+      // 对于最派生类，使用 VTT[0]（主 vtable）
+      // 对于基类子对象构造，使用对应的 construction vtable
+      // 当前简化：总是使用 VTT[0]
+      llvm::Value *VTTPtr = CGF.getBuilder().CreateInBoundsGEP(
+          VTT->getValueType(), VTT,
+          {llvm::ConstantInt::get(llvm::Type::getInt64Ty(Ctx), 0),
+           llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), 0)},
+          "vtt.ptr");
+      ConstructionVTable = CGF.getBuilder().CreateLoad(
+          llvm::PointerType::get(Ctx, 0), VTTPtr, "construction.vtable");
+    }
+  }
+
   // 收集初始化列表中的基类信息（按类型匹配）
   for (CXXCtorInitializer *Init : Ctor->initializers()) {
     if (Init->isBaseInitializer()) {
@@ -664,7 +722,7 @@ void CGCXX::EmitConstructor(CXXConstructorDecl *Ctor, llvm::Function *Fn) {
 
               // P1-4 修复：每个基类初始化后立即更新 vptr
               if (NeedsVPtr) {
-                InitializeVTablePtr(CGF, This, Class);
+                InitializeVTablePtr(CGF, This, Class, ConstructionVTable);
               }
 
               break;
@@ -697,7 +755,7 @@ void CGCXX::EmitConstructor(CXXConstructorDecl *Ctor, llvm::Function *Fn) {
 
           // P1-4 修复：每个基类初始化后立即更新 vptr
           if (NeedsVPtr) {
-            InitializeVTablePtr(CGF, This, Class);
+            InitializeVTablePtr(CGF, This, Class, ConstructionVTable);
           }
         }
       }
@@ -837,7 +895,8 @@ llvm::GlobalVariable *CGCXX::EmitVTable(CXXRecordDecl *RD) {
   auto *PtrTy = llvm::PointerType::get(CGM.getLLVMContext(), 0);
 
   // === 辅助 lambda：添加一个虚函数条目（含 D0/D1 处理） ===
-  auto addVfnEntry = [&](CXXMethodDecl *MD, CXXRecordDecl *OverridingClass) {
+  auto addVfnEntry = [&](CXXMethodDecl *MD, CXXRecordDecl *OverridingClass,
+                          CXXRecordDecl *BaseGroup = nullptr) {
     // 检查派生类是否覆盖
     CXXMethodDecl *Effective = MD;
     if (OverridingClass) {
@@ -845,8 +904,22 @@ llvm::GlobalVariable *CGCXX::EmitVTable(CXXRecordDecl *RD) {
       if (Ov) Effective = Ov;
     }
 
-    // D1 (complete destructor)
-    llvm::Function *Fn = CGM.GetOrCreateFunctionDecl(Effective);
+    // 如果是在非主基类组中，且方法被覆盖，需要生成 thunk
+    llvm::Function *Fn = nullptr;
+    if (BaseGroup && BaseGroup != getPrimaryBase(RD) && OverridingClass) {
+      // 计算 this 指针调整量
+      int64_t ThisAdjust = -static_cast<int64_t>(GetBaseOffset(OverridingClass, BaseGroup));
+      if (ThisAdjust != 0) {
+        // 生成 thunk
+        Fn = EmitThunk(Effective, BaseGroup, ThisAdjust);
+      }
+    }
+    
+    // 如果没有生成 thunk，使用原函数
+    if (!Fn) {
+      Fn = CGM.GetOrCreateFunctionDecl(Effective);
+    }
+
     VTableEntries.push_back(
         Fn ? llvm::cast<llvm::Constant>(Fn)
            : llvm::ConstantPointerNull::get(PtrTy));
@@ -876,12 +949,31 @@ llvm::GlobalVariable *CGCXX::EmitVTable(CXXRecordDecl *RD) {
     VTableEntries.push_back(llvm::ConstantPointerNull::get(PtrTy));
   }
 
+  // 虚基类偏移表（在 RTTI 之后，虚函数之前）
+  // 格式：每个虚基类一个条目 [offset-from-this-to-vbase]
+  // 如果没有虚基类，跳过此部分
+  for (const auto &Base : RD->bases()) {
+    if (!Base.isVirtual()) continue;
+    
+    QualType BaseType = Base.getType();
+    if (auto *RT = llvm::dyn_cast<RecordType>(BaseType.getTypePtr())) {
+      if (auto *BaseCXX = llvm::dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+        // 计算从 this 到虚基类的偏移
+        uint64_t VBaseOffset = GetBaseOffset(RD, BaseCXX);
+        VTableEntries.push_back(llvm::ConstantExpr::getIntToPtr(
+            llvm::ConstantInt::get(llvm::Type::getInt64Ty(CGM.getLLVMContext()),
+                                   VBaseOffset),
+            PtrTy));
+      }
+    }
+  }
+
   // 主基类的虚函数（含覆盖检测）
   CXXRecordDecl *Primary = getPrimaryBase(RD);
   if (Primary) {
     for (CXXMethodDecl *MD : Primary->methods()) {
       if (!MD->isVirtual()) continue;
-      addVfnEntry(MD, RD);
+      addVfnEntry(MD, RD, Primary);
     }
   }
 
@@ -931,7 +1023,7 @@ llvm::GlobalVariable *CGCXX::EmitVTable(CXXRecordDecl *RD) {
     // 此基类的虚函数（含覆盖检测）
     for (CXXMethodDecl *MD : BaseRD->methods()) {
       if (!MD->isVirtual()) continue;
-      addVfnEntry(MD, RD);
+      addVfnEntry(MD, RD, BaseRD);
     }
   }
 
@@ -1149,14 +1241,21 @@ llvm::Value *CGCXX::EmitVirtualCall(CodeGenFunction &CGF, CXXMethodDecl *MD,
 }
 
 void CGCXX::InitializeVTablePtr(CodeGenFunction &CGF, llvm::Value *This,
-                                 CXXRecordDecl *RD) {
+                                 CXXRecordDecl *RD,
+                                 llvm::Value *ConstructionVTable) {
   if (!This || !RD) return;
 
   int VPtrIdx = GetVPtrIndex(RD);
   if (VPtrIdx < 0) return; // 此类不需要 vptr（没有虚函数）
 
-  llvm::GlobalVariable *VTable = EmitVTable(RD);
-  if (!VTable) return;
+  // 优先使用 construction vtable（如果提供）
+  llvm::GlobalVariable *VTableGV = nullptr;
+  llvm::Value *VTableToUse = ConstructionVTable;
+  
+  if (!VTableToUse) {
+    VTableGV = EmitVTable(RD);
+    if (!VTableGV) return;
+  }
 
   llvm::StructType *ClassTy = CGM.getTypes().GetRecordType(RD);
   if (!ClassTy || ClassTy->getNumElements() == 0) return;
@@ -1170,8 +1269,15 @@ void CGCXX::InitializeVTablePtr(CodeGenFunction &CGF, llvm::Value *This,
   llvm::Value *VTablePtrAddr = CGF.getBuilder().CreateStructGEP(
       ClassTy, This, VPtrUnsigned, "vtable.ptr");
 
-  llvm::Value *VTableAddr = CGF.getBuilder().CreateInBoundsGEP(
-      VTable->getValueType(), VTable, {Zero64, Zero32}, "vtable.addr");
+  llvm::Value *VTableAddr;
+  if (VTableToUse) {
+    // 使用 construction vtable
+    VTableAddr = VTableToUse;
+  } else {
+    // 使用常规的 vtable
+    VTableAddr = CGF.getBuilder().CreateInBoundsGEP(
+        VTableGV->getValueType(), VTableGV, {Zero64, Zero32}, "vtable.addr");
+  }
 
   CGF.getBuilder().CreateStore(VTableAddr, VTablePtrAddr);
 
@@ -1200,9 +1306,22 @@ void CGCXX::InitializeVTablePtr(CodeGenFunction &CGF, llvm::Value *This,
     auto *GroupOffset32 =
         llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), GroupOffset);
 
-    llvm::Value *GroupAddr = CGF.getBuilder().CreateInBoundsGEP(
-        VTable->getValueType(), VTable, {Zero64, GroupOffset32},
-        BaseRD->getName().str() + ".vtable.group");
+    llvm::Value *GroupAddr;
+    if (VTableToUse) {
+      // 使用 construction vtable
+      GroupAddr = CGF.getBuilder().CreateInBoundsGEP(
+          llvm::ArrayType::get(llvm::PointerType::get(Ctx, 0), GroupOffset + 1),
+          VTableToUse,
+          {Zero64, GroupOffset32},
+          BaseRD->getName().str() + ".vtable.group");
+    } else if (VTableGV) {
+      // 使用常规的 vtable
+      GroupAddr = CGF.getBuilder().CreateInBoundsGEP(
+          VTableGV->getValueType(), VTableGV, {Zero64, GroupOffset32},
+          BaseRD->getName().str() + ".vtable.group");
+    } else {
+      continue; // 没有可用的 vtable
+    }
 
     CGF.getBuilder().CreateStore(GroupAddr, BaseVTablePtrAddr);
   }
@@ -1622,7 +1741,60 @@ llvm::Value *CGCXX::EmitCastToBase(CodeGenFunction &CGF, CXXRecordDecl *Derived,
                                     llvm::Value *DerivedPtr, CXXRecordDecl *Base) {
   if (!DerivedPtr || !Base || !Derived) return DerivedPtr;
 
+  // 检查是否为虚继承
+  bool IsVirtualInheritance = false;
+  unsigned VBaseIndex = 0; // 虚基类在 vtable 中的索引
+  for (const auto &B : Derived->bases()) {
+    QualType BaseType = B.getType();
+    if (auto *RT = llvm::dyn_cast<RecordType>(BaseType.getTypePtr())) {
+      if (auto *BaseCXX = llvm::dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+        if (BaseCXX == Base && B.isVirtual()) {
+          IsVirtualInheritance = true;
+          break;
+        }
+        if (B.isVirtual()) {
+          VBaseIndex++; // 计算当前虚基类的索引
+        }
+      }
+    }
+  }
+
   uint64_t Offset = GetBaseOffset(Derived, Base);
+  
+  // 对于虚继承，从 vtable 中读取运行时偏移
+  if (IsVirtualInheritance) {
+    auto &Ctx = CGM.getLLVMContext();
+    auto *Builder = &CGF.getBuilder();
+    
+    // 1. 加载 vptr
+    llvm::Value *VTablePtrAddr = Builder->CreateBitCast(
+        DerivedPtr, llvm::PointerType::get(llvm::PointerType::get(Ctx, 0), 0),
+        "vtable.addr");
+    llvm::Value *VTable = Builder->CreateLoad(
+        llvm::PointerType::get(Ctx, 0), VTablePtrAddr, "vtable");
+    
+    // 2. 计算虚基类偏移在 vtable 中的位置
+    // vtable 布局: [offset-to-top(0), RTTI(1), vbase-offsets(2..N), methods...]
+    unsigned VBaseSlot = 2 + VBaseIndex; // 跳过 ott 和 RTTI
+    
+    llvm::Value *VBaseOffsetPtr = Builder->CreateInBoundsGEP(
+        llvm::PointerType::get(Ctx, 0), VTable,
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(Ctx), VBaseSlot),
+        "vbase.offset.ptr");
+    
+    // 3. 加载偏移量
+    llvm::Value *OffsetVal = Builder->CreateLoad(
+        llvm::Type::getInt64Ty(Ctx), VBaseOffsetPtr, "vbase.offset");
+    
+    // 4. 调整指针
+    llvm::Value *IntPtr = Builder->CreatePtrToInt(
+        DerivedPtr, llvm::Type::getInt64Ty(Ctx), "ptr.int");
+    llvm::Value *AdjustedPtr = Builder->CreateAdd(
+        IntPtr, OffsetVal, "vbase.adj");
+    return Builder->CreateIntToPtr(
+        AdjustedPtr, DerivedPtr->getType(), "vbase.ptr");
+  }
+  
   if (Offset == 0) return DerivedPtr;
 
   // 使用 ptrtoint + add + inttoptr 进行字节级指针调整
@@ -1652,6 +1824,136 @@ llvm::Value *CGCXX::EmitCastToDerived(CodeGenFunction &CGF, CXXRecordDecl *Deriv
       IntPtr, OffsetVal, "derived.adj");
   return CGF.getBuilder().CreateIntToPtr(
       AdjustedPtr, BasePtr->getType(), "derived.ptr");
+}
+
+//===----------------------------------------------------------------------===//
+// Thunk 和 VTT 支持
+//===----------------------------------------------------------------------===//
+
+llvm::Function *CGCXX::EmitThunk(CXXMethodDecl *MD, CXXRecordDecl *Base,
+                                  int64_t ThisAdjustment) {
+  if (!MD || !Base) return nullptr;
+
+  auto &Ctx = CGM.getLLVMContext();
+  
+  // 生成 thunk 名称: _ZThnN_<offset>_<mangled-name>
+  std::string MangledName = CGM.getMangler().getMangledName(MD);
+  std::string ThunkName = "_ZThn" + std::to_string(ThisAdjustment) + "_" + MangledName;
+  
+  // 检查是否已存在
+  if (auto *Existing = CGM.getModule()->getFunction(ThunkName)) {
+    return Existing;
+  }
+
+  // 获取目标函数的类型
+  llvm::Function *TargetFn = CGM.GetOrCreateFunctionDecl(MD);
+  if (!TargetFn) return nullptr;
+
+  // 创建 thunk 函数，签名与目标函数相同
+  llvm::FunctionType *ThunkTy = TargetFn->getFunctionType();
+  llvm::Function *ThunkFn = llvm::Function::Create(
+      ThunkTy, llvm::GlobalValue::LinkOnceODRLinkage, ThunkName, CGM.getModule());
+  ThunkFn->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+  // 生成 thunk 代码
+  auto *EntryBB = llvm::BasicBlock::Create(Ctx, "entry", ThunkFn);
+  llvm::IRBuilder<> Builder(EntryBB);
+
+  // 调整 this 指针（第一个参数）
+  auto Args = ThunkFn->args();
+  auto It = Args.begin();
+  llvm::Value *ThisPtr = &*It;
+  
+  if (ThisAdjustment != 0) {
+    llvm::Value *OffsetVal = llvm::ConstantInt::get(
+        llvm::Type::getInt64Ty(Ctx), ThisAdjustment, true /*signed*/);
+    llvm::Value *IntPtr = Builder.CreatePtrToInt(
+        ThisPtr, llvm::Type::getInt64Ty(Ctx), "thunk.ptr.int");
+    llvm::Value *AdjustedPtr = Builder.CreateAdd(
+        IntPtr, OffsetVal, "thunk.adj");
+    ThisPtr = Builder.CreateIntToPtr(
+        AdjustedPtr, ThisPtr->getType(), "thunk.this");
+  }
+
+  // 调用目标函数
+  llvm::SmallVector<llvm::Value *, 8> CallArgs;
+  CallArgs.push_back(ThisPtr);
+  ++It;
+  for (; It != Args.end(); ++It) {
+    CallArgs.push_back(&*It);
+  }
+
+  llvm::Value *Result = Builder.CreateCall(TargetFn, CallArgs, "thunk.call");
+  
+  // 返回结果
+  if (ThunkTy->getReturnType()->isVoidTy()) {
+    Builder.CreateRetVoid();
+  } else {
+    Builder.CreateRet(Result);
+  }
+
+  return ThunkFn;
+}
+
+llvm::GlobalVariable *CGCXX::EmitVTT(CXXRecordDecl *RD) {
+  if (!RD) return nullptr;
+
+  // 检查是否有虚基类
+  bool HasVirtualBase = false;
+  for (const auto &Base : RD->bases()) {
+    if (Base.isVirtual()) {
+      HasVirtualBase = true;
+      break;
+    }
+  }
+  
+  if (!HasVirtualBase) return nullptr;
+
+  auto &Ctx = CGM.getLLVMContext();
+  llvm::PointerType *PtrTy = llvm::PointerType::get(Ctx, 0);
+
+  // VTT 结构:
+  // [primary vtable ptr, construction vtables for each base...]
+  // Construction vtables 包含: [vtable ptr, offset-to-vbase, ...]
+  
+  llvm::SmallVector<llvm::Constant *, 8> VTTFields;
+  
+  // 1. 主 vtable 指针
+  llvm::GlobalVariable *PrimaryVT = CGM.getCXX().EmitVTable(RD);
+  if (PrimaryVT) {
+    VTTFields.push_back(llvm::ConstantExpr::getBitCast(PrimaryVT, PtrTy));
+  }
+
+  // 2. 为每个有虚函数的基类生成构造 vtable
+  for (const auto &Base : RD->bases()) {
+    QualType BaseType = Base.getType();
+    if (auto *RT = llvm::dyn_cast<RecordType>(BaseType.getTypePtr())) {
+      if (auto *BaseCXX = llvm::dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+        if (hasVirtualFunctionsInHierarchy(BaseCXX)) {
+          // 构造时的 vtable（可能不同，因为虚基类偏移未确定）
+          llvm::GlobalVariable *BaseVT = CGM.getCXX().EmitVTable(BaseCXX);
+          if (BaseVT) {
+            VTTFields.push_back(llvm::ConstantExpr::getBitCast(BaseVT, PtrTy));
+          }
+        }
+      }
+    }
+  }
+
+  if (VTTFields.empty()) return nullptr;
+
+  // 创建 VTT 全局变量
+  auto *VTTTy = llvm::ArrayType::get(PtrTy, VTTFields.size());
+  llvm::Constant *VTTInit = llvm::ConstantArray::get(VTTTy, VTTFields);
+  
+  std::string MangledName = CGM.getMangler().getRTTIName(RD);
+  std::string VTTName = "_ZTT" + MangledName.substr(4); // 去掉 "_ZTI" 前缀
+  auto *VTTGV = new llvm::GlobalVariable(
+      *CGM.getModule(), VTTTy, /*isConstant=*/true,
+      llvm::GlobalValue::LinkOnceODRLinkage, VTTInit, VTTName);
+  VTTGV->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+  return VTTGV;
 }
 
 //===----------------------------------------------------------------------===//

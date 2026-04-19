@@ -137,6 +137,7 @@ DiagLevel DiagnosticsEngine::getDiagnosticLevel(DiagID ID) {
     case DiagID::ID: \
       return DiagLevel::Level;
 #include "blocktype/Basic/DiagnosticIDs.def"
+#include "blocktype/Basic/DiagnosticSemaKinds.def"
 #undef DIAG
     default:
       return DiagLevel::Error;
@@ -152,6 +153,7 @@ const char* DiagnosticsEngine::getDiagnosticMessage(DiagID ID, DiagnosticLanguag
   static const char* EnglishMessages[] = {
 #define DIAG(ID, Level, EnText, ZhText) EnText,
 #include "blocktype/Basic/DiagnosticIDs.def"
+#include "blocktype/Basic/DiagnosticSemaKinds.def"
 #undef DIAG
     "unknown diagnostic"
   };
@@ -160,6 +162,7 @@ const char* DiagnosticsEngine::getDiagnosticMessage(DiagID ID, DiagnosticLanguag
   static const char* ChineseMessages[] = {
 #define DIAG(ID, Level, EnText, ZhText) ZhText,
 #include "blocktype/Basic/DiagnosticIDs.def"
+#include "blocktype/Basic/DiagnosticSemaKinds.def"
 #undef DIAG
     "未知诊断"
   };

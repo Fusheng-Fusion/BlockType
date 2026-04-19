@@ -12,6 +12,7 @@
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/ASTDumper.h"
 #include "blocktype/AST/Decl.h"
+#include "blocktype/CodeGen/CodeGenModule.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -71,6 +72,12 @@ static cl::opt<std::string> OllamaEndpoint(
 static cl::opt<bool> ASTDump(
   "ast-dump",
   cl::desc("Dump AST after parsing"),
+  cl::cat(BlockTypeCategory)
+);
+
+static cl::opt<bool> EmitLLVM(
+  "emit-llvm",
+  cl::desc("Emit LLVM IR"),
   cl::cat(BlockTypeCategory)
 );
 
@@ -190,10 +197,7 @@ int main(int argc, char *argv[]) {
     DiagnosticsEngine Diags;
     ASTContext Context;
     
-    // 3. 创建文件 ID
-    SM.createMainFileID(File, SourceCode);
-    
-    // 4. 创建预处理器并进入源文件
+    // 3. 创建预处理器并进入源文件（enterSourceFile 会内部调用 createMainFileID）
     Preprocessor PP(SM, Diags);
     PP.enterSourceFile(File, SourceCode);
     
@@ -209,8 +213,14 @@ int main(int argc, char *argv[]) {
 
     TranslationUnitDecl *TU = P.parseTranslationUnit();
 
+    llvm::errs() << "DEBUG: After parseTranslationUnit, P.hasErrors() = " 
+                 << (P.hasErrors() ? "true" : "false") << "\n";
+
     // 7. Post-parse diagnostics: unused declarations, unreachable code
     S.DiagnoseUnusedDecls(TU);
+
+    llvm::errs() << "DEBUG: After DiagnoseUnusedDecls, P.hasErrors() = " 
+                 << (P.hasErrors() ? "true" : "false") << "\n";
 
     // 8. 报告错误
     if (P.hasErrors()) {
@@ -223,6 +233,31 @@ int main(int argc, char *argv[]) {
       outs() << "\n=== AST Dump for " << File << " ===\n";
       TU->dump(outs());
       outs() << "=== End AST Dump ===\n\n";
+    }
+    
+    // 9. 可选：生成 LLVM IR
+    if (EmitLLVM && TU) {
+      if (Verbose) {
+        outs() << "  Generating LLVM IR...\n";
+      }
+      
+      llvm::LLVMContext LLVMCtx;
+      std::string ModuleName = File;
+      // 使用默认目标三元组（当前平台）
+#ifdef __APPLE__
+#ifdef __aarch64__
+      std::string TargetTriple = "arm64-apple-darwin";
+#else
+      std::string TargetTriple = "x86_64-apple-darwin";
+#endif
+#else
+      std::string TargetTriple = "x86_64-unknown-linux-gnu";
+#endif
+      blocktype::CodeGenModule CGM(Context, LLVMCtx, ModuleName, TargetTriple);
+      CGM.EmitTranslationUnit(TU);
+      
+      // 输出 LLVM IR
+      CGM.getModule()->print(llvm::outs(), nullptr);
     }
     
     // 10. AI 辅助分析（可选）

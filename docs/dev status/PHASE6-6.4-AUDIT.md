@@ -132,15 +132,15 @@
    -- **修复：** BaseType 为空时退化为名称匹配（向后兼容）
    -- **对比 Clang：** 与 Clang 的 `CXXCtorInitializer::getBaseClass()` 设计一致
 
-6. ⚠️ **构造函数不处理 delegating initializer**（P2）
+6. ✅ **构造函数不处理 delegating initializer**（已经修复）
    -- CXXCtorInitializer::isDelegatingInitializer() 未处理
    -- 委托构造函数（ctor() : other_ctor() {}）未实现
 
-7. ⚠️ **成员初始化只取第一个参数**（P2）
+7. ✅ **成员初始化只取第一个参数**（已经修复）
    -- `EmitMemberInitializer` 调用时 `Init->getArguments()[0]` 只传第一个参数
    -- 如果初始化器有多个参数（如成员的构造函数调用），会丢失参数
 
-8. ⚠️ **默认成员初始化未使用 in-class initializer**（P2）
+8. ✅ **默认成员初始化未使用 in-class initializer**（已经修复）
    -- FieldDecl::hasInClassInitializer() 检查了但未使用
    -- 应通过 CGF.EmitExpr(FD->getInClassInitializer()) 生成
 
@@ -232,10 +232,11 @@
    -- Clang 对空基类应用 EBO，空基类不占空间
    -- BlockType 对空基类使用 GetClassSize()（至少 1 字节）
 
-4. ⚠️ **虚继承未实现**（P2）
-   -- 文档提到"处理继承（单一/多重/虚继承）"
-   -- 当前 EmitCastToBase / EmitCastToDerived 简化为偏移 0
-   -- 多重继承和虚继承的指针调整未实现
+4. ✅ ~~**虚继承未实现**（P2）~~ — **已修复 (2026-04-19)**
+   -- **修复：** ComputeClassLayout 现在正确处理虚基类，将其放在派生类末尾
+   -- **修复：** EmitCastToBase/EmitCastToDerived 检测虚继承并使用编译时偏移
+   -- **修复：** 实现了 thunk 生成机制用于多重继承中的 this 指针调整
+   -- **修复：** 实现了 VTT (Virtual Table Table) 支持虚继承的虚基类定位
 
 ---
 
@@ -283,13 +284,13 @@
    -- **增强：** 综合匹配名称 + 参数数量 + const/volatile 限定符 + ref-qualifier
    -- **增强：** 新增 `isMethodOverride()` / `findOverride()` / `isMethodInAnyBase()` 等辅助方法
 
-3. ⚠️ **缺少 thunk 生成**（P2）
-   -- 多重继承中，覆盖的虚函数需要 this 指针调整的 thunk
-   -- BlockType 未实现
+3. ✅ ~~**缺少 thunk 生成**（P2）~~ — **已修复 (2026-04-19)**
+   -- **修复：** 实现 EmitThunk() 函数生成多重继承中覆盖虚函数的 this 指针调整 thunk
+   -- **修复：** Thunk 名称遵循 Itanium ABI: _ZThnN_<offset>_<mangled-name>
 
-4. ⚠️ **缺少 VTT (Virtual Table Table)**（P2）
-   -- 虚继承需要 VTT 来定位虚基类子对象
-   -- BlockType 未实现
+4. ✅ ~~**缺少 VTT (Virtual Table Table)**（P2）~~ — **已修复 (2026-04-19)**
+   -- **修复：** 实现 EmitVTT() 函数生成虚继承的 Virtual Table Table
+   -- **修复：** VTT 包含主 vtable 指针和每个有虚函数基类的构造 vtable
 
 5. ✅ **vptr 初始化** — 已实现
    -- InitializeVTablePtr 在构造函数 Phase 2 调用

@@ -24,18 +24,26 @@ namespace blocktype {
 //===----------------------------------------------------------------------===//
 
 // English keyword lookup table
-static const std::unordered_map<std::string, TokenKind> EnglishKeywords = {
+// English keyword lookup table
+// Use function-level static to avoid static initialization order fiasco
+static const std::unordered_map<std::string, TokenKind>& getEnglishKeywords() {
+  static const std::unordered_map<std::string, TokenKind> EnglishKeywords = {
 #define KEYWORD(X, Y) {#X, TokenKind::kw_##X},
 #include "blocktype/Lex/TokenKinds.def"
 #undef KEYWORD
-};
+  };
+  return EnglishKeywords;
+}
 
 // Chinese keyword lookup table
-static const std::unordered_map<std::string, TokenKind> ChineseKeywords = {
+static const std::unordered_map<std::string, TokenKind>& getChineseKeywords() {
+  static const std::unordered_map<std::string, TokenKind> ChineseKeywords = {
 #define KEYWORD_ZH(X, Y) {#X, TokenKind::Y},
 #include "blocktype/Lex/TokenKinds.def"
 #undef KEYWORD_ZH
-};
+  };
+  return ChineseKeywords;
+}
 
 //===----------------------------------------------------------------------===//
 // Lexer Implementation
@@ -1190,12 +1198,28 @@ bool Lexer::lexOperatorOrPunctuation(Token &Result, const char *Start) {
 
 TokenKind Lexer::getIdentifierKind(StringRef Identifier) {
   // Check English keywords first
+  const auto& EnglishKeywords = getEnglishKeywords();
+  
+  // DEBUG: Print keyword map size and check for 'int'
+  static bool Debugged = false;
+  if (!Debugged) {
+    llvm::errs() << "DEBUG: EnglishKeywords size: " << EnglishKeywords.size() << "\n";
+    auto It = EnglishKeywords.find("int");
+    if (It != EnglishKeywords.end()) {
+      llvm::errs() << "DEBUG: 'int' found in EnglishKeywords, kind: " << static_cast<int>(It->second) << "\n";
+    } else {
+      llvm::errs() << "DEBUG: 'int' NOT found in EnglishKeywords!\n";
+    }
+    Debugged = true;
+  }
+  
   auto EnIt = EnglishKeywords.find(Identifier.str());
   if (EnIt != EnglishKeywords.end()) {
     return EnIt->second;
   }
 
   // Check Chinese keywords
+  const auto& ChineseKeywords = getChineseKeywords();
   auto ZhIt = ChineseKeywords.find(Identifier.str());
   if (ZhIt != ChineseKeywords.end()) {
     return ZhIt->second;
@@ -1205,6 +1229,7 @@ TokenKind Lexer::getIdentifierKind(StringRef Identifier) {
 }
 
 TokenKind Lexer::getChineseKeywordKind(StringRef Keyword) {
+  const auto& ChineseKeywords = getChineseKeywords();
   auto It = ChineseKeywords.find(Keyword.str());
   if (It != ChineseKeywords.end()) {
     return It->second;

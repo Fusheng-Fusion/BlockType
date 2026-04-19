@@ -273,6 +273,8 @@ Decl *Parser::parseDeclaration(
   // Parse declaration specifiers
   DeclSpec DS;
   parseDeclSpecifierSeq(DS);
+  llvm::errs() << "DEBUG: parseDeclaration - DS.hasTypeSpecifier() = " 
+               << (DS.hasTypeSpecifier() ? "true" : "false") << "\n";
   if (!DS.hasTypeSpecifier()) {
     emitError(DiagID::err_expected_type);
     return nullptr;
@@ -281,6 +283,8 @@ Decl *Parser::parseDeclaration(
   // Parse declarator (name + pointer/reference/array/function chunks)
   Declarator D(DS, DeclaratorContext::FileContext);
   parseDeclarator(D);
+  llvm::errs() << "DEBUG: parseDeclaration - D.hasName() = " 
+               << (D.hasName() ? "true" : "false") << "\n";
 
   if (!D.hasName()) {
     emitError(DiagID::err_expected_identifier);
@@ -300,9 +304,13 @@ Decl *Parser::parseDeclaration(
   }
 
   // Determine if this is a function or variable declarator and build AST
+  llvm::errs() << "DEBUG: parseDeclaration - D.isFunctionDeclarator() = " 
+               << (D.isFunctionDeclarator() ? "true" : "false") << "\n";
   if (D.isFunctionDeclarator()) {
+    llvm::errs() << "DEBUG: parseDeclaration - Calling buildFunctionDecl\n";
     return buildFunctionDecl(D);
   }
+  llvm::errs() << "DEBUG: parseDeclaration - Calling buildVarDecl\n";
   return buildVarDecl(D);
 }
 
@@ -1614,6 +1622,7 @@ VarDecl *Parser::buildVarDecl(Declarator &D) {
 /// Parameters are already parsed in the Function chunk.
 /// Handles: function body, = delete, = default, semicolon.
 FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
+  llvm::errs() << "DEBUG: buildFunctionDecl - Entry\n";
   QualType T = D.buildType(Context);
   if (T.isNull())
     return nullptr;
@@ -1635,7 +1644,10 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
   // Parse function body (if not already consumed as part of function chunk)
   Stmt *Body = nullptr;
 
+  llvm::errs() << "DEBUG: buildFunctionDecl - Current token kind: " 
+               << static_cast<int>(Tok.getKind()) << ", text: '" << Tok.getText() << "'\n";
   if (Tok.is(TokenKind::l_brace)) {
+    llvm::errs() << "DEBUG: buildFunctionDecl - Parsing compound statement\n";
     Body = parseCompoundStatement();
   } else if (Tok.is(TokenKind::equal)) {
     consumeToken();
@@ -1652,8 +1664,12 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
   bool IsInline = DS.IsInline;
   bool IsConstexpr = DS.IsConstexpr;
 
-  return llvm::cast<FunctionDecl>(Actions.ActOnFunctionDeclFull(NameLoc, Name, T, Params, Body,
-                                       IsInline, IsConstexpr, false).get());
+  llvm::errs() << "DEBUG: buildFunctionDecl - Calling ActOnFunctionDeclFull\n";
+  auto Result = Actions.ActOnFunctionDeclFull(NameLoc, Name, T, Params, Body,
+                                       IsInline, IsConstexpr, false);
+  llvm::errs() << "DEBUG: buildFunctionDecl - ActOnFunctionDeclFull returned " 
+               << (Result ? "non-null" : "null") << "\n";
+  return llvm::cast<FunctionDecl>(Result.get());
 }
 
 } // namespace blocktype
