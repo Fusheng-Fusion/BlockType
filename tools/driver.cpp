@@ -215,10 +215,7 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
-    // 8. 语义分析后处理（仅处理 Parser 未委托 Sema 创建的节点）
-    S.ProcessAST(TU);
-
-    // 9. 可选：输出 AST
+    // 8. 可选：输出 AST
     if (ASTDump && TU) {
       outs() << "\n=== AST Dump for " << File << " ===\n";
       TU->dump(outs());

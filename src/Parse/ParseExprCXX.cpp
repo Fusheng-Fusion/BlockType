@@ -65,7 +65,7 @@ Expr *Parser::parseCXXNewExpression() {
       // Parse initializer arguments
       auto Args = parseCallArguments();
       // Create CXXConstructExpr for direct initialization
-      Initializer = Actions.ActOnCXXConstructExpr(NewLoc, Args).get();
+      Initializer = Actions.ActOnCXXConstructExpr(NewLoc, Type, Args).get();
     }
     if (!tryConsumeToken(TokenKind::r_paren)) {
       emitError(DiagID::err_expected_rparen);
@@ -586,7 +586,7 @@ Expr *Parser::parseCXXStaticCastExpr() {
     emitError(DiagID::err_expected_rparen);
   }
 
-  return Actions.ActOnCXXNamedCastExpr(CastLoc, SubExpr, "static_cast").get();
+  return Actions.ActOnCXXNamedCastExprWithType(CastLoc, SubExpr, CastType, "static_cast").get();
 }
 
 Expr *Parser::parseCXXDynamicCastExpr() {
@@ -673,7 +673,7 @@ Expr *Parser::parseCXXConstCastExpr() {
     emitError(DiagID::err_expected_rparen);
   }
 
-  return Actions.ActOnCXXNamedCastExpr(CastLoc, SubExpr, "const_cast").get();
+  return Actions.ActOnCXXNamedCastExprWithType(CastLoc, SubExpr, CastType, "const_cast").get();
 }
 
 Expr *Parser::parseCXXReinterpretCastExpr() {
@@ -716,7 +716,7 @@ Expr *Parser::parseCXXReinterpretCastExpr() {
     emitError(DiagID::err_expected_rparen);
   }
 
-  return Actions.ActOnCXXNamedCastExpr(CastLoc, SubExpr, "reinterpret_cast").get();
+  return Actions.ActOnCXXNamedCastExprWithType(CastLoc, SubExpr, CastType, "reinterpret_cast").get();
 }
 
 //===----------------------------------------------------------------------===//

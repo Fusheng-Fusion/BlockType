@@ -621,37 +621,10 @@ ExprResult Sema::ActOnExpr(Expr *E) {
   if (!E)
     return ExprResult::getInvalid();
 
-  // If the expression already has a type, trust it (set by ActOn* factory).
-  if (!E->getType().isNull())
-    return ExprResult(E);
-
-  // Type-check already-constructed BinaryOperator/UnaryOperator nodes
-  // that the Parser created directly (rather than through ActOn* methods).
-  if (auto *BO = llvm::dyn_cast<BinaryOperator>(E)) {
-    if (BO->getType().isNull()) {
-      QualType LHSType = BO->getLHS() ? BO->getLHS()->getType() : QualType();
-      QualType RHSType = BO->getRHS() ? BO->getRHS()->getType() : QualType();
-      QualType ResultType = TC.getBinaryOperatorResultType(
-          BO->getOpcode(), LHSType, RHSType);
-      if (ResultType.isNull()) {
-        Diags.report(BO->getLocation(), DiagID::err_type_mismatch);
-        return ExprResult::getInvalid();
-      }
-      BO->setType(ResultType);
-    }
-  } else if (auto *UO = llvm::dyn_cast<UnaryOperator>(E)) {
-    if (UO->getType().isNull()) {
-      QualType OperandType =
-          UO->getSubExpr() ? UO->getSubExpr()->getType() : QualType();
-      QualType ResultType =
-          TC.getUnaryOperatorResultType(UO->getOpcode(), OperandType);
-      if (ResultType.isNull()) {
-        Diags.report(UO->getLocation(), DiagID::err_type_mismatch);
-        return ExprResult::getInvalid();
-      }
-      UO->setType(ResultType);
-    }
-  }
+  // All expressions should now have their types set by ActOn* factory methods.
+  // This method serves as a compatibility/verification passthrough.
+  // Legacy BinaryOperator/UnaryOperator type-fixup removed — ActOnBinaryOperator
+  // and ActOnUnaryOperator handle type computation directly.
 
   return ExprResult(E);
 }
@@ -721,8 +694,19 @@ ExprResult Sema::ActOnUnaryExprOrTypeTraitExpr(SourceLocation Loc,
 
 ExprResult Sema::ActOnInitListExpr(SourceLocation LBraceLoc,
                                    llvm::ArrayRef<Expr *> Inits,
-                                   SourceLocation RBraceLoc) {
+                                   SourceLocation RBraceLoc,
+                                   QualType ExpectedType) {
   auto *ILE = Context.create<InitListExpr>(LBraceLoc, Inits, RBraceLoc);
+  if (!ExpectedType.isNull()) {
+    // Use the expected type from context (variable decl type, function param type, etc.)
+    ILE->setType(ExpectedType);
+  } else if (!Inits.empty()) {
+    // Fallback: if all initializers have the same type, derive array type.
+    // For simple cases, use the first initializer's type.
+    QualType FirstType = Inits[0]->getType();
+    if (!FirstType.isNull())
+      ILE->setType(FirstType); // Simplified; full impl would create ArrayType
+  }
   return ExprResult(ILE);
 }
 
@@ -731,6 +715,11 @@ ExprResult Sema::ActOnDesignatedInitExpr(
     llvm::ArrayRef<DesignatedInitExpr::Designator> Designators,
     Expr *Init) {
   auto *DIE = Context.create<DesignatedInitExpr>(DotLoc, Designators, Init);
+  // The type of a designated initializer is the type of its init expression.
+  // For a more precise type (e.g., struct field type), context from the
+  // aggregate being initialized would be needed — not available at this point.
+  if (Init && !Init->getType().isNull())
+    DIE->setType(Init->getType());
   return ExprResult(DIE);
 }
 
@@ -738,6 +727,10 @@ ExprResult Sema::ActOnTemplateSpecializationExpr(
     SourceLocation Loc, llvm::StringRef Name,
     llvm::ArrayRef<TemplateArgument> Args, ValueDecl *VD) {
   auto *TSE = Context.create<TemplateSpecializationExpr>(Loc, Name, Args, VD);
+  // Try to get type from the resolved template declaration.
+  // For function templates, this gives the return type; for variable templates, the variable type.
+  if (VD && !VD->getType().isNull())
+    TSE->setType(VD->getType());
   return ExprResult(TSE);
 }
 
@@ -748,14 +741,21 @@ ExprResult Sema::ActOnMemberExprDirect(SourceLocation OpLoc, Expr *Base,
 }
 
 ExprResult Sema::ActOnCXXConstructExpr(SourceLocation Loc,
+                                       QualType ConstructedType,
                                        llvm::ArrayRef<Expr *> Args) {
   auto *CE = Context.create<CXXConstructExpr>(Loc, Args);
+  if (!ConstructedType.isNull())
+    CE->setType(ConstructedType);
   return ExprResult(CE);
 }
 
 ExprResult Sema::ActOnCXXNewExprFactory(SourceLocation NewLoc, Expr *ArraySize,
                                          Expr *Initializer, QualType Type) {
   auto *NE = Context.create<CXXNewExpr>(NewLoc, ArraySize, Initializer, Type);
+  if (!Type.isNull()) {
+    auto *PtrTy = Context.getPointerType(Type.getTypePtr());
+    NE->setType(QualType(PtrTy, Qualifier::None));
+  }
   return ExprResult(NE);
 }
 
@@ -769,11 +769,23 @@ ExprResult Sema::ActOnCXXDeleteExprFactory(SourceLocation DeleteLoc,
 
 ExprResult Sema::ActOnCXXThisExpr(SourceLocation Loc) {
   auto *TE = Context.create<CXXThisExpr>(Loc);
+  if (CurContext && CurContext->isCXXRecord()) {
+    // CurContext is the DeclContext base of a CXXRecordDecl.
+    // We need the CXXRecordDecl pointer. Since CXXRecordDecl multiply-inherits
+    // from both RecordDecl (via NamedDecl->Decl->ASTNode) and DeclContext,
+    // we static_cast the DeclContext* back.
+    auto *RD = static_cast<CXXRecordDecl *>(CurContext);
+    auto *RecTy = Context.getPointerType(
+        static_cast<Type *>(new RecordType(RD)));
+    TE->setType(QualType(RecTy, Qualifier::None));
+  }
   return ExprResult(TE);
 }
 
 ExprResult Sema::ActOnCXXThrowExpr(SourceLocation Loc, Expr *Operand) {
   auto *TE = Context.create<CXXThrowExpr>(Loc, Operand);
+  auto *VoidType = Context.getBuiltinType(BuiltinKind::Void);
+  TE->setType(QualType(VoidType, Qualifier::None));
   return ExprResult(TE);
 }
 
@@ -792,20 +804,45 @@ ExprResult Sema::ActOnCXXNamedCastExprWithType(SourceLocation CastLoc,
                                                Expr *SubExpr,
                                                QualType CastType,
                                                llvm::StringRef CastKind) {
-  if (CastKind == "dynamic_cast")
-    return ExprResult(
-        Context.create<CXXDynamicCastExpr>(CastLoc, SubExpr, CastType));
-  return ActOnCXXNamedCastExpr(CastLoc, SubExpr, CastKind);
+  if (CastKind == "dynamic_cast") {
+    auto *E = Context.create<CXXDynamicCastExpr>(CastLoc, SubExpr, CastType);
+    E->setType(CastType);
+    return ExprResult(E);
+  }
+  if (CastKind == "static_cast") {
+    auto *E = Context.create<CXXStaticCastExpr>(CastLoc, SubExpr);
+    E->setType(CastType);
+    return ExprResult(E);
+  }
+  if (CastKind == "const_cast") {
+    auto *E = Context.create<CXXConstCastExpr>(CastLoc, SubExpr);
+    E->setType(CastType);
+    return ExprResult(E);
+  }
+  if (CastKind == "reinterpret_cast") {
+    auto *E = Context.create<CXXReinterpretCastExpr>(CastLoc, SubExpr);
+    E->setType(CastType);
+    return ExprResult(E);
+  }
+  auto *E = Context.create<CXXStaticCastExpr>(CastLoc, SubExpr);
+  E->setType(CastType);
+  return ExprResult(E);
 }
 
 ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
                                        Expr *Index) {
   auto *PIE = Context.create<PackIndexingExpr>(Loc, Pack, Index);
+  // TODO: Pack indexing requires template pack expansion to determine type.
+  // The result type depends on the Nth element of the expanded parameter pack.
+  // Will be implemented when full variadic template support is available.
   return ExprResult(PIE);
 }
 
 ExprResult Sema::ActOnReflexprExpr(SourceLocation Loc, Expr *Arg) {
   auto *RE = Context.create<ReflexprExpr>(Loc, Arg);
+  // reflexpr result type is meta::info in the reflection proposal.
+  // Use void as placeholder until the reflection type system is defined.
+  RE->setType(Context.getVoidType());
   return ExprResult(RE);
 }
 
@@ -821,6 +858,10 @@ ExprResult Sema::ActOnLambdaExpr(SourceLocation Loc,
   auto *LE = Context.create<LambdaExpr>(Loc, Captures, Params, Body, IsMutable,
                                          ReturnType, LBraceLoc, RBraceLoc,
                                          TemplateParams, Attrs);
+  // Lambda expression type: use ReturnType if explicitly specified,
+  // otherwise the closure type would need to be synthesized (TODO for full support).
+  if (!ReturnType.isNull())
+    LE->setType(ReturnType);
   return ExprResult(LE);
 }
 
@@ -829,6 +870,10 @@ ExprResult Sema::ActOnCXXFoldExpr(SourceLocation Loc, Expr *LHS, Expr *RHS,
                                   bool IsRightFold) {
   auto *FE = Context.create<CXXFoldExpr>(Loc, LHS, RHS, Pattern, Op,
                                           IsRightFold);
+  // Fold expression type: the fold operator preserves the element type.
+  // e.g., (args + ...) has the same type as each arg.
+  if (Pattern && !Pattern->getType().isNull())
+    FE->setType(Pattern->getType());
   return ExprResult(FE);
 }
 
@@ -917,6 +962,13 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
 
   // Create the CallExpr
   auto *CE = Context.create<CallExpr>(LParenLoc, Fn, Args);
+  // Set return type from resolved FunctionDecl
+  if (FD) {
+    QualType FnType = FD->getType();
+    if (auto *FT = llvm::dyn_cast<FunctionType>(FnType.getTypePtr())) {
+      CE->setType(QualType(FT->getReturnType(), Qualifier::None));
+    }
+  }
   return ExprResult(CE);
 }
 
@@ -980,6 +1032,8 @@ ExprResult Sema::ActOnMemberExpr(Expr *Base, llvm::StringRef Member,
   }
 
   auto *ME = Context.create<MemberExpr>(MemberLoc, Base, MemberDecl, IsArrow);
+  if (MemberDecl && !MemberDecl->getType().isNull())
+    ME->setType(MemberDecl->getType());
   return ExprResult(ME);
 }
 
@@ -991,23 +1045,20 @@ ExprResult Sema::ActOnBinaryOperator(BinaryOpKind Op, Expr *LHS, Expr *RHS,
   QualType LHSType = LHS->getType();
   QualType RHSType = RHS->getType();
 
-  // Defensive: during incremental migration, types may not be set yet.
-  // Skip type checking and let ProcessAST handle it later.
-  if (LHSType.isNull() || RHSType.isNull()) {
-    auto *BO = Context.create<BinaryOperator>(OpLoc, LHS, RHS, Op);
-    return ExprResult(BO);
-  }
-
   // Compute the result type via TypeCheck
-  QualType ResultType = TC.getBinaryOperatorResultType(Op, LHSType, RHSType);
-  if (ResultType.isNull()) {
-    Diags.report(OpLoc, DiagID::err_type_mismatch);
-    return ExprResult::getInvalid();
+  QualType ResultType;
+  if (!LHSType.isNull() && !RHSType.isNull()) {
+    ResultType = TC.getBinaryOperatorResultType(Op, LHSType, RHSType);
+    if (ResultType.isNull()) {
+      Diags.report(OpLoc, DiagID::err_type_mismatch);
+      return ExprResult::getInvalid();
+    }
   }
 
   // Create the BinaryOperator node and set its result type
   auto *BO = Context.create<BinaryOperator>(OpLoc, LHS, RHS, Op);
-  BO->setType(ResultType);
+  if (!ResultType.isNull())
+    BO->setType(ResultType);
   return ExprResult(BO);
 }
 
@@ -1018,22 +1069,20 @@ ExprResult Sema::ActOnUnaryOperator(UnaryOpKind Op, Expr *Operand,
 
   QualType OperandType = Operand->getType();
 
-  // Defensive: during incremental migration, types may not be set yet.
-  if (OperandType.isNull()) {
-    auto *UO = Context.create<UnaryOperator>(OpLoc, Operand, Op);
-    return ExprResult(UO);
-  }
-
   // Compute the result type via TypeCheck
-  QualType ResultType = TC.getUnaryOperatorResultType(Op, OperandType);
-  if (ResultType.isNull()) {
-    Diags.report(OpLoc, DiagID::err_type_mismatch);
-    return ExprResult::getInvalid();
+  QualType ResultType;
+  if (!OperandType.isNull()) {
+    ResultType = TC.getUnaryOperatorResultType(Op, OperandType);
+    if (ResultType.isNull()) {
+      Diags.report(OpLoc, DiagID::err_type_mismatch);
+      return ExprResult::getInvalid();
+    }
   }
 
   // Create the UnaryOperator node and set its result type
   auto *UO = Context.create<UnaryOperator>(OpLoc, Operand, Op);
-  UO->setType(ResultType);
+  if (!ResultType.isNull())
+    UO->setType(ResultType);
   return ExprResult(UO);
 }
 
@@ -1050,6 +1099,7 @@ ExprResult Sema::ActOnCastExpr(QualType TargetType, Expr *E,
   }
 
   auto *CE = Context.create<CStyleCastExpr>(LParenLoc, E);
+  CE->setType(TargetType);
   return ExprResult(CE);
 }
 
@@ -1081,6 +1131,14 @@ ExprResult Sema::ActOnArraySubscriptExpr(Expr *Base,
   }
 
   auto *ASE = Context.create<ArraySubscriptExpr>(LLoc, Base, Indices);
+  if (!BaseType.isNull()) {
+    const Type *BaseTy = BaseType.getTypePtr();
+    if (auto *PT = llvm::dyn_cast<PointerType>(BaseTy)) {
+      ASE->setType(PT->getPointeeType());
+    } else if (auto *AT = llvm::dyn_cast<ArrayType>(BaseTy)) {
+      ASE->setType(QualType(AT->getElementType(), Qualifier::None));
+    }
+  }
   return ExprResult(ASE);
 }
 
@@ -1450,182 +1508,6 @@ void Sema::Diag(SourceLocation Loc, DiagID ID) {
 
 void Sema::Diag(SourceLocation Loc, DiagID ID, llvm::StringRef Extra) {
   Diags.report(Loc, ID, Extra);
-}
-
-//===----------------------------------------------------------------------===//
-// CXXNewExpr / CXXDeleteExpr semantic analysis
-//===----------------------------------------------------------------------===//
-
-ExprResult Sema::ActOnCXXNewExpr(CXXNewExpr *E) {
-  if (!E)
-    return ExprResult::getInvalid();
-
-  QualType AllocType = E->getAllocatedType();
-  if (AllocType.isNull()) {
-    Diags.report(E->getLocation(), DiagID::err_expected_type);
-    return ExprResult::getInvalid();
-  }
-
-  // 设置 ExprTy = AllocType*（new 表达式的结果类型是指针）
-  auto *PtrTy = Context.getPointerType(AllocType.getTypePtr());
-  E->setType(QualType(PtrTy, Qualifier::None));
-
-  return ExprResult(E);
-}
-
-ExprResult Sema::ActOnCXXDeleteExpr(CXXDeleteExpr *E) {
-  if (!E)
-    return ExprResult::getInvalid();
-
-  // 从 Argument 表达式的类型推导被删除的元素类型
-  QualType AllocatedType;
-  if (E->getArgument()) {
-    QualType ArgType = E->getArgument()->getType();
-    if (auto *PtrType = llvm::dyn_cast<PointerType>(ArgType.getTypePtr())) {
-      AllocatedType = PtrType->getPointeeType();
-    }
-  }
-
-  // 如果 AllocatedType 已由 Parse 层设置，保留它；否则使用推导结果
-  if (E->getAllocatedType().isNull() && !AllocatedType.isNull()) {
-    // CXXDeleteExpr 的 AllocatedType 是 const 字段，无法修改。
-    // 但由于构造函数中已传入，这里只在 ExprTy 上设置 void。
-  }
-
-  // delete 表达式的结果类型是 void
-  auto *VoidType = Context.getBuiltinType(BuiltinKind::Void);
-  E->setType(QualType(VoidType, Qualifier::None));
-
-  return ExprResult(E);
-}
-
-namespace {
-
-/// ASTVisitor — 遍历 AST 树，对 CXXNewExpr/CXXDeleteExpr 调用 Sema 方法。
-/// 使用递归遍历所有 Stmt/Expr 节点。
-class ASTVisitor {
-  Sema &S;
-
-public:
-  ASTVisitor(Sema &SemaRef) : S(SemaRef) {}
-
-  void visitTU(TranslationUnitDecl *TU) {
-    for (Decl *D : TU->decls()) {
-      visitDecl(D);
-    }
-  }
-
-  void visitDecl(Decl *D) {
-    if (!D) return;
-
-    if (auto *FD = llvm::dyn_cast<FunctionDecl>(D)) {
-      if (FD->getBody())
-        visitStmt(FD->getBody());
-    } else if (auto *VD = llvm::dyn_cast<VarDecl>(D)) {
-      if (VD->getInit())
-        visitExpr(VD->getInit());
-    }
-  }
-
-  void visitStmt(Stmt *S) {
-    if (!S) return;
-
-    // 遍历复合语句的子语句
-    if (auto *CS = llvm::dyn_cast<CompoundStmt>(S)) {
-      for (Stmt *Child : CS->getBody())
-        visitStmt(Child);
-      return;
-    }
-
-    // 表达式语句
-    if (auto *ES = llvm::dyn_cast<ExprStmt>(S)) {
-      visitExpr(ES->getExpr());
-      return;
-    }
-
-    // if/while/for/do
-    if (auto *IS = llvm::dyn_cast<IfStmt>(S)) {
-      visitExpr(IS->getCond());
-      visitStmt(IS->getThen());
-      visitStmt(IS->getElse());
-      return;
-    }
-    if (auto *WS = llvm::dyn_cast<WhileStmt>(S)) {
-      visitExpr(WS->getCond());
-      visitStmt(WS->getBody());
-      return;
-    }
-    if (auto *FS = llvm::dyn_cast<ForStmt>(S)) {
-      visitStmt(FS->getInit());
-      visitExpr(FS->getCond());
-      visitExpr(FS->getInc());
-      visitStmt(FS->getBody());
-      return;
-    }
-    if (auto *DS = llvm::dyn_cast<DoStmt>(S)) {
-      visitStmt(DS->getBody());
-      visitExpr(DS->getCond());
-      return;
-    }
-
-    // return
-    if (auto *RS = llvm::dyn_cast<ReturnStmt>(S)) {
-      visitExpr(RS->getRetValue());
-      return;
-    }
-
-    // decl statement
-    if (auto *DS2 = llvm::dyn_cast<DeclStmt>(S)) {
-      for (Decl *D : DS2->getDecls())
-        visitDecl(D);
-      return;
-    }
-  }
-
-  void visitExpr(Expr *E) {
-    if (!E) return;
-
-    // 对 new/delete 表达式调用 Sema 处理
-    // 防御性检查：如果节点已通过 ActOn* 设置过类型，跳过
-    if (auto *NewE = llvm::dyn_cast<CXXNewExpr>(E)) {
-      if (NewE->getType().isNull())
-        S.ActOnCXXNewExpr(NewE);
-    } else if (auto *DelE = llvm::dyn_cast<CXXDeleteExpr>(E)) {
-      if (DelE->getType().isNull())
-        S.ActOnCXXDeleteExpr(DelE);
-    }
-
-    // 递归遍历子表达式
-    if (auto *BO = llvm::dyn_cast<BinaryOperator>(E)) {
-      visitExpr(BO->getLHS());
-      visitExpr(BO->getRHS());
-    } else if (auto *UO = llvm::dyn_cast<UnaryOperator>(E)) {
-      visitExpr(UO->getSubExpr());
-    } else if (auto *CE = llvm::dyn_cast<CallExpr>(E)) {
-      visitExpr(CE->getCallee());
-      for (Expr *Arg : CE->getArgs())
-        visitExpr(Arg);
-    } else if (auto *CCE = llvm::dyn_cast<CXXConstructExpr>(E)) {
-      for (Expr *Arg : CCE->getArgs())
-        visitExpr(Arg);
-    } else if (auto *ME = llvm::dyn_cast<MemberExpr>(E)) {
-      visitExpr(ME->getBase());
-    } else if (auto *ASE = llvm::dyn_cast<ArraySubscriptExpr>(E)) {
-      visitExpr(ASE->getBase());
-      for (Expr *Idx : ASE->getIndices())
-        visitExpr(Idx);
-    } else if (auto *Cast = llvm::dyn_cast<CStyleCastExpr>(E)) {
-      visitExpr(Cast->getSubExpr());
-    }
-  }
-};
-
-} // anonymous namespace
-
-void Sema::ProcessAST(TranslationUnitDecl *TU) {
-  if (!TU) return;
-  ASTVisitor Visitor(*this);
-  Visitor.visitTU(TU);
 }
 
 } // namespace blocktype

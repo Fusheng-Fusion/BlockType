@@ -437,7 +437,8 @@ public:
                                            Expr *Arg);
   ExprResult ActOnInitListExpr(SourceLocation LBraceLoc,
                                llvm::ArrayRef<Expr *> Inits,
-                               SourceLocation RBraceLoc);
+                               SourceLocation RBraceLoc,
+                               QualType ExpectedType = QualType());
   ExprResult ActOnDesignatedInitExpr(SourceLocation DotLoc,
                                      llvm::ArrayRef<DesignatedInitExpr::Designator> Designators,
                                      Expr *Init);
@@ -448,6 +449,7 @@ public:
   ExprResult ActOnMemberExprDirect(SourceLocation OpLoc, Expr *Base,
                                    ValueDecl *MemberDecl, bool IsArrow);
   ExprResult ActOnCXXConstructExpr(SourceLocation Loc,
+                                   QualType ConstructedType,
                                    llvm::ArrayRef<Expr *> Args);
   ExprResult ActOnCXXNewExprFactory(SourceLocation NewLoc, Expr *ArraySize,
                                     Expr *Initializer, QualType Type);
@@ -504,17 +506,8 @@ public:
                                      SourceLocation RLoc);
 
   ExprResult ActOnConditionalExpr(Expr *Cond, Expr *Then, Expr *Else,
-                                  SourceLocation QuestionLoc,
-                                  SourceLocation ColonLoc);
-
-  /// Process a CXXNewExpr: set ExprTy = T*, validate type completeness.
-  ExprResult ActOnCXXNewExpr(CXXNewExpr *E);
-
-  /// Process a CXXDeleteExpr: set ExprTy = void, set AllocatedType.
-  ExprResult ActOnCXXDeleteExpr(CXXDeleteExpr *E);
-
-  /// Post-parse AST traversal: process all new/delete expressions.
-  void ProcessAST(TranslationUnitDecl *TU);
+                                 SourceLocation QuestionLoc,
+                                 SourceLocation ColonLoc);
 
   //===------------------------------------------------------------------===//
   // Statement handling
