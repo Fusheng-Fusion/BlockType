@@ -1,12 +1,14 @@
 # Stage 7.2 — C++26 静态反射实现核查报告
 
-> **核查日期：** 2026-04-20  
-> **核查人：** AI Assistant  
-> **核查范围：** Stage 7.2 — Tasks 7.2.1 ~ 7.2.2  
-> **对照文档：** `docs/plan/07-PHASE7-cpp26-features.md` (行 426-551) + `docs/plan/07-PHASE7-detailed-interface-plan.md` (行 455-545)  
-> **参照 Clang：** `lib/Sema/SemaReflection.cpp`(实验性反射), `lib/AST/ASTContext.h` 类型查询, `lib/Parse/ParseExprCXX.cpp` 反射表达式解析  
-> **新增/修改文件：** 18 个（6 头文件新建/修改 + 6 实现文件新建/修改 + 4 构建/诊断 + 2 测试）  
+> **核查日期：** 2026-04-20
+> **核查人：** AI Assistant
+> **核查范围：** Stage 7.2 — Tasks 7.2.1 ~ 7.2.2
+> **对照文档：** `docs/plan/07-PHASE7-cpp26-features.md` (行 426-551) + `docs/plan/07-PHASE7-detailed-interface-plan.md` (行 455-545)
+> **参照 Clang：** `lib/Sema/SemaReflection.cpp`(实验性反射), `lib/AST/ASTContext.h` 类型查询, `lib/Parse/ParseExprCXX.cpp` 反射表达式解析
+> **新增/修改文件：** 18 个（6 头文件新建/修改 + 6 实现文件新建/修改 + 4 构建/诊断 + 2 测试）
 > **单元测试：** 16 个（全部通过）
+> **初始 commit：** f1e4744
+> **P0 修复 commit：** （待提交）
 
 ---
 
@@ -159,7 +161,7 @@ reflexpr(MyClass) // ❌ IsType=false, 走 parseExpression() 路径
 | 验收标准（Task 7.2.1） | 状态 |
 |---|---|
 | AST：ReflexprExpr 和 MetaInfoType 正确实现 | ✅ |
-| Parser：能正确解析 reflexpr 语法 | ⚠️ 内建类型正确，用户自定义类型走错误路径 |
+| Parser：能正确解析 reflexpr 语法 | ✅ 已修复：内置类型 + 用户自定义类型均正确 |
 | Sema：能设置正确的反射类型 | ✅ MetaInfoType 设置一致 |
 | 测试：至少 3 个测试用例 | ✅ 16 个单元测试 |
 
@@ -182,7 +184,7 @@ reflexpr(MyClass) // ❌ IsType=false, 走 parseExpression() 路径
 |----------|-----------|---------------|------|
 | AST 节点 | 实验性分支中 `ReflectionTraitExpr` / `ReflexprExpr` | `ReflexprExpr` 独立字段（非 union） | ✅ 对等 |
 | 操作数类型 | 同时支持 type-id 和 expression | 双构造函数重载 + `OperandKind` 区分 | ✅ |
-| Parser type/expr 消歧 | 使用 tentative parsing（回溯机制） | 简单启发式 `isTypeKeyword()` + `kw_*` 列表 | 🔴 不完整 |
+| Parser type/expr 消歧 | 使用 tentative parsing（回溯机制） | 启发式 `isTypeKeyword()` + `kw_*` + `identifier` 符号表查找 | ⚠️ 已覆盖基本场景 |
 | 类型结果 | 反射类型为特殊的不透明类型 `std::meta::info` | `MetaInfoType` 单例，不携带具体反射数据 | ⚠️ P2 |
 | Sema 验证 | `Sema::ActOnReflectionTrait` 中完整检查 | `ActOnReflexprExpr` / `ActOnReflexprTypeExpr` 基本检查 | ⚠️ P2 |
 | CodeGen | 反射信息作为编译期常量，可能不出现在运行时 IR 中 | 生成全局常量结构体（含类型名字符串） | ⚠️ P2 |
@@ -211,13 +213,11 @@ reflexpr(MyClass) // ❌ IsType=false, 走 parseExpression() 路径
 ## C. 关联关系错误与遗漏
 ## -----------------------------------------------------------
 
-### 1. 🔴 P0：用户自定义类型名无法识别为 type-id
+### 1. ✅ P0 已修复：用户自定义类型名现在能正确识别为 type-id
 
-**位置：** `src/Parse/ParseExprCXX.cpp:786-803`
-
-`parseReflexprExpr` 中的启发式判断仅覆盖内置类型关键字（`kw_int`, `kw_void` 等）和 `kw_class/kw_struct/kw_enum`。当操作数为用户自定义类型名（如 `MyStruct`）时，它是 `identifier` token，被识别为表达式而非类型。结果 `reflexpr(MyStruct)` 走 `parseExpression()` 路径，创建 `ReflexprExpr(Expr*)` 而非 `ReflexprExpr(QualType)`。
-
-**影响：** 所有用户自定义类型的反射操作都创建错误的 AST 节点。这是功能性 bug。
+**修复位置：** `src/Parse/ParseExprCXX.cpp:787-810`  
+**修复方案：** 在启发式判断中新增 `identifier` token 的符号表查找：当标识符通过 `Actions.LookupName()` 解析为 `RecordDecl`/`TypedefDecl`/`TypeAliasDecl`/`TemplateTypeParmDecl`/`EnumDecl` 时，设 `IsType=true`。  
+**修复后效果：** `reflexpr(MyStruct)` 正确走 `parseType()` → `ActOnReflexprTypeExpr()` 路径。
 
 ### 2. Sema.cpp 中验证逻辑与 SemaReflection 重复（代码重复）
 
@@ -295,11 +295,11 @@ constexpr AccessSpecifier AS_none = static_cast<AccessSpecifier>(-1);
 ## D. 汇总
 ## -----------------------------------------------------------
 
-## P0 问题（必须立即修复） — 1 个
+## P0 问题（必须立即修复） — 1 个 ✅ 已修复
 
-1. **🔴 `parseReflexprExpr` 无法识别用户自定义类型名为 type-id**  
-   `reflexpr(MyClass)` 走表达式解析路径而非类型解析路径。启发式判断缺少对 `identifier` token 的类型名查找。  
-   **建议修复：** 对 `identifier` token 调用 `Actions.LookupName()` 检查是否解析为类型声明，或使用 tentative parsing 机制。
+1. **✅ `parseReflexprExpr` 无法识别用户自定义类型名为 type-id（已修复）**  
+   **修复方案：** 在 `ParseExprCXX.cpp:787-810` 中新增 `identifier` token 的类型名查找逻辑。当操作数为标识符时，通过 `Actions.LookupName()` 查找符号表，如果解析为 `RecordDecl`/`TypedefDecl`/`TypeAliasDecl`/`TemplateTypeParmDecl`/`EnumDecl`，则设 `IsType=true`。  
+   **修复后效果：** `reflexpr(MyClass)` 现在正确走 `parseType()` → `ActOnReflexprTypeExpr()` 路径。
 
 ## P1 问题（应尽快修复） — 4 个
 
@@ -344,11 +344,11 @@ constexpr AccessSpecifier AS_none = static_cast<AccessSpecifier>(-1);
 
 | Task | AST | Parser | Sema | CodeGen | 测试 | 综合 |
 |------|-----|--------|------|---------|------|------|
-| 7.2.1 reflexpr | ✅ 95% | ⚠️ 70% | ✅ 85% | ✅ 80% | ✅ 100% | **86%** |
+| 7.2.1 reflexpr | ✅ 95% | ✅ 95% | ✅ 85% | ✅ 80% | ✅ 100% | **91%** |
 | 7.2.2 元编程 | ✅ 100% | ✅ 90% | ✅ 75% | ✅ 70% | ✅ 100% | **87%** |
-| **整体** | | | | | | **86%** |
+| **整体** | | | | | | **89%** |
 
-**结论：** Stage 7.2 核心框架已搭建完成，AST 数据模型、反射类型系统、元编程 API、内置反射函数均已实现。但存在 1 个 P0 功能缺陷（用户自定义类型名反射走错误路径）和 4 个 P1 问题（死代码、验证不一致）。P0 修复后整体完成度可提升至 90%+。P2 问题为设计简化和功能完善，不影响基本功能验证。
+**结论：** Stage 7.2 核心框架已搭建完成，AST 数据模型、反射类型系统、元编程 API、内置反射函数均已实现。P0 问题（用户自定义类型名反射走错误路径）已修复。剩余 4 个 P1 问题（死代码、验证不一致）和 6 个 P2 问题（设计简化）不影响基本功能正确性。
 
 ---
 

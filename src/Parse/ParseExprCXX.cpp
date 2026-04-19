@@ -779,7 +779,7 @@ Expr *Parser::parseReflexprExpr() {
 
   // Heuristic: check if the next token could start a type-id.
   // Type-id tokens: keyword types (int, void, class, struct, enum, ...),
-  // identifier (could be a type name), '::', 'const', 'volatile', etc.
+  // or an identifier that resolves to a type name via symbol lookup.
   // Otherwise fall back to expression parsing.
   bool IsType = false;
   TokenKind Next = Tok.getKind();
@@ -801,6 +801,25 @@ Expr *Parser::parseReflexprExpr() {
       Next == TokenKind::kw_char16_t ||
       Next == TokenKind::kw_char32_t) {
     IsType = true;
+  }
+
+  // P7.2.1 P0-fix: identifier token may be a user-defined type name.
+  // Check via symbol table lookup whether the identifier resolves to a
+  // type declaration (RecordDecl, TypedefDecl, TypeAliasDecl, etc.).
+  // This handles cases like reflexpr(MyClass) where MyClass is a struct.
+  if (!IsType && Next == TokenKind::identifier) {
+    llvm::StringRef Name = Tok.getText();
+    if (NamedDecl *D = Actions.LookupName(Name)) {
+      // Check if the declaration is a type (record, typedef, type alias,
+      // template type parameter, enum, etc.)
+      if (llvm::isa<RecordDecl>(D) ||
+          llvm::isa<TypedefDecl>(D) ||
+          llvm::isa<TypeAliasDecl>(D) ||
+          llvm::isa<TemplateTypeParmDecl>(D) ||
+          llvm::isa<EnumDecl>(D)) {
+        IsType = true;
+      }
+    }
   }
 
   Expr *Result = nullptr;
