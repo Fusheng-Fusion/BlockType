@@ -88,6 +88,15 @@ void DiagnosticsEngine::report(SourceLocation Loc, DiagID ID,
 }
 
 void DiagnosticsEngine::report(SourceLocation Loc, DiagID ID,
+                                llvm::StringRef Arg0, llvm::StringRef Arg1,
+                                llvm::StringRef Arg2) {
+  DiagLevel Level = getDiagnosticLevel(ID);
+  llvm::StringRef RawMsg = getDiagnosticMessage(ID, Lang);
+  std::string Formatted = formatMessage(RawMsg, {Arg0, Arg1, Arg2});
+  report(Loc, Level, Formatted);
+}
+
+void DiagnosticsEngine::report(SourceLocation Loc, DiagID ID,
                                SourceLocation RangeStart, SourceLocation RangeEnd,
                                llvm::StringRef ExtraText) {
   DiagLevel Level = getDiagnosticLevel(ID);

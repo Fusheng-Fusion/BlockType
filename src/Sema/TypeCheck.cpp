@@ -211,7 +211,8 @@ bool TypeCheck::CheckCall(FunctionDecl *F, llvm::ArrayRef<Expr *> Args,
     if (!isTypeCompatible(ArgType, ParamType)) {
       Diags.report(CallLoc, DiagID::err_arg_type_mismatch,
                    std::to_string(I + 1),
-                   ArgType.isNull() ? "<unknown>" : ArgType.getAsString());
+                   ArgType.isNull() ? "<unknown>" : ArgType.getAsString(),
+                   ParamType.isNull() ? "<unknown>" : ParamType.getAsString());
       return false;
     }
   }

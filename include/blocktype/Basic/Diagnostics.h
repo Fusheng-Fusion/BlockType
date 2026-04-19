@@ -64,6 +64,10 @@ public:
   void report(SourceLocation Loc, DiagID ID,
               llvm::StringRef Arg0, llvm::StringRef Arg1);
 
+  /// Report a diagnostic with three %0/%1/%2 substitution parameters.
+  void report(SourceLocation Loc, DiagID ID,
+              llvm::StringRef Arg0, llvm::StringRef Arg1, llvm::StringRef Arg2);
+
   /// Report a diagnostic with source range (for highlighting).
   void report(SourceLocation Loc, DiagID ID,
               SourceLocation RangeStart, SourceLocation RangeEnd,

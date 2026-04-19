@@ -206,8 +206,8 @@ DIAG(err_too_many_args,            Error, \
   "too many arguments to function call, expected %0, have %1", \
   "函数调用参数过多，期望 %0 个，实际 %1 个")
 DIAG(err_arg_type_mismatch,        Error, \
-  "cannot convert argument %0 (type '%1')", \
-  "无法转换参数 %0（类型 '%1'）")
+  "cannot convert argument %0 of type '%1' to parameter type '%2'", \
+  "无法将类型为 '%1' 的参数 %0 转换为参数类型 '%2'")
 
 //===----------------------------------------------------------------------===//
 // Precise type mismatch diagnostics (replacing generic err_type_mismatch)
