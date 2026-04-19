@@ -1649,9 +1649,28 @@ public:
 /// FunctionTemplateDecl - Represents a function template.
 /// Example: template<typename T> void f(T x);
 class FunctionTemplateDecl : public TemplateDecl {
+  llvm::SmallVector<FunctionDecl *, 4> Specializations;
+
 public:
   FunctionTemplateDecl(SourceLocation Loc, llvm::StringRef Name, Decl *TemplatedDecl)
       : TemplateDecl(Loc, Name, TemplatedDecl) {}
+
+  void addSpecialization(FunctionDecl *Spec) {
+    Specializations.push_back(Spec);
+  }
+
+  llvm::ArrayRef<FunctionDecl *> getSpecializations() const {
+    return Specializations;
+  }
+
+  /// Find an existing specialization that exactly matches the given arguments.
+  FunctionDecl *findSpecialization(llvm::ArrayRef<TemplateArgument> Args) const {
+    for (FunctionDecl *Spec : Specializations) {
+      // TODO: Compare template arguments
+      // For now, just return nullptr (needs full implementation)
+    }
+    return nullptr;
+  }
 
   NodeKind getKind() const override { return NodeKind::FunctionTemplateDeclKind; }
 

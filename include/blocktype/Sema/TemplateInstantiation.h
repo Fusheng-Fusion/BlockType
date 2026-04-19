@@ -1,4 +1,4 @@
-//===--- TemplateInstantiation.h - Template Instantiation ---*- C++ -*-===//
+//===--- TemplateInstantiation.h - Template Instantiation ------*- C++ -*-===//
 //
 // Part of the BlockType Project, under the Apache License v2.0 with LLVM
 // Exceptions. See https://llvm.org/LICENSE.txt for license information.
@@ -6,188 +6,61 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines TemplateArgumentList and TemplateInstantiator for
-// template instantiation.
+// This file defines the TemplateInstantiation class, which handles template
+// argument substitution during template instantiation.
+//
+// P7.4.3: Used for instantiating function templates like std::get<N>.
 //
 //===----------------------------------------------------------------------===//
 
-#pragma once
+#ifndef BLOCKTYPE_SEMA_TEMPLATE_INSTANTIATION_H
+#define BLOCKTYPE_SEMA_TEMPLATE_INSTANTIATION_H
 
-#include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/Decl.h"
-#include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Type.h"
-#include "blocktype/Sema/SFINAE.h"
-#include "llvm/ADT/SmallVector.h"
+#include "blocktype/AST/Expr.h"
+#include "llvm/ADT/DenseMap.h"
 
 namespace blocktype {
 
-class Sema;
-
-/// TemplateArgumentList - A lightweight wrapper around template arguments.
+/// TemplateInstantiation - Handles template argument substitution.
 ///
-/// Maintains a mapping from template parameter index to the corresponding
-/// argument value, used during instantiation to substitute parameters.
-class TemplateArgumentList {
-  llvm::SmallVector<TemplateArgument, 4> Args;
+/// This class performs the core operation of replacing template parameters
+/// with their corresponding arguments during template instantiation.
+///
+/// Example:
+///   template<typename T> T get(pair<T, U>& p);
+///   get<int>(pair<int, double>&)  ->  int get(pair<int, double>& p);
+class TemplateInstantiation {
+  /// Mapping from template parameter declarations to their arguments.
+  llvm::DenseMap<NamedDecl *, TemplateArgument> Substitutions;
 
 public:
-  TemplateArgumentList() = default;
-  explicit TemplateArgumentList(llvm::ArrayRef<TemplateArgument> A)
-      : Args(A.begin(), A.end()) {}
+  TemplateInstantiation() = default;
 
-  unsigned size() const { return Args.size(); }
-  bool empty() const { return Args.empty(); }
-  llvm::ArrayRef<TemplateArgument> asArray() const { return Args; }
+  /// Add a substitution: map a template parameter to its argument.
+  void addSubstitution(NamedDecl *Param, const TemplateArgument &Arg) {
+    Substitutions[Param] = Arg;
+  }
 
-  const TemplateArgument &operator[](unsigned I) const { return Args[I]; }
-  void push_back(const TemplateArgument &Arg) { Args.push_back(Arg); }
+  /// Substitute types in a QualType.
+  /// Replaces template type parameters with their corresponding arguments.
+  [[nodiscard]] QualType substituteType(QualType Type) const;
 
-  /// Find the pack argument in the list (for variadic template expansion).
-  /// @return The pack argument, or empty ArrayRef if none exists.
-  llvm::ArrayRef<TemplateArgument> getPackArgument() const;
-};
+  /// Substitute types in a FunctionDecl's signature.
+  /// Creates a new FunctionDecl with substituted parameter and return types.
+  FunctionDecl *substituteFunctionSignature(FunctionDecl *Original,
+                                             llvm::ArrayRef<TemplateArgument> Args,
+                                             TemplateParameterList *Params) const;
 
-/// TemplateInstantiator - The core engine for template instantiation.
-///
-/// Responsible for:
-/// - Class template instantiation (creating ClassTemplateSpecializationDecl)
-/// - Function template instantiation (creating instantiated FunctionDecl)
-/// - Template parameter substitution (recursive replacement of Type/Expr/Decl)
-///
-/// Follows Clang's TemplateInstantiator pattern:
-/// Instantiation runs in the Sema context, all new nodes via ASTContext::create().
-class TemplateInstantiator {
-  Sema &SemaRef;
-  ASTContext &Context;
-
-  /// Maximum recursion depth for template instantiation.
-  static constexpr unsigned MaxInstantiationDepth = 1024;
-
-  /// Current instantiation depth (prevents infinite recursion).
-  unsigned CurrentDepth = 0;
-
-  /// SFINAE context — controls whether substitution failures are hard errors
-  /// or silently remove the candidate from the overload set.
-  SFINAEContext SFINAE;
-
-public:
-  explicit TemplateInstantiator(Sema &S);
-
-  /// Access the SFINAE context.
-  SFINAEContext &getSFINAEContext() { return SFINAE; }
-  const SFINAEContext &getSFINAEContext() const { return SFINAE; }
-
-  // === Class Template Instantiation ===
-
-  /// Instantiate a class template with the given arguments.
-  /// @param Template  The class template declaration
-  /// @param Args      Template arguments
-  /// @return          Specialization decl (possibly from cache)
-  ClassTemplateSpecializationDecl *
-  InstantiateClassTemplate(ClassTemplateDecl *Template,
-                           llvm::ArrayRef<TemplateArgument> Args);
-
-  // === Function Template Instantiation ===
-
-  /// Instantiate a function template with the given arguments.
-  /// @param Template  The function template declaration
-  /// @param Args      Template arguments
-  /// @return          Instantiated function declaration
-  FunctionDecl *
-  InstantiateFunctionTemplate(FunctionTemplateDecl *Template,
-                              llvm::ArrayRef<TemplateArgument> Args);
-
-  // === Pack Expansion ===
-
-  /// Expand a parameter pack expression.
-  /// @param Pattern   The expansion pattern (contains references to pack)
-  /// @param Args      Argument list containing Pack-type arguments
-  /// @return          Expanded expression list
-  llvm::SmallVector<Expr *, 4>
-  ExpandPack(Expr *Pattern, const TemplateArgumentList &Args);
-
-  /// Expand a parameter pack type.
-  /// For each element in the pack, substitutes the pattern and returns
-  /// the list of resulting types.
-  /// @param Pattern   The type pattern (contains TemplateTypeParmType for the pack)
-  /// @param Args      Argument list containing Pack-type arguments
-  /// @return          Expanded type list
-  llvm::SmallVector<QualType, 4>
-  ExpandPackType(QualType Pattern, const TemplateArgumentList &Args);
-
-  /// Instantiate a CXXFoldExpr (C++17 fold expression).
-  /// (args + ...) → args[0] + args[1] + ... + args[n-1]
-  Expr *InstantiateFoldExpr(CXXFoldExpr *FE, const TemplateArgumentList &Args);
-
-  /// Instantiate a PackIndexingExpr (C++26 pack indexing).
-  /// Ts...[N] → the Nth element of the Ts pack
-  Expr *InstantiatePackIndexingExpr(PackIndexingExpr *PIE,
-                                    const TemplateArgumentList &Args);
-
-  // === Type Substitution ===
-
-  /// Substitute template parameters in a type with arguments.
-  /// e.g., TemplateTypeParmType(T, index=0) → int
-  QualType SubstituteType(QualType T, const TemplateArgumentList &Args);
-
-  /// Substitute template parameters in an expression.
-  Expr *SubstituteExpr(Expr *E, const TemplateArgumentList &Args);
-
-  /// Substitute template parameters in a declaration (for member instantiation).
-  /// @param D        The declaration to substitute
-  /// @param Args     Template arguments
-  /// @param Parent   The instantiated parent record (may be nullptr)
-  Decl *SubstituteDecl(Decl *D, const TemplateArgumentList &Args,
-                       CXXRecordDecl *Parent = nullptr);
-
-  // === Specialization Lookup ===
-
-  /// Find an existing specialization.
-  /// @return Specialization decl, or nullptr if none exists
-  ClassTemplateSpecializationDecl *
-  FindExistingSpecialization(ClassTemplateDecl *Template,
-                             llvm::ArrayRef<TemplateArgument> Args);
+  /// Check if a type contains any unsubstituted template parameters.
+  [[nodiscard]] bool hasUnsubstitutedParams(QualType Type) const;
 
 private:
-  /// Check if currently in a SFINAE context.
-  bool isSFINAEContext() const;
-
-  /// Get the identity element for a fold expression with the given operator.
-  /// Returns nullptr if no identity element is defined for the operator.
-  Expr *getIdentityElement(BinaryOpKind Op, SourceLocation Loc);
-
-  /// Substitute TemplateTypeParmType with the corresponding argument type.
-  QualType SubstituteTemplateTypeParmType(const TemplateTypeParmType *T,
-                                          const TemplateArgumentList &Args);
-
-  /// Recursively substitute arguments in a TemplateSpecializationType.
-  QualType SubstituteTemplateSpecializationType(
-      const TemplateSpecializationType *T,
-      const TemplateArgumentList &Args);
-
-  /// Recursively substitute a DependentType.
-  QualType SubstituteDependentType(const DependentType *T,
-                                   const TemplateArgumentList &Args);
-
-  /// Substitute in a FunctionType (return type + parameter types).
-  QualType SubstituteFunctionType(const FunctionType *FT,
-                                  const TemplateArgumentList &Args);
-
-  /// Substitute in a VarDecl.
-  VarDecl *SubstituteVarDecl(VarDecl *VD, const TemplateArgumentList &Args);
-
-  /// Substitute in a FieldDecl.
-  FieldDecl *SubstituteFieldDecl(FieldDecl *FD,
-                                 const TemplateArgumentList &Args);
-
-  /// Substitute in a CXXMethodDecl.
-  /// @param MD       The method to substitute
-  /// @param Args     Template arguments
-  /// @param Parent   The instantiated parent record (may be nullptr)
-  CXXMethodDecl *SubstituteCXXMethodDecl(CXXMethodDecl *MD,
-                                         const TemplateArgumentList &Args,
-                                         CXXRecordDecl *Parent = nullptr);
+  /// Recursively substitute types in a Type.
+  const Type *substituteTypeImpl(const Type *T) const;
 };
 
 } // namespace blocktype
+
+#endif // BLOCKTYPE_SEMA_TEMPLATE_INSTANTIATION_H
