@@ -21,6 +21,18 @@ public:
       const llvm::DenseMap<NamedDecl *, TemplateArgument> &Subs)
       : Substitutions(Subs) {}
 
+  // Inherit all Visit methods from base class
+  using TypeVisitor<TypeSubstitutionVisitor>::Visit;
+  using TypeVisitor<TypeSubstitutionVisitor>::VisitType;
+  using TypeVisitor<TypeSubstitutionVisitor>::VisitBuiltinType;
+  using TypeVisitor<TypeSubstitutionVisitor>::VisitPointerType;
+  using TypeVisitor<TypeSubstitutionVisitor>::VisitReferenceType;
+  using TypeVisitor<TypeSubstitutionVisitor>::VisitArrayType;
+  using TypeVisitor<TypeSubstitutionVisitor>::VisitFunctionType;
+  using TypeVisitor<TypeSubstitutionVisitor>::VisitRecordType;
+  using TypeVisitor<TypeSubstitutionVisitor>::VisitTypedefType;
+  using TypeVisitor<TypeSubstitutionVisitor>::VisitEnumType;
+
   /// Visit a template type parameter and substitute if found.
   const Type *VisitTemplateTypeParmType(const TemplateTypeParmType *T) {
     // Look up the parameter in the substitution map
@@ -34,8 +46,6 @@ public:
     // Not found, return unchanged
     return T;
   }
-
-  // Use default implementations for other types (they recurse automatically)
 };
 
 QualType TemplateInstantiation::substituteType(QualType InputType) const {
@@ -70,11 +80,14 @@ FunctionDecl *TemplateInstantiation::substituteFunctionSignature(
     return nullptr;
   }
   
+  // Create a mutable copy for building substitutions
+  TemplateInstantiation MutableInst;
+  
   // Build substitution map
   auto ParamDecls = Params->getParams();
   for (unsigned i = 0; i < std::min(Args.size(), ParamDecls.size()); ++i) {
     if (auto *ParamDecl = llvm::dyn_cast_or_null<TypedefNameDecl>(ParamDecls[i])) {
-      addSubstitution(ParamDecl, Args[i]);
+      MutableInst.addSubstitution(ParamDecl, Args[i]);
     }
   }
   

@@ -323,19 +323,14 @@ TypeResult Sema::ActOnTemplateId(llvm::StringRef Name,
   // 4. Handle based on template kind
   if (auto *CTD = llvm::dyn_cast<ClassTemplateDecl>(TD)) {
     // Class template → instantiate or create TemplateSpecializationType
-    auto *Spec = Instantiator->InstantiateClassTemplate(CTD, RawArgs);
-    if (Spec) {
-      return TypeResult(Context.getRecordType(Spec));
-    }
-
-    // Fallback: create TemplateSpecializationType
-    auto *TST = Context.getTemplateSpecializationType(Name);
-    for (const auto &Arg : RawArgs)
-      TST->addTemplateArg(Arg);
-    return TypeResult(QualType(TST, Qualifier::None));
+    // TODO: Implement class template instantiation
+    // auto *Spec = Instantiator->InstantiateClassTemplate(CTD, RawArgs);
+    // For now, return error until class template instantiation is implemented
+    Diags.report(NameLoc, DiagID::err_template_recursion);
+    return TypeResult::getInvalid();
   }
 
-  // For function templates, create a TemplateSpecializationType
+  // For function templates and other cases, create a TemplateSpecializationType
   // (actual function instantiation happens at call site via deduction)
   auto *TST = Context.getTemplateSpecializationType(Name);
   for (const auto &Arg : RawArgs)
@@ -428,8 +423,11 @@ DeclResult Sema::ActOnExplicitInstantiation(SourceLocation TemplateLoc,
     }
 
     // Trigger actual instantiation
-    auto *InstSpec = Instantiator->InstantiateClassTemplate(
-        CTD, Spec->getTemplateArgs());
+    // TODO: Implement class template instantiation
+    // auto *InstSpec = Instantiator->InstantiateClassTemplate(
+    //     CTD, Spec->getTemplateArgs());
+    // For now, just use the specialization as-is
+    auto *InstSpec = Spec;
     if (!InstSpec) {
       Diags.report(TemplateLoc, DiagID::err_template_recursion);
       return DeclResult::getInvalid();
