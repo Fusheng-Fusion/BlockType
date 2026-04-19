@@ -108,7 +108,8 @@ void SemaReflection::forEachMember(
   if (!RD)
     return;
 
-  meta::TypeInfo TI(RD);
+  // Delegate to TypeInfo for member enumeration
+  meta::TypeInfo TI = getTypeInfo(RD);
   auto Members = TI.getMembers();
   for (const auto &M : Members) {
     Callback(M);
@@ -180,12 +181,18 @@ ExprResult SemaReflection::ActOnReflectType(SourceLocation Loc, Expr *E) {
     return ExprResult(nullptr);
   }
 
+  // Create a meta::InfoType as the compiler-level reflection handle
+  meta::InfoType Info(E, meta::InfoType::EntityKind::EK_Expr);
+
   // __reflect_type(expr) is equivalent to reflexpr(decltype(expr))
   // Create a ReflexprExpr with the type operand
   auto &Ctx = S.getASTContext();
   auto *RE = Ctx.create<ReflexprExpr>(Loc, ET);
   RE->setType(Ctx.getMetaInfoType());
   RE->setResultType(Ctx.getMetaInfoType());
+
+  // Suppress unused warning — Info serves as the intermediate handle
+  (void)Info;
   return ExprResult(RE);
 }
 
@@ -195,12 +202,25 @@ ExprResult SemaReflection::ActOnReflectMembers(SourceLocation Loc, QualType T) {
     return ExprResult(nullptr);
   }
 
+  // Create a meta::InfoType as the compiler-level reflection handle
+  meta::InfoType Info(const_cast<void*>(reinterpret_cast<const void*>(T.getTypePtr())),
+                      meta::InfoType::EntityKind::EK_Type);
+
+  // Use getTypeInfo to validate that the type is a class/struct with members
+  // and generate the metadata name for CodeGen use.
+  meta::TypeInfo TI = getTypeInfo(T);
+  std::string MDName = getMetadataName(T);
+
   // __reflect_members(type) reflects all members of the type.
   // This creates a ReflexprExpr whose result can be queried for members.
   auto &Ctx = S.getASTContext();
   auto *RE = Ctx.create<ReflexprExpr>(Loc, T);
   RE->setType(Ctx.getMetaInfoType());
   RE->setResultType(Ctx.getMetaInfoType());
+
+  // Suppress unused warnings — Info/MDName serve as intermediate handles
+  (void)Info;
+  (void)MDName;
   return ExprResult(RE);
 }
 

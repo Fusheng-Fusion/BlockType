@@ -777,6 +777,12 @@ Expr *Parser::parseReflexprExpr() {
     return createRecoveryExpr(ReflexprLoc);
   }
 
+  // P7.2.1 P1-fix: Warn about redundant parentheses around the operand.
+  // E.g. reflexpr((int)) or reflexpr((x)) — the inner parens are redundant.
+  if (Tok.is(TokenKind::l_paren)) {
+    Diags.report(Tok.getLocation(), DiagID::warn_reflexpr_paren);
+  }
+
   // Heuristic: check if the next token could start a type-id.
   // Type-id tokens: keyword types (int, void, class, struct, enum, ...),
   // or an identifier that resolves to a type name via symbol lookup.

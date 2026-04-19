@@ -939,34 +939,22 @@ ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
 }
 
 ExprResult Sema::ActOnReflexprExpr(SourceLocation Loc, Expr *Arg) {
-  if (!Arg) {
-    Diag(Loc, DiagID::err_reflexpr_no_type);
+  SemaReflection Refl(*this);
+  if (!Refl.ValidateReflexprExpr(Arg, Loc))
     return ExprResult(nullptr);
-  }
 
-  // Create ReflexprExpr with expression operand
   auto *RE = Context.create<ReflexprExpr>(Loc, Arg);
-  // Set result type to MetaInfoType (std::meta::info)
   RE->setType(Context.getMetaInfoType());
   RE->setResultType(Context.getMetaInfoType());
   return ExprResult(RE);
 }
 
 ExprResult Sema::ActOnReflexprTypeExpr(SourceLocation Loc, QualType T) {
-  if (T.isNull()) {
-    Diag(Loc, DiagID::err_reflexpr_no_type);
+  SemaReflection Refl(*this);
+  if (!Refl.ValidateReflexprType(T, Loc))
     return ExprResult(nullptr);
-  }
 
-  // Check for unresolved types
-  if (auto *UT = llvm::dyn_cast<UnresolvedType>(T.getTypePtr())) {
-    Diag(Loc, DiagID::err_reflexpr_unresolved_type, UT->getName());
-    return ExprResult(nullptr);
-  }
-
-  // Create ReflexprExpr with type operand
   auto *RE = Context.create<ReflexprExpr>(Loc, T);
-  // Set result type to MetaInfoType (std::meta::info)
   RE->setType(Context.getMetaInfoType());
   RE->setResultType(Context.getMetaInfoType());
   return ExprResult(RE);
