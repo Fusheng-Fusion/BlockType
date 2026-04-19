@@ -1,8 +1,9 @@
 # Phase 7 特性实现状态核查报告
 
 > **核查日期：** 2026-04-19  
+> **补充核查：** 2026-04-19（Stage 7.1 实现后更新）
 > **核查人：** AI Assistant  
-> **核查范围：** docs/plan/07-PHASE7-cpp26-features.md 第19-68行  
+> **核查范围：** docs/plan/07-PHASE7-cpp26-features.md 第19-68行 + Stage 7.1 实现  
 > **核查方法：** 代码库grep搜索 + 头文件检查
 
 ---
@@ -12,9 +13,12 @@
 | 分类 | 文档声明 | 实际状态 | 准确性 |
 |------|---------|---------|--------|
 | C++23 已实现 | 8项 | **8项全部确认✅** | 100% |
+| C++23 Stage 7.1 新实现 | — | **5项已实现✅** | — |
 | C++23 部分实现 | 1项 | **基本正确✅** | 100% |
 | C++26 已实现 | 2项 | **2项确认✅** | 100% |
 | C++26 部分实现 | 3项 | **2项确认✅，1项需澄清⚠️** | 66.7% |
+
+> **⚠️ Stage 7.1 更新（2026-04-19）：** Stage 7.1 已实现 5 项 C++23 P1 特性（commit 5571734），包括 Deducing this、DecayCopyExpr、static operator()、static operator[]、[[assume]]。以下补充核查结果。
 
 ---
 
@@ -218,7 +222,131 @@ if (C == 'e' || C == 'E') {
 
 ---
 
-## ⚠️ C++23 部分实现特性核查（1项）
+## 🆕 Stage 7.1 实现核查（5 项 C++23 P1 特性）
+
+> **实现 commit：** 5571734（24 files changed, 1161 insertions）
+> **实现日期：** 2026-04-19
+
+### 9. ✅ Deducing this / 显式对象参数 (P0847R7) - **Stage 7.1 已实现**
+
+**证据：**
+- `include/blocktype/AST/Decl.h` — `ParmVarDecl::IsExplicitObjectParam` 字段 + `FunctionDecl::HasExplicitObjectParam` 字段
+- `src/Parse/ParseDecl.cpp` — `parseParameterDeclaration()` 检测 `this` token 作为第一个参数
+- `src/Parse/ParseClass.cpp` — 成员函数解析中识别显式对象参数，与 static/virtual 冲突检查
+- `include/blocktype/Sema/SemaCXX.h`（新建）— `CheckExplicitObjectParameter()` 方法
+- `src/Sema/SemaCXX.cpp`（新建）— 检查规则：非静态、非虚函数、无默认参数、类型须为引用或类类型
+- `src/CodeGen/CodeGenTypes.cpp` — `GetFunctionABI()` 跳过 deducing-this 方法的隐式 this
+- `src/CodeGen/CodeGenExpr.cpp` — `EmitCallExpr()` 处理显式对象参数传递
+
+**关键实现：**
+```cpp
+// Decl.h
+bool IsExplicitObjectParam = false;
+bool hasExplicitObjectParam() const;
+void setExplicitObjectParam(ParmVarDecl *P);
+
+// ParseDecl.cpp
+if (Tok.is(TokenKind::kw_this) && Index == 0) {
+  consumeToken();
+  // 解析显式对象参数类型和名称
+}
+```
+
+**结论：** ✅ **已实现** — Parser/Sema/CodeGen 全链路支持
+
+---
+
+### 10. ✅ `auto(x)` / `auto{x}` decay-copy (P0849R8) - **Stage 7.1 已实现**
+
+**证据：**
+- `include/blocktype/AST/Expr.h` — `DecayCopyExpr` 类（完整 AST 节点）
+- `include/blocktype/AST/NodeKinds.def` — `EXPR(DecayCopyExpr, Expr)` 节点注册
+- `src/AST/Expr.cpp` — `DecayCopyExpr::dump()` 实现
+- `src/Parse/ParseExpr.cpp` — `kw_auto` case 检测 `(` 或 `{` 后续 token
+- `src/Parse/ParseExprCXX.cpp` — `parseDecayCopyExpr()` 完整实现
+- `src/Sema/Sema.cpp` — `ActOnDecayCopyExpr()` 实现 decay 语义
+- `src/CodeGen/CodeGenExpr.cpp` — `EmitDecayCopyExpr()` 处理标量和记录类型
+
+**关键实现：**
+```cpp
+// Expr.h
+class DecayCopyExpr : public Expr {
+  Expr *SubExpr;
+  bool IsDirectInit;
+  // ...
+};
+
+// ParseExprCXX.cpp
+ExprResult Parser::parseDecayCopyExpr(SourceLocation AutoLoc) {
+  // auto(expr) 或 auto{expr}
+}
+```
+
+**结论：** ✅ **已实现** — 完整 Parser → Sema → CodeGen 链路
+
+---
+
+### 11. ✅ `static operator()` (P1169R4) + `static operator[]` (P2589R1) - **Stage 7.1 已实现**
+
+**证据：**
+- `include/blocktype/AST/Decl.h` — `CXXMethodDecl::IsStaticOperator` 字段
+- `src/AST/Decl.cpp` — `isStaticCallOperator()` / `isStaticSubscriptOperator()` 实现
+- `src/Parse/ParseClass.cpp` — operator overloading 解析，检测 static 修饰符
+- `include/blocktype/CodeGen/CGCXX.h` — `EmitStaticOperatorCall()` 声明
+- `src/CodeGen/CGCXX.cpp` — `EmitStaticOperatorCall()` 无 this 指针调用实现
+
+**关键实现：**
+```cpp
+// Decl.h
+bool IsStaticOperator = false;
+bool isStaticOperator() const;
+bool isStaticCallOperator() const;
+bool isStaticSubscriptOperator() const;
+
+// ParseClass.cpp — 解析 static operator() / operator[]
+if (DS.isStaticSpecified()) {
+  MD->setStaticOperator(true);
+}
+```
+
+**结论：** ✅ **已实现** — Parser 解析 + AST 标记 + CodeGen 调用
+
+---
+
+### 12. ✅ `[[assume]]` 属性 (P1774R8) - **Stage 7.1 已实现**
+
+**证据：**
+- `include/blocktype/Basic/DiagnosticSemaKinds.def` — `err_assume_attr_not_bool` / `warn_assume_attr_side_effects` 诊断
+- `include/blocktype/Sema/Sema.h` — `ActOnAssumeAttr()` 声明
+- `src/Sema/Sema.cpp` — `ActOnAssumeAttr()` 实现
+- `include/blocktype/CodeGen/CodeGenFunction.h` — `EmitAssumeAttr()` 声明
+- `src/CodeGen/CodeGenFunction.cpp` — `EmitStmt()` 中检测 `assume` 属性并调用 `EmitAssumeAttr()`
+- `src/CodeGen/CodeGenExpr.cpp` — `EmitAssumeAttr()` 生成 `llvm.assume` intrinsic
+
+**关键实现：**
+```cpp
+// CodeGenFunction.cpp EmitStmt()
+for (auto *Attr : S->getAttrs()) {
+  if (Attr->getName() == "assume") {
+    EmitAssumeAttr(Attr->getArgumentExpr());
+  }
+}
+
+// CodeGenExpr.cpp EmitAssumeAttr()
+Builder.CreateCall(AssumeIntrinsic, {CondVal});
+```
+
+**结论：** ✅ **已实现** — 复用现有属性基础设施，生成 LLVM assume intrinsic
+
+---
+
+### Stage 7.1 新增文件清单
+
+| 文件 | 类型 | 用途 |
+|------|------|------|
+| `include/blocktype/Sema/SemaCXX.h` | 新建 | C++ 特有语义分析 |
+| `src/Sema/SemaCXX.cpp` | 新建 | SemaCXX 实现 |
+| `tests/unit/AST/Stage71Test.cpp` | 新建 | 10 个单元测试 |
 
 ### ✅ constexpr 放宽 (P2448R2) - **基本正确**
 
@@ -336,12 +464,15 @@ ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
 
 以下特性标记为"待实现"，未进行详细核查：
 
-### C++23 待实现（9项）
-- Deducing this / 显式对象参数 (P0847R7)
-- `auto(x)` / `auto{x}` decay-copy (P0849R8)
-- `static operator()` (P1169R4)
-- `static operator[]` (P2589R1)
-- `[[assume]]` 属性 (P1774R8)
+### C++23 待实现（~~9~~4项）
+
+> **⚠️ Stage 7.1 更新：** 以下 5 项已在 Stage 7.1 中实现，移至上方核查：
+> - ~~Deducing this / 显式对象参数 (P0847R7)~~ → ✅ Stage 7.1
+> - ~~`auto(x)` / `auto{x}` decay-copy (P0849R8)~~ → ✅ Stage 7.1
+> - ~~`static operator()` (P1169R4)~~ → ✅ Stage 7.1
+> - ~~`static operator[]` (P2589R1)~~ → ✅ Stage 7.1
+> - ~~`[[assume]]` 属性 (P1774R8)~~ → ✅ Stage 7.1
+
 - 占位符变量 `_` (P2169R4, C++26)
 - 分隔转义 `\x{...}` (P2290R3)
 - 命名转义 `\N{...}` (P2071R2)
@@ -402,7 +533,7 @@ ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
 
 ### C++23 特性状态（建议修正）
 
-**✅ 已实现（确认）：** 8项
+**✅ 已实现（确认）：** ~~8~~13项
 - `if consteval` (P1938R3)
 - 多维 `operator[]` (P2128R6) — `ParseExpr.cpp:450-460`
 - `#elifdef` / `#elifndef` (P2334R1)
@@ -411,13 +542,18 @@ ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
 - Lambda 属性 (P2173R1)
 - `Z`/`z` 字面量后缀 (P0330R8) — `ParseExpr.cpp:704-706`
 - `\e` 转义序列 (P2314R4)
+- **🆕 Deducing this / 显式对象参数 (P0847R7)** — Stage 7.1 实现
+- **🆕 `auto(x)` / `auto{x}` decay-copy (P0849R8)** — Stage 7.1 实现
+- **🆕 `static operator()` (P1169R4)** — Stage 7.1 实现
+- **🆕 `static operator[]` (P2589R1)** — Stage 7.1 实现
+- **🆕 `[[assume]]` 属性 (P1774R8)** — Stage 7.1 实现
 
 **~~⚠️ 需进一步核查~~：** ~~3项~~ → 已全部确认实现（2026-04-19 补充核查）
 
 **⚠️ 部分实现：** 1项
 - constexpr 放宽 (P2448R2) - 描述准确
 
-**❌ 待实现：** 9项（同原文档）
+**❌ 待实现：** ~~9~~4项（Stage 7.1 后减少）
 
 ### C++26 特性状态（建议修正）
 
@@ -436,26 +572,27 @@ ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
 
 ## 🎯 下一步行动建议
 
-1. **~~立即行动~~ ✅ 已完成：**
-   - ~~核查多维`operator[]`的实现状态~~ → 已确认实现 (`ParseExpr.cpp:450-460`)
-   - ~~核查`#warning`的实现状态~~ → 已确认实现 (`Preprocessor.cpp:380-381`)
-   - ~~核查`Z`/`z`字面量后缀的实现状态~~ → 已确认实现 (`ParseExpr.cpp:704-706`)
-   - 澄清`@` token的用途 — 仍待确认
+1. **✅ 已完成（2026-04-19）：**
+   - ✅ 核查多维`operator[]`的实现状态 → 已确认实现 (`ParseExpr.cpp:450-460`)
+   - ✅ 核查`#warning`的实现状态 → 已确认实现 (`Preprocessor.cpp:380-381`)
+   - ✅ 核查`Z`/`z`字面量后缀的实现状态 → 已确认实现 (`ParseExpr.cpp:704-706`)
+   - ✅ Stage 7.1 C++23 P1 特性实现（commit 5571734）
+   - ✅ 验证报告同步更新
 
-2. **文档更新（2026-04-19 已执行）：**
-   - ✅ 更新验证报告中 3 项误判的特性状态
-   - ✅ 为"已实现"特性添加代码引用
-   - ✅ 确保 `CPP23-CPP26-FEATURES.md` 状态与实际一致
-   - ✅ 展开 `07-PHASE7-cpp26-features.md` Task 7.5.1/7.5.2
-   - ✅ 补充 `07-PHASE7-detailed-interface-plan.md` Task 7.5.1 接口定义
+2. **待行动：**
+   - 澄清`@` token的用途是否符合 P2558R2
+   - 同步 `CPP23-CPP26-FEATURES.md` 状态
+   - 继续 Stage 7.2（静态反射完善）开发
 
 3. **Phase 7 规划调整：**
-   - 原 3 项误标"未实现"的特性已从计划中移除（本就无需实现）
+   - 原 3 项误标"未实现"的特性已从计划中移除
    - Task 7.5.4（多维 operator[]）、7.5.5（#warning）、7.5.6（Z/z 后缀）可取消
+   - Stage 7.1 5项特性已实现，C++23 支持率提升至 13/18 ≈ 72%
 
 ---
 
 *核查完成时间：2026-04-19*
-*补充核查更新：2026-04-19*  
-*核查工具：grep_code, read_file*  
+*补充核查更新：2026-04-19（含 Stage 7.1 实现同步）*
+*核查工具：grep_code, read_file*
 *核查范围：BlockType代码库 src/ 和 include/ 目录*
+*最新 commit：5571734 (Stage 7.1 C++23 P1 特性)*

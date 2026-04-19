@@ -779,6 +779,27 @@ llvm::Value *CodeGenFunction::EmitCallExpr(CallExpr *CallExpression) {
 
   // 成员函数：添加 this 指针
   if (auto *MemberDecl = llvm::dyn_cast<CXXMethodDecl>(CalleeDecl)) {
+    // P7.1.3: Static operator — 无 this 指针，直接作为静态函数调用。
+    if (MemberDecl->isStaticOperator()) {
+      // 收集参数并委托给 EmitStaticOperatorCall
+      llvm::SmallVector<llvm::Value *, 8> OpArgs;
+      auto Params = MemberDecl->getParams();
+      bool IsVarArg = MemberDecl->isVariadic();
+      for (unsigned I = 0; I < CallExpression->getNumArgs(); ++I) {
+        Expr *ArgExpr = CallExpression->getArgs()[I];
+        llvm::Value *ArgValue = EmitExpr(ArgExpr);
+        if (ArgValue && I < Params.size()) {
+          ArgValue = EmitScalarConversion(ArgValue, ArgExpr->getType(),
+                                          Params[I]->getType());
+        } else if (ArgValue && IsVarArg && I >= Params.size()) {
+          ArgValue = emitDefaultArgPromotion(ArgValue, ArgExpr->getType());
+        }
+        if (ArgValue)
+          OpArgs.push_back(ArgValue);
+      }
+      return CGM.getCXX().EmitStaticOperatorCall(*this, MemberDecl, OpArgs);
+    }
+
     // P7.1.1: Deducing this — 有显式对象参数的方法不添加隐式 this。
     // 对象作为第一个显式参数传递（在后面的参数循环中处理）。
     if (!MemberDecl->isStatic() && !MemberDecl->hasExplicitObjectParam()) {

@@ -794,10 +794,10 @@ Expr *Parser::parseDecayCopyExpr(SourceLocation AutoLoc) {
 
   bool IsDirectInit = false;
   if (Tok.is(TokenKind::l_paren)) {
-    IsDirectInit = true;
+    IsDirectInit = false;  // auto(expr) — copy-initialization
     consumeToken(); // consume '('
   } else if (Tok.is(TokenKind::l_brace)) {
-    IsDirectInit = false;
+    IsDirectInit = true;   // auto{expr} — direct-initialization
     consumeToken(); // consume '{'
   } else {
     emitError(DiagID::err_expected);
@@ -813,17 +813,19 @@ Expr *Parser::parseDecayCopyExpr(SourceLocation AutoLoc) {
 
   // Consume closing delimiter
   if (IsDirectInit) {
-    if (!Tok.is(TokenKind::r_paren)) {
-      emitError(DiagID::err_expected_rparen);
-      return nullptr;
-    }
-    consumeToken(); // consume ')'
-  } else {
+    // auto{expr} — expect '}'
     if (!Tok.is(TokenKind::r_brace)) {
       emitError(DiagID::err_expected_rbrace);
       return nullptr;
     }
     consumeToken(); // consume '}'
+  } else {
+    // auto(expr) — expect ')'
+    if (!Tok.is(TokenKind::r_paren)) {
+      emitError(DiagID::err_expected_rparen);
+      return nullptr;
+    }
+    consumeToken(); // consume ')'
   }
 
   return Actions.ActOnDecayCopyExpr(AutoLoc, SubExpr, IsDirectInit).get();
