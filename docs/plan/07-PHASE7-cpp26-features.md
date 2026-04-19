@@ -559,23 +559,23 @@ public:
 
 **⚠️ 接口预置清单：**
 开始前必须完成以下接口定义（详见 [`07-PHASE7-detailed-interface-plan.md`](./07-PHASE7-detailed-interface-plan.md#stage-73--contracts)）：
-- [ ] `include/blocktype/AST/Attr.h` - ContractAttr, ContractKind, ContractMode
-- [ ] `include/blocktype/Sema/SemaCXX.h` - CheckContractCondition 方法
-- [ ] `include/blocktype/Basic/DiagnosticSemaKinds.def` - 相关诊断ID
+- [x] `include/blocktype/AST/Attr.h` - ContractAttr, ContractKind, ContractMode
+- [x] `include/blocktype/Sema/SemaCXX.h` - CheckContractCondition 方法
+- [x] `include/blocktype/Basic/DiagnosticSemaKinds.def` - 相关诊断ID
 
 **开发要点：**
 
-- **E7.3.1.1** 解析 `[[pre: condition]]`、`[[post: condition]]`、`[[assert: condition]]` 属性
-- **E7.3.1.2** 新增 `ContractAttr` AST 节点
-- **E7.3.1.3** 语义检查 Contract 条件
-- **E7.3.1.4** 生成 Contract 检查代码
+- **E7.3.1.1** ✅ 解析 `[[pre: condition]]`、`[[post: condition]]`、`[[assert: condition]]` 属性
+- **E7.3.1.2** ✅ 新增 `ContractAttr` AST 节点
+- **E7.3.1.3** ✅ 语义检查 Contract 条件
+- **E7.3.1.4** ✅ 生成 Contract 检查代码
 
 **验收标准：**
-- [ ] AST：ContractAttr 正确存储条件和模式
-- [ ] Parser：能正确解析三种 Contract 语法
-- [ ] Sema：能检查条件合法性
-- [ ] CodeGen：生成运行时检查代码
-- [ ] 测试：至少 5 个测试用例（pre/post/assert/不同模式）
+- [x] AST：ContractAttr 正确存储条件和模式
+- [x] Parser：能正确解析三种 Contract 语法
+- [x] Sema：能检查条件合法性
+- [x] CodeGen：生成运行时检查代码
+- [x] 测试：至少 5 个测试用例（pre/post/assert/不同模式）— 9 单元 + 5 集成
 
 **Checkpoint：** Contracts 正确实现
 

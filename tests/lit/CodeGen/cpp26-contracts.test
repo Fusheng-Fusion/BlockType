@@ -1,0 +1,42 @@
+// C++26 Contracts (P2900R14) integration tests
+
+// RUN: %blocktype -emit-llvm %s | FileCheck %s
+
+// Test 1: [[pre:]] precondition contract
+// CHECK-LABEL: @test_precondition
+[[pre: x > 0]]
+int test_precondition(int x) {
+  return x + 1;
+}
+// CHECK: contract.pre
+
+// Test 2: [[post:]] postcondition contract
+// CHECK-LABEL: @test_postcondition
+[[post: result > 0]]
+int test_postcondition(int x) {
+  return x * 2;
+}
+// CHECK: contract.post
+
+// Test 3: [[assert:]] assertion contract in block
+// CHECK-LABEL: @test_assertion
+int test_assertion(int x) {
+  [[assert: x > 0]];
+  return x;
+}
+// CHECK: contract.assert
+
+// Test 4: Multiple contracts on same function
+// CHECK-LABEL: @test_multiple_contracts
+[[pre: x >= 0]]
+[[post: result >= 0]]
+int test_multiple_contracts(int x) {
+  return x * x;
+}
+
+// Test 5: Contract with boolean expression
+// CHECK-LABEL: @test_bool_expr
+[[pre: ptr != nullptr]]
+int test_bool_expr(int *ptr) {
+  return *ptr;
+}

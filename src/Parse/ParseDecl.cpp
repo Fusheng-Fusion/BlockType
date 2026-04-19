@@ -12,6 +12,7 @@
 
 #include "blocktype/Parse/Parser.h"
 #include "blocktype/AST/ASTContext.h"
+#include "blocktype/AST/Attr.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Stmt.h"
@@ -1535,6 +1536,49 @@ AttributeListDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
       consumeToken();
     }
 
+    // P7.3.1: Check for C++26 contract attribute syntax: [[pre: expr]], [[post: expr]], [[assert: expr]]
+    // Contract attributes use ':' after the identifier instead of '('.
+    if (Namespace.empty() && Tok.is(TokenKind::colon)) {
+      ContractKind CK;
+      if (AttrName == "pre")         CK = ContractKind::Pre;
+      else if (AttrName == "post")   CK = ContractKind::Post;
+      else if (AttrName == "assert") CK = ContractKind::Assert;
+      else {
+        // Not a contract — treat as regular attribute with ':' (error in standard C++)
+        // Fall through to normal attribute handling.
+        goto normal_attribute;
+      }
+
+      consumeToken(); // consume ':'
+
+      // Parse the contract condition expression.
+      Expr *CondExpr = parseExpression();
+      if (!CondExpr) {
+        emitError(DiagID::err_expected);
+        return nullptr;
+      }
+
+      // Build ContractAttr via Sema.
+      auto *CA = llvm::cast_or_null<ContractAttr>(
+          Actions.ActOnContractAttr(Loc, static_cast<unsigned>(CK), CondExpr).get());
+
+      // For pre/post, store as AttributeDecl with condition in the list.
+      // The ContractAttr itself is created for semantic analysis.
+      if (CA) {
+        // Create AttributeDecl to represent it in the list (for compatibility).
+        auto *AD = llvm::cast<AttributeDecl>(
+            Actions.ActOnAttributeDecl(Loc,
+                getContractKindName(CK).str(), CondExpr).get());
+        AttrList->addAttribute(AD);
+      }
+
+      // Don't continue parsing — contract attributes don't support comma-separated list.
+      // Jump to ']]' parsing.
+      goto end_attributes;
+    }
+
+normal_attribute:
+
     // Parse optional attribute argument
     if (Tok.is(TokenKind::l_paren)) {
       consumeToken(); // consume '('
@@ -1569,6 +1613,7 @@ AttributeListDecl *Parser::parseAttributeSpecifier(SourceLocation Loc) {
     AttrList->addAttribute(AttrDecl);
   } while (Tok.is(TokenKind::comma));
 
+end_attributes:
   // Expect ']]'
   if (!Tok.is(TokenKind::r_square)) {
     emitError(DiagID::err_expected);

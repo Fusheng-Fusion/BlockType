@@ -232,6 +232,35 @@ DIAG(warn_assume_attr_side_effects, Warning, \
   "[[assume]] 属性参数有副作用")
 
 //===----------------------------------------------------------------------===//
+// P7.3.1: C++26 Contract attribute diagnostics (P2900R14)
+//===----------------------------------------------------------------------===//
+
+DIAG(err_contract_invalid_kind, Error, \
+  "invalid contract attribute kind '%0'; expected 'pre', 'post', or 'assert'", \
+  "无效的契约属性类型 '%0'；期望 'pre'、'post' 或 'assert'")
+DIAG(err_contract_not_bool, Error, \
+  "contract condition must be convertible to bool", \
+  "契约条件必须可转换为 bool")
+DIAG(err_contract_pre_not_on_function, Error, \
+  "[[pre]] contract can only appear on a function declaration", \
+  "[[pre]] 契约只能出现在函数声明上")
+DIAG(err_contract_post_not_on_function, Error, \
+  "[[post]] contract can only appear on a function declaration", \
+  "[[post]] 契约只能出现在函数声明上")
+DIAG(err_contract_assert_not_in_block, Error, \
+  "[[assert]] contract can only appear in a block statement", \
+  "[[assert]] 契约只能出现在块语句中")
+DIAG(err_contract_post_this, Error, \
+  "'this' cannot be used in a postcondition contract", \
+  "不能在 postcondition 契约中使用 'this'")
+DIAG(warn_contract_condition_side_effects, Warning, \
+  "contract condition has potential side effects", \
+  "契约条件可能有副作用")
+DIAG(warn_contract_mode_override, Warning, \
+  "contract mode '%0' overrides previous mode '%1'", \
+  "契约模式 '%0' 覆盖了先前的模式 '%1'")
+
+//===----------------------------------------------------------------------===//
 // Warnings
 //===----------------------------------------------------------------------===//
 

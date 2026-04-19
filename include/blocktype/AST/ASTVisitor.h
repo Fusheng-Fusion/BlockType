@@ -13,6 +13,7 @@
 #pragma once
 
 #include "blocktype/AST/ASTNode.h"
+#include "blocktype/AST/Attr.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Stmt.h"
 #include "blocktype/AST/Decl.h"

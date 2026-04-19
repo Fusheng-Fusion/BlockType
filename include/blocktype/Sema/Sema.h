@@ -539,6 +539,21 @@ public:
   /// and creates the appropriate AST attribute.
   ExprResult ActOnAssumeAttr(SourceLocation Loc, Expr *Condition);
 
+  //===------------------------------------------------------------------===//
+  // P7.3.1: C++26 Contracts (P2900R14)
+  //===------------------------------------------------------------------===//
+
+  /// Process a parsed contract attribute [[pre:]]/[[post:]]/[[assert:]].
+  ///
+  /// Validates the condition and creates a ContractAttr AST node.
+  DeclResult ActOnContractAttr(SourceLocation Loc,
+                               unsigned Kind, // ContractKind as unsigned
+                               Expr *Condition);
+
+  /// Wire contract attributes to a function declaration.
+  void AttachContractsToFunction(FunctionDecl *FD,
+                                  llvm::ArrayRef<Decl *> Contracts);
+
   // Complex expression factory methods (Phase 2C)
   ExprResult ActOnLambdaExpr(SourceLocation Loc,
                              llvm::ArrayRef<LambdaCapture> Captures,

@@ -9,6 +9,7 @@
 #include "blocktype/Sema/Sema.h"
 #include "blocktype/Sema/SemaCXX.h"
 #include "blocktype/Sema/SemaReflection.h"
+#include "blocktype/AST/Attr.h"
 #include "blocktype/Sema/TemplateInstantiation.h"
 #include "blocktype/Sema/TemplateDeduction.h"
 #include "blocktype/Sema/ConstraintSatisfaction.h"
@@ -1905,6 +1906,55 @@ ExprResult Sema::ActOnAssumeAttr(SourceLocation Loc, Expr *Condition) {
   }
 
   return ExprResult(Condition);
+}
+
+//===----------------------------------------------------------------------===//
+// P7.3.1: C++26 Contracts (P2900R14)
+//===----------------------------------------------------------------------===//
+
+DeclResult Sema::ActOnContractAttr(SourceLocation Loc,
+                                    unsigned Kind, Expr *Condition) {
+  SemaCXX SCXX(*this);
+  ContractAttr *CA = SCXX.BuildContractAttr(Loc,
+      static_cast<ContractKind>(Kind), Condition);
+  if (!CA)
+    return DeclResult(nullptr);
+  return DeclResult(CA);
+}
+
+void Sema::AttachContractsToFunction(FunctionDecl *FD,
+                                      llvm::ArrayRef<Decl *> Contracts) {
+  if (!FD || Contracts.empty())
+    return;
+
+  SemaCXX SCXX(*this);
+
+  // Validate placement for each contract.
+  for (auto *D : Contracts) {
+    auto *CA = llvm::dyn_cast<ContractAttr>(D);
+    if (CA)
+      SCXX.CheckContractPlacement(CA, FD);
+  }
+
+  // Store contracts in the function's attribute list.
+  // Create or reuse the function's Attrs.
+  auto *AttrList = FD->getAttrs();
+  if (!AttrList) {
+    AttrList = llvm::cast<AttributeListDecl>(
+        ActOnAttributeListDecl(FD->getLocation()).get());
+    FD->setAttrs(AttrList);
+  }
+
+  // Register contracts as AttributeDecl entries in the list.
+  for (auto *D : Contracts) {
+    auto *CA = llvm::dyn_cast<ContractAttr>(D);
+    if (!CA) continue;
+    // Create an AttributeDecl with the contract kind name and condition.
+    auto *AD = Context.create<AttributeDecl>(
+        CA->getLocation(), getContractKindName(CA->getContractKind()).str(),
+        CA->getCondition());
+    AttrList->addAttribute(AD);
+  }
 }
 
 } // namespace blocktype

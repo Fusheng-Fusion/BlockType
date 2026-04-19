@@ -1695,8 +1695,8 @@ public:
 - [ ] `include/blocktype/Sema/SemaReflection.h` 已创建（含反射语义分析方法）
 
 ### Task 7.3.1 开始前
-- [ ] `include/blocktype/AST/Attr.h` 中已添加 ContractAttr（含 CreatePre/CreatePost/CreateAssert 工厂方法）
-- [ ] `include/blocktype/Sema/SemaCXX.h` 中已声明 CheckContractCondition
+- [x] `include/blocktype/AST/Attr.h` 中已添加 ContractAttr（含 BuildContractAttr 工厂方法）
+- [x] `include/blocktype/Sema/SemaCXX.h` 中已声明 CheckContractCondition / CheckContractPlacement / BuildContractAttr
 
 ### Task 7.4.1 开始前
 - [ ] `include/blocktype/AST/Decl.h` 中 FunctionDecl 已添加 DeletedReason（StringLiteral*）字段

@@ -26,6 +26,11 @@ namespace blocktype {
 
 class CodeGenModule;
 
+// Forward declarations from Attr.h
+enum class ContractKind;
+enum class ContractMode;
+class ContractAttr;
+
 /// IRBuilderTy — 类型别名，简化 IRBuilder 使用。
 using IRBuilderTy = llvm::IRBuilder<>;
 
@@ -271,6 +276,24 @@ private:
   /// Generate code for an [[assume]] attribute (P1774R8).
   /// Emits llvm.assume intrinsic if the condition is evaluatable.
   void EmitAssumeAttr(Expr *Condition);
+
+  //===------------------------------------------------------------------===//
+  // P7.3.1: C++26 Contract codegen (P2900R14)
+  //===------------------------------------------------------------------===//
+
+  /// Generate code for a contract check.
+  ///
+  /// Emits a condition evaluation followed by a contract violation handler
+  /// call if the condition is false. The behavior depends on ContractMode:
+  /// - Enforce: call violation handler, then std::terminate
+  /// - Observe: call violation handler, continue execution
+  /// - Quick_Enforce: std::terminate (no handler)
+  /// - Off: no code generated
+  void EmitContractCheck(ContractAttr *CA);
+
+  /// Emit contract violation handler call.
+  void EmitContractViolation(ContractKind Kind, ContractMode Mode,
+                              SourceLocation Loc);
 
   //===------------------------------------------------------------------===//
   // P7.2.1: Reflection expression codegen (C++26)

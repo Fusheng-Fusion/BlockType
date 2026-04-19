@@ -12,6 +12,7 @@
 
 #include "blocktype/Sema/SemaCXX.h"
 #include "blocktype/AST/ASTContext.h"
+#include "blocktype/AST/Attr.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Type.h"
@@ -202,13 +203,65 @@ void SemaCXX::checkBodyForThisUse(Stmt *Body, SourceLocation Loc) {
 }
 
 //===----------------------------------------------------------------------===//
-// Contracts (P2900R14) - placeholder
+// Contracts (P2900R14)
 //===----------------------------------------------------------------------===//
 
 bool SemaCXX::CheckContractCondition(Expr *Cond, SourceLocation Loc) {
-  // Placeholder for contract condition checking.
-  // Will be implemented in Stage 7.5+.
-  return Cond != nullptr;
+  if (!Cond)
+    return false;
+
+  QualType CondTy = Cond->getType();
+  if (!CondTy.isNull()) {
+    bool IsConvertible = false;
+    if (CondTy->isIntegerType()) {
+      IsConvertible = true;
+    } else if (CondTy->isFloatingType()) {
+      IsConvertible = true;
+    } else if (llvm::isa<PointerType>(CondTy.getTypePtr())) {
+      IsConvertible = true;
+    } else if (auto *RefTy = llvm::dyn_cast<ReferenceType>(CondTy.getTypePtr())) {
+      (void)RefTy;
+      IsConvertible = true;
+    }
+
+    if (!IsConvertible) {
+      S.Diag(Loc, DiagID::err_contract_not_bool);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool SemaCXX::CheckContractPlacement(ContractAttr *CA, Decl *Ctx) {
+  if (!CA || !Ctx)
+    return false;
+
+  switch (CA->getContractKind()) {
+  case ContractKind::Pre:
+  case ContractKind::Post: {
+    if (!llvm::isa<FunctionDecl>(Ctx)) {
+      S.Diag(CA->getLocation(),
+             CA->isPrecondition() ? DiagID::err_contract_pre_not_on_function
+                                  : DiagID::err_contract_post_not_on_function);
+      return false;
+    }
+    break;
+  }
+  case ContractKind::Assert:
+    break;
+  }
+
+  return true;
+}
+
+ContractAttr *SemaCXX::BuildContractAttr(SourceLocation Loc, ContractKind Kind,
+                                          Expr *Cond) {
+  if (!CheckContractCondition(Cond, Loc))
+    return nullptr;
+
+  auto &Ctx = S.getASTContext();
+  return Ctx.create<ContractAttr>(Loc, Kind, Cond);
 }
 
 } // namespace blocktype

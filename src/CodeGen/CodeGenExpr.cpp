@@ -13,6 +13,7 @@
 #include "blocktype/CodeGen/CodeGenConstant.h"
 #include "blocktype/CodeGen/TargetInfo.h"
 #include "blocktype/AST/Expr.h"
+#include "blocktype/AST/Attr.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Type.h"
 
@@ -2001,6 +2002,107 @@ void CodeGenFunction::EmitAssumeAttr(Expr *Condition) {
   llvm::Function *AssumeIntrinsic = llvm::Intrinsic::getDeclaration(
       CGM.getModule(), llvm::Intrinsic::assume);
   Builder.CreateCall(AssumeIntrinsic, {CondVal});
+}
+
+//===----------------------------------------------------------------------===//
+// P7.3.1: Contract check (P2900R14)
+//===----------------------------------------------------------------------===//
+
+void CodeGenFunction::EmitContractCheck(ContractAttr *CA) {
+  if (!CA)
+    return;
+
+  // If contract mode is Off, emit nothing.
+  if (CA->getContractMode() == ContractMode::Off)
+    return;
+
+  Expr *Cond = CA->getCondition();
+  if (!Cond)
+    return;
+
+  // Evaluate the condition.
+  llvm::Value *CondVal = EmitExpr(Cond);
+  if (!CondVal)
+    return;
+
+  // Convert to i1 (boolean).
+  llvm::Type *BoolTy = llvm::Type::getInt1Ty(CGM.getLLVMContext());
+  if (CondVal->getType() != BoolTy) {
+    CondVal = Builder.CreateIsNotNull(CondVal, "contract.bool");
+  }
+
+  // Create basic blocks for the check.
+  llvm::BasicBlock *PassBB = createBasicBlock("contract.pass");
+  llvm::BasicBlock *FailBB = createBasicBlock("contract.fail");
+
+  // Branch on the condition.
+  Builder.CreateCondBr(CondVal, PassBB, FailBB);
+
+  // Fail block: emit violation handler.
+  EmitBlock(FailBB);
+  EmitContractViolation(CA->getContractKind(), CA->getContractMode(),
+                         CA->getLocation());
+
+  // Pass block: continue execution.
+  EmitBlock(PassBB);
+}
+
+void CodeGenFunction::EmitContractViolation(ContractKind Kind,
+                                              ContractMode Mode,
+                                              SourceLocation Loc) {
+  // In Quick_Enforce mode, just call std::terminate.
+  // In Enforce mode, call the violation handler then std::terminate.
+  // In Observe mode, call the violation handler and continue.
+
+  // For now, generate a call to __contract_violation_handler placeholder,
+  // followed by conditionally calling std::terminate.
+
+  llvm::Module &M = *CGM.getModule();
+  llvm::LLVMContext &Ctx = CGM.getLLVMContext();
+
+  // Build violation handler signature: void __contract_violation_handler(i32 kind, i32 mode, ptr location)
+  llvm::Type *VoidTy = llvm::Type::getVoidTy(Ctx);
+  llvm::Type *Int32Ty = llvm::Type::getInt32Ty(Ctx);
+  llvm::PointerType *PtrTy = llvm::PointerType::get(Ctx, 0);
+
+  llvm::FunctionType *HandlerTy = llvm::FunctionType::get(VoidTy,
+      {Int32Ty, Int32Ty, PtrTy}, false);
+
+  auto *Handler = M.getFunction("__contract_violation_handler");
+  if (!Handler) {
+    Handler = llvm::Function::Create(HandlerTy, llvm::GlobalValue::ExternalLinkage,
+                                      "__contract_violation_handler", M);
+  }
+
+  // Create a location string constant.
+  std::string LocStr = "contract:" + getContractKindName(Kind).str() +
+                       " at offset " + std::to_string(Loc.getOffset());
+  auto *LocStrConstant = llvm::ConstantDataArray::getString(Ctx, LocStr);
+  auto *LocGlobal = new llvm::GlobalVariable(M, LocStrConstant->getType(),
+      true, llvm::GlobalValue::PrivateLinkage, LocStrConstant, "contract.loc");
+
+  // Call violation handler.
+  Builder.CreateCall(Handler, {
+    llvm::ConstantInt::get(Int32Ty, static_cast<unsigned>(Kind)),
+    llvm::ConstantInt::get(Int32Ty, static_cast<unsigned>(Mode)),
+    Builder.CreateBitCast(LocGlobal, PtrTy)
+  });
+
+  // For Enforce and Quick_Enforce modes, call std::terminate after handler.
+  if (Mode == ContractMode::Enforce || Mode == ContractMode::Quick_Enforce ||
+      Mode == ContractMode::Default) {
+    // Emit std::terminate call (or __builtin_trap as fallback).
+    auto *TrapFn = llvm::Intrinsic::getDeclaration(&M, llvm::Intrinsic::trap);
+    Builder.CreateCall(TrapFn);
+
+    // Mark as unreachable after trap.
+    Builder.CreateUnreachable();
+
+    // Create a new block for potential fallthrough (for Observe mode).
+    auto *ContBB = createBasicBlock("contract.cont");
+    EmitBlock(ContBB);
+  }
+  // For Observe mode, execution continues after handler call.
 }
 
 //===----------------------------------------------------------------------===//
