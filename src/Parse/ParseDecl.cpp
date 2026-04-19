@@ -1713,15 +1713,16 @@ Decl *Parser::parseStructuredBindingDeclaration(SourceLocation AutoLoc,
   QualType InitType = Init->getType();
   
   // Call Sema to create binding declarations
-  // TODO: Full implementation needs tuple_size/get<N> checking
   auto Result = Actions.ActOnDecompositionDecl(AutoLoc, Names, InitType, Init);
   
   if (!Result.isUsable()) {
     return nullptr;
   }
   
-  // Wrap in DeclStmt and return the statement
-  Stmt *DeclStmt = Actions.ActOnDeclStmtFromDecl(Result.get()).get();
+  // Wrap all bindings in DeclStmt and return the statement
+  llvm::SmallVector<Decl *, 4> BindingDecls(Result.getDecls().begin(), 
+                                             Result.getDecls().end());
+  Stmt *DeclStmt = Actions.ActOnDeclStmtFromDecls(BindingDecls).get();
   return llvm::cast<Decl>(DeclStmt);  // Cast back to Decl for consistency
 }
 

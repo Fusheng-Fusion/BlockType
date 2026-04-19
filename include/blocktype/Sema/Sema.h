@@ -101,6 +101,44 @@ public:
   explicit operator bool() const { return isUsable(); }
 };
 
+/// DeclGroupRef - Wrapper for a group of declarations.
+/// Used for structured bindings and other multi-declaration constructs.
+class DeclGroupRef {
+  llvm::SmallVector<Decl *, 4> Decls;
+  bool Invalid = false;
+
+public:
+  DeclGroupRef() = default;
+  DeclGroupRef(Decl *D) {
+    if (D) Decls.push_back(D);
+  }
+  DeclGroupRef(llvm::ArrayRef<Decl *> Ds) : Decls(Ds.begin(), Ds.end()) {}
+  
+  static DeclGroupRef getInvalid() {
+    DeclGroupRef R;
+    R.Invalid = true;
+    return R;
+  }
+  
+  static DeclGroupRef createEmpty() {
+    return DeclGroupRef();
+  }
+  
+  bool isInvalid() const { return Invalid; }
+  bool isUsable() const { return !Invalid && !Decls.empty(); }
+  bool isEmpty() const { return Decls.empty(); }
+  
+  llvm::ArrayRef<Decl *> getDecls() const { return Decls; }
+  unsigned size() const { return Decls.size(); }
+  Decl *getFirst() const { return Decls.empty() ? nullptr : Decls[0]; }
+  
+  void addDecl(Decl *D) {
+    if (D && !Invalid) Decls.push_back(D);
+  }
+  
+  explicit operator bool() const { return isUsable(); }
+};
+
 /// TypeResult - Wrapper for type semantic analysis results.
 class TypeResult {
   QualType Val;
@@ -349,7 +387,7 @@ public:
   /// **Clang reference**:
   /// - `clang/lib/Sema/SemaDeclCXX.cpp` BuildDecompositionDecl()
   /// - `clang/include/clang/AST/DeclCXX.h` DecompositionDecl
-  DeclResult ActOnDecompositionDecl(SourceLocation Loc,
+  DeclGroupRef ActOnDecompositionDecl(SourceLocation Loc,
                                      llvm::ArrayRef<llvm::StringRef> Names,
                                      QualType TupleType,
                                      Expr *Init);
@@ -416,6 +454,10 @@ public:
 
   // Declaration factory methods (Phase 2D)
   StmtResult ActOnDeclStmtFromDecl(Decl *D);
+  
+  // P7.4.3: Create DeclStmt from multiple declarations (structured bindings)
+  StmtResult ActOnDeclStmtFromDecls(llvm::ArrayRef<Decl *> Decls);
+
   DeclResult ActOnTypeAliasDecl(SourceLocation Loc, llvm::StringRef Name,
                                 QualType Underlying);
   DeclResult ActOnUsingDecl(SourceLocation Loc, llvm::StringRef Name,

@@ -286,6 +286,16 @@ StmtResult Sema::ActOnDeclStmtFromDecl(Decl *D) {
   return StmtResult(DS);
 }
 
+// P7.4.3: Create DeclStmt from multiple declarations (structured bindings)
+StmtResult Sema::ActOnDeclStmtFromDecls(llvm::ArrayRef<Decl *> Decls) {
+  if (Decls.empty()) return StmtResult::getInvalid();
+  
+  // Use the location of the first declaration
+  SourceLocation Loc = Decls[0]->getLocation();
+  auto *DS = Context.create<DeclStmt>(Loc, Decls);
+  return StmtResult(DS);
+}
+
 DeclResult Sema::ActOnTypeAliasDecl(SourceLocation Loc, llvm::StringRef Name,
                                     QualType Underlying) {
   auto *TAD = Context.create<TypeAliasDecl>(Loc, Name, Underlying);
@@ -511,7 +521,7 @@ static QualType GetTupleElementType(QualType TupleType, unsigned Index) {
 }
 
 // P7.4.3: Structured binding implementation
-DeclResult Sema::ActOnDecompositionDecl(SourceLocation Loc,
+DeclGroupRef Sema::ActOnDecompositionDecl(SourceLocation Loc,
                                          llvm::ArrayRef<llvm::StringRef> Names,
                                          QualType TupleType,
                                          Expr *Init) {
@@ -532,7 +542,7 @@ DeclResult Sema::ActOnDecompositionDecl(SourceLocation Loc,
   if (!Ty) {
     Diags.report(Loc, DiagID::err_structured_binding_not_decomposable,
                  TupleType.getAsString());
-    return DeclResult::getInvalid();
+    return DeclGroupRef::getInvalid();
   }
   
   // Check if it's a record type (pair/tuple) or array
@@ -556,14 +566,14 @@ DeclResult Sema::ActOnDecompositionDecl(SourceLocation Loc,
   if (!IsDecomposable) {
     Diags.report(Loc, DiagID::err_structured_binding_not_decomposable,
                  TupleType.getAsString());
-    return DeclResult::getInvalid();
+    return DeclGroupRef::getInvalid();
   }
   
   // Step 2: Check binding count matches element count
   if (Names.size() != NumElements && !llvm::isa<ArrayType>(Ty)) {
     Diags.report(Loc, DiagID::err_structured_binding_wrong_count,
                  std::to_string(Names.size()), std::to_string(NumElements));
-    return DeclResult::getInvalid();
+    return DeclGroupRef::getInvalid();
   }
   
   llvm::SmallVector<Decl *, 4> Decls;
@@ -575,7 +585,7 @@ DeclResult Sema::ActOnDecompositionDecl(SourceLocation Loc,
     if (ElementType.isNull()) {
       Diags.report(Loc, DiagID::err_structured_binding_no_get,
                    TupleType.getAsString());
-      return DeclResult::getInvalid();
+      return DeclGroupRef::getInvalid();
     }
     
     // Create std::get<i>(init) expression
@@ -601,8 +611,8 @@ DeclResult Sema::ActOnDecompositionDecl(SourceLocation Loc,
     }
   }
   
-  // Return first decl as result (simplified - should return DeclGroupRef)
-  return Decls.empty() ? DeclResult(nullptr) : DeclResult(Decls[0]);
+  // Return DeclGroupRef containing all bindings
+  return Decls.empty() ? DeclGroupRef::createEmpty() : DeclGroupRef(Decls);
 }
 
 bool Sema::CheckBindingCondition(llvm::ArrayRef<class BindingDecl *> Bindings,

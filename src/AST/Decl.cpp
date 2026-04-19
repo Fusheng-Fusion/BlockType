@@ -62,6 +62,27 @@ void VarDecl::dump(raw_ostream &OS, unsigned Indent) const {
   }
 }
 
+// P7.4.3: BindingDecl dump for structured bindings
+void BindingDecl::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "BindingDecl " << getName();
+  if (T.getTypePtr()) {
+    OS << " '";
+    T.dump(OS);
+    OS << "'";
+  }
+  OS << " index=" << BindingIndex;
+  if (IsPackExpansion) {
+    OS << " pack-expansion";
+  }
+  if (BindingExpr) {
+    OS << " binding-expr:\n";
+    BindingExpr->dump(OS, Indent + 2);
+  } else {
+    OS << "\n";
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // FunctionDecl
 //===----------------------------------------------------------------------===//
