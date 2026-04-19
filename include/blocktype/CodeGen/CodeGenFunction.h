@@ -201,6 +201,9 @@ public:
   /// 设置当前 LLVM 函数（供 CGCXX 的构造/析构函数生成使用）
   void setCurrentFunction(llvm::Function *Fn) { CurFn = Fn; }
 
+  /// 设置 AllocaInsertPt（供 CGCXX 的构造函数生成使用）
+  void setAllocaInsertPoint(llvm::AllocaInst *Pt) { AllocaInsertPt = Pt; }
+
   /// 设置 this 指针（用于 CXXThisExpr 求值）
   void setThisPointer(llvm::Value *This) { ThisValue = This; }
 

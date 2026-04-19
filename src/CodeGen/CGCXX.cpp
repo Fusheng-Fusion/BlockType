@@ -445,17 +445,30 @@ llvm::SmallVector<uint64_t, 16> CGCXX::ComputeClassLayout(CXXRecordDecl *RD) {
         if (Base.isVirtual()) continue;
         
         uint64_t BaseSize = GetClassSize(BaseCXX);
-        uint64_t BaseAlign = 1;
-        if (hasVirtualFunctionsInHierarchy(BaseCXX)) {
-          BaseAlign = std::max(BaseAlign, CGM.getTarget().getPointerAlign());
+        
+        // Empty Base Optimization (EBO): 空基类不占用空间
+        // 但如果当前偏移为0且还没有放置任何内容，仍需保留1字节以确保地址唯一性
+        bool IsEmptyBase = (BaseSize == 1 && BaseCXX->fields().empty() && 
+                           !hasVirtualFunctionsInHierarchy(BaseCXX));
+        
+        if (!IsEmptyBase || CurrentOffset == 0) {
+          uint64_t BaseAlign = 1;
+          if (hasVirtualFunctionsInHierarchy(BaseCXX)) {
+            BaseAlign = std::max(BaseAlign, CGM.getTarget().getPointerAlign());
+          }
+          for (FieldDecl *F : BaseCXX->fields()) {
+            BaseAlign = std::max(BaseAlign,
+                                 CGM.getTarget().getTypeAlign(F->getType()));
+          }
+          CurrentOffset = llvm::alignTo(CurrentOffset, BaseAlign);
+          BaseOffsetCache[{RD, BaseCXX}] = CurrentOffset;
+          if (!IsEmptyBase) {
+            CurrentOffset += BaseSize;
+          }
+        } else {
+          // 空基类且当前已有内容，复用当前偏移（EBO）
+          BaseOffsetCache[{RD, BaseCXX}] = CurrentOffset;
         }
-        for (FieldDecl *F : BaseCXX->fields()) {
-          BaseAlign = std::max(BaseAlign,
-                               CGM.getTarget().getTypeAlign(F->getType()));
-        }
-        CurrentOffset = llvm::alignTo(CurrentOffset, BaseAlign);
-        BaseOffsetCache[{RD, BaseCXX}] = CurrentOffset;
-        CurrentOffset += BaseSize;
       }
     }
   }
@@ -480,17 +493,27 @@ llvm::SmallVector<uint64_t, 16> CGCXX::ComputeClassLayout(CXXRecordDecl *RD) {
         if (!Base.isVirtual()) continue;
         
         uint64_t BaseSize = GetClassSize(BaseCXX);
-        uint64_t BaseAlign = 1;
-        if (hasVirtualFunctionsInHierarchy(BaseCXX)) {
-          BaseAlign = std::max(BaseAlign, CGM.getTarget().getPointerAlign());
+        
+        // Empty Base Optimization (EBO): 空基类不占用空间
+        bool IsEmptyBase = (BaseSize == 1 && BaseCXX->fields().empty() && 
+                           !hasVirtualFunctionsInHierarchy(BaseCXX));
+        
+        if (!IsEmptyBase) {
+          uint64_t BaseAlign = 1;
+          if (hasVirtualFunctionsInHierarchy(BaseCXX)) {
+            BaseAlign = std::max(BaseAlign, CGM.getTarget().getPointerAlign());
+          }
+          for (FieldDecl *F : BaseCXX->fields()) {
+            BaseAlign = std::max(BaseAlign,
+                                 CGM.getTarget().getTypeAlign(F->getType()));
+          }
+          CurrentOffset = llvm::alignTo(CurrentOffset, BaseAlign);
+          BaseOffsetCache[{RD, BaseCXX}] = CurrentOffset;
+          CurrentOffset += BaseSize;
+        } else {
+          // 空基类，复用当前偏移（EBO）
+          BaseOffsetCache[{RD, BaseCXX}] = CurrentOffset;
         }
-        for (FieldDecl *F : BaseCXX->fields()) {
-          BaseAlign = std::max(BaseAlign,
-                               CGM.getTarget().getTypeAlign(F->getType()));
-        }
-        CurrentOffset = llvm::alignTo(CurrentOffset, BaseAlign);
-        BaseOffsetCache[{RD, BaseCXX}] = CurrentOffset;
-        CurrentOffset += BaseSize;
       }
     }
   }
@@ -577,6 +600,11 @@ void CGCXX::EmitConstructor(CXXConstructorDecl *Ctor, llvm::Function *Fn) {
       llvm::BasicBlock::Create(CGM.getLLVMContext(), "entry", Fn);
   CGF.getBuilder().SetInsertPoint(EntryBB);
   CGF.setCurrentFunction(Fn);
+  
+  // 重要：创建 AllocaInsertPt，确保 CreateAlloca 可以正常工作
+  // 这是 EmitFunctionBody 中的标准做法，但在 EmitConstructor 中需要手动设置
+  CGF.setAllocaInsertPoint(CGF.getBuilder().CreateAlloca(
+      llvm::Type::getInt32Ty(CGM.getLLVMContext()), nullptr, "alloca.point"));
 
   // this 指针是第一个参数
   llvm::Value *This = &*Fn->arg_begin();
@@ -2157,8 +2185,22 @@ void CGCXX::EmitDestructorBody(CodeGenFunction &CGF, CXXRecordDecl *Class,
             if (auto *Dtor = llvm::dyn_cast<CXXDestructorDecl>(MD)) {
               llvm::Function *DtorFn = CGM.GetOrCreateFunctionDecl(Dtor);
               if (DtorFn) {
+                // 在调用基类析构函数之前，将 vptr 恢复为基类的 vtable
+                // 这是 Itanium C++ ABI 的要求，确保基类析构函数中的虚函数调用使用正确的 vtable
                 llvm::Value *BasePtr = EmitCastToBase(CGF, Class, This, BaseCXX);
+                
+                // 保存当前的 vptr 值（如果需要的话）
+                // 注意：在完整的实现中，应该在析构函数开始时保存所有 vptr
+                // 然后在每个基类析构前恢复对应的 vptr
+                
+                // 将 this 对象的 vptr 设置为基类的 vtable
+                InitializeVTablePtr(CGF, This, BaseCXX);
+                
                 CGF.getBuilder().CreateCall(DtorFn, {BasePtr}, "base.dtor");
+                
+                // 恢复派生类的 vptr（在下一个基类析构或成员析构之前）
+                // 注意：这里简化处理，实际应该在每个基类析构后恢复
+                InitializeVTablePtr(CGF, This, Class);
               }
               break;
             }

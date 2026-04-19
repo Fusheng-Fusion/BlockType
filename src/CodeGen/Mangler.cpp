@@ -84,22 +84,32 @@ std::string Mangler::getMangledName(const VarDecl *VD) {
 
 std::string Mangler::getVTableName(const CXXRecordDecl *RD) {
   if (!RD) return "_ZTV";
-  std::string Name = "_ZTV";
-  mangleSourceName(RD->getName(), Name);
+  
+  // Itanium C++ ABI: vtable name = _ZTV + <mangled-name>
+  // 例如：_ZTVN3foo3BarE for class foo::Bar
+  std::string Name = "_ZTVN";  // N 表示 nested name
+  mangleNestedName(RD, Name);
+  Name += 'E';  // E 结束 nested name
   return Name;
 }
 
 std::string Mangler::getRTTIName(const CXXRecordDecl *RD) {
   if (!RD) return "_ZTI";
-  std::string Name = "_ZTI";
-  mangleSourceName(RD->getName(), Name);
+  
+  // Itanium C++ ABI: typeinfo name = _ZTI + <mangled-name>
+  std::string Name = "_ZTIN";  // N 表示 nested name
+  mangleNestedName(RD, Name);
+  Name += 'E';  // E 结束 nested name
   return Name;
 }
 
 std::string Mangler::getTypeinfoName(const CXXRecordDecl *RD) {
   if (!RD) return "_ZTS";
-  std::string Name = "_ZTS";
-  mangleSourceName(RD->getName(), Name);
+  
+  // Itanium C++ ABI: typeinfo string name = _ZTS + <mangled-name>
+  std::string Name = "_ZTSN";  // N 表示 nested name
+  mangleNestedName(RD, Name);
+  Name += 'E';  // E 结束 nested name
   return Name;
 }
 

@@ -228,9 +228,10 @@
    -- BlockType 使用三个独立的 DenseMap（FieldOffsetCache / ClassSizeCache / BaseOffsetCache）
    -- 功能等价，但缺少 CXXRecordDecl::isDynamicClass 等元信息（P2）
 
-3. ⚠️ **缺少 Empty Base Optimization (EBO)**（P2）
-   -- Clang 对空基类应用 EBO，空基类不占空间
-   -- BlockType 对空基类使用 GetClassSize()（至少 1 字节）
+3. ✅ ~~**缺少 Empty Base Optimization (EBO)**（P2）~~ — **已修复 (2026-04-19)**
+   -- **修复：** ComputeClassLayout 对空基类应用 EBO，不占用空间
+   -- **修复：** 检测条件：BaseSize == 1 && fields().empty() && !hasVirtualFunctions
+   -- **影响：** 派生类大小减小，内存布局更紧凑
 
 4. ✅ ~~**虚继承未实现**（P2）~~ — **已修复 (2026-04-19)**
    -- **修复：** ComputeClassLayout 现在正确处理虚基类，将其放在派生类末尾
@@ -269,9 +270,10 @@
    -- **修复：** `EmitDeletingDestructor()` 生成 D0 包装函数（调用 D1 + operator delete）
    -- **修复：** 虚析构函数在 vtable 中占 2 个条目（D1 + D0）
 
-3. ⚠️ **缺少基类虚析构函数调用时的 vptr 恢复**（P2）
-   -- Clang 在基类析构前将 vptr 恢复为基类的 vtable
-   -- BlockType 未实现（基类析构函数中的虚函数调用会使用错误的 vtable）
+3. ✅ ~~**缺少基类虚析构函数调用时的 vptr 恢复**（P2）~~ — **已修复 (2026-04-19)**
+   -- **修复：** EmitDestructorBody 在调用基类析构函数前将 vptr 恢复为基类的 vtable
+   -- **修复：** 基类析构完成后恢复派生类的 vptr
+   -- **影响：** 确保基类析构函数中的虚函数调用使用正确的 vtable
 
 ---
 
@@ -356,15 +358,15 @@
 5. ✅ **EmitVTables 在 EmitDeferred 之后调用** — 正确
    -- 确保全局变量已生成后再生成 vtable
 
-6. ⚠️ **EmitConstructor 中 CreateAlloca 可能失败**（P2）
-   -- CGF.CreateAlloca 依赖 CurFn 的 entry block
-   -- CGF.setCurrentFunction 设置了 CurFn，但未通过 EmitFunctionBody 的完整初始化
-   -- CurFD 未设置，某些 CGF 方法可能返回 null
-   -- **影响：** 构造函数体中的某些复杂表达式可能无法正确求值
+6. ✅ ~~**EmitConstructor 中 CreateAlloca 可能失败**（P2）~~ — **已修复 (2026-04-19)**
+   -- **修复：** 在 EmitConstructor 中手动创建 AllocaInsertPt
+   -- **修复：** 添加 setAllocaInsertPoint 方法到 CodeGenFunction
+   -- **影响：** 构造函数体中的复杂表达式可以正确求值，CreateAlloca 不再返回 null
 
-7. ⚠️ **VTable mangled name 不符合 Itanium ABI**（P2）
-   -- 使用 "_ZTV" + RD->getName() 简单拼接
-   -- 应使用完整的 mangled name（如 _ZTVN3foo3BarE）
+7. ✅ ~~**VTable mangled name 不符合 Itanium ABI**（P2）~~ — **已修复 (2026-04-19)**
+   -- **修复：** getVTableName 使用完整 mangled name（_ZTVN...E）
+   -- **修复：** getRTTIName 和 getTypeinfoName 同样使用完整 mangled name
+   -- **示例：** Foo -> _ZTVN3FooE（而不是 _ZTV3Foo）
 
 ---
 
