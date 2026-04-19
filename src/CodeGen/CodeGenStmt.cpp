@@ -12,6 +12,7 @@
 #include "blocktype/CodeGen/CodeGenTypes.h"
 #include "blocktype/CodeGen/CodeGenConstant.h"
 #include "blocktype/CodeGen/CGDebugInfo.h"
+#include "blocktype/CodeGen/TargetInfo.h"
 #include "blocktype/AST/Stmt.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Decl.h"
@@ -140,6 +141,34 @@ void CodeGenFunction::EmitSwitchStmt(SwitchStmt *SwitchStatement) {
     return;
   }
 
+  // Switch 条件 lifetime 扩展：
+  // Clang 将 switch 条件值的 lifetime 扩展到整个 switch 块。
+  // 将条件值保存到 alloca，确保在整个 switch 期间有效。
+  llvm::AllocaInst *CondAlloca = nullptr;
+  llvm::Value *CondValue = Condition;
+  {
+    llvm::Type *CondTy = Condition->getType();
+    CondAlloca = CreateAlloca(
+        SwitchStatement->getCond()->getType(), "switch.cond");
+    Builder.CreateStore(Condition, CondAlloca);
+
+    // 生成 llvm.lifetime.start intrinsic
+    llvm::Type *CondSizeTy = llvm::Type::getInt64Ty(CGM.getLLVMContext());
+    uint64_t CondSize = CGM.getTarget().getTypeSize(
+        SwitchStatement->getCond()->getType());
+    llvm::Constant *SizeVal = llvm::ConstantInt::get(CondSizeTy, CondSize);
+    llvm::FunctionType *LifetimeStartTy = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(CGM.getLLVMContext()),
+        {CondSizeTy, llvm::PointerType::get(CGM.getLLVMContext(), 0)}, false);
+    llvm::FunctionCallee LifetimeStart =
+        CGM.getModule()->getOrInsertFunction("llvm.lifetime.start.p0",
+                                              LifetimeStartTy);
+    Builder.CreateCall(LifetimeStart, {SizeVal, CondAlloca});
+
+    // 后续通过 load alloca 获取条件值（确保值在 switch 期间一直有效）
+    CondValue = CondAlloca;
+  }
+
   llvm::BasicBlock *DefaultBB = createBasicBlock("switch.default");
   llvm::BasicBlock *EndBB = createBasicBlock("switch.end");
 
@@ -209,12 +238,18 @@ void CodeGenFunction::EmitSwitchStmt(SwitchStmt *SwitchStatement) {
 
   // 如果条件值需要截断/扩展以匹配 case 常量的位宽，确保类型一致
   // SwitchInst 要求条件值和所有 case 值类型一致
+  // 从 lifetime alloca 中加载条件值
+  llvm::Value *SwitchCond = Builder.CreateLoad(
+      SwitchStatement->getCond()->getType().isNull()
+          ? Condition->getType()
+          : CGM.getTypes().ConvertType(SwitchStatement->getCond()->getType()),
+      CondAlloca, "switch.cond.val");
   if (!Cases.empty()) {
     llvm::Type *CaseTy = Cases[0].Value->getType();
-    if (Condition->getType() != CaseTy) {
-      Condition = Builder.CreateIntCast(
-          Condition, CaseTy,
-          Condition->getType()->isIntegerTy(1) ? false : true, "switch.cast");
+    if (SwitchCond->getType() != CaseTy) {
+      SwitchCond = Builder.CreateIntCast(
+          SwitchCond, CaseTy,
+          SwitchCond->getType()->isIntegerTy(1) ? false : true, "switch.cast");
     }
   }
 
@@ -228,7 +263,7 @@ void CodeGenFunction::EmitSwitchStmt(SwitchStmt *SwitchStatement) {
   // 创建 SwitchInst（只包含普通 case，range case 在 default 路径中处理）
   unsigned NormalCaseCount = Cases.size() - RangeCases.size();
   auto *SwitchInst =
-      Builder.CreateSwitch(Condition, SwitchDefaultBB, NormalCaseCount);
+      Builder.CreateSwitch(SwitchCond, SwitchDefaultBB, NormalCaseCount);
   for (auto &C : Cases) {
     if (!C.IsRange) {
       SwitchInst->addCase(C.Value, C.BB);
@@ -244,9 +279,9 @@ void CodeGenFunction::EmitSwitchStmt(SwitchStmt *SwitchStatement) {
           (i + 1 < e) ? createBasicBlock("switch.rangecheck")
                       : DefaultBB;
       llvm::Value *LowerCmp =
-          Builder.CreateICmpSGE(Condition, RC.Value, "range.lb");
+          Builder.CreateICmpSGE(SwitchCond, RC.Value, "range.lb");
       llvm::Value *UpperCmp =
-          Builder.CreateICmpSLE(Condition, RC.UpperValue, "range.ub");
+          Builder.CreateICmpSLE(SwitchCond, RC.UpperValue, "range.ub");
       llvm::Value *InRange =
           Builder.CreateAnd(LowerCmp, UpperCmp, "range.in");
       Builder.CreateCondBr(InRange, RC.BB, NextBB);
@@ -307,7 +342,25 @@ void CodeGenFunction::EmitSwitchStmt(SwitchStmt *SwitchStatement) {
   if (haveInsertPoint()) {
     Builder.CreateBr(EndBB);
   }
+
+  // 如果 EndBB 无前驱（所有分支都以 return/break 终止），
+  // 仍需 EmitBlock 以放置 lifetime.end intrinsic
   EmitBlock(EndBB);
+
+  // 生成 llvm.lifetime.end intrinsic（条件值 lifetime 结束）
+  if (CondAlloca) {
+    llvm::Type *CondSizeTy = llvm::Type::getInt64Ty(CGM.getLLVMContext());
+    uint64_t CondSize = CGM.getTarget().getTypeSize(
+        SwitchStatement->getCond()->getType());
+    llvm::Constant *SizeVal = llvm::ConstantInt::get(CondSizeTy, CondSize);
+    llvm::FunctionType *LifetimeEndTy = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(CGM.getLLVMContext()),
+        {CondSizeTy, llvm::PointerType::get(CGM.getLLVMContext(), 0)}, false);
+    llvm::FunctionCallee LifetimeEnd =
+        CGM.getModule()->getOrInsertFunction("llvm.lifetime.end.p0",
+                                              LifetimeEndTy);
+    Builder.CreateCall(LifetimeEnd, {SizeVal, CondAlloca});
+  }
 
   BreakContinueStack.pop_back();
 }
@@ -500,20 +553,36 @@ void CodeGenFunction::EmitReturnStmt(ReturnStmt *ReturnStatement) {
   EmitCleanupsForScope(0);
 
   if (Expr *ReturnExpr = ReturnStatement->getRetValue()) {
-    llvm::Value *RetVal = EmitExpr(ReturnExpr);
-    if (RetVal && this->ReturnValue) {
-      if (IsSRetFn) {
-        // sret 模式：从 ReturnValue alloca 加载 sret 指针，写入返回值
-        llvm::Value *SRetPtr = Builder.CreateLoad(
-            llvm::PointerType::get(CGM.getLLVMContext(), 0),
-            this->ReturnValue, "sret.ptr");
-        Builder.CreateStore(RetVal, SRetPtr);
-      } else {
-        Builder.CreateStore(RetVal, this->ReturnValue);
+    // NRVO 检测：如果返回表达式是 NRVO 候选变量（直接使用 ReturnValue alloca），
+    // 则不需要 store — 值已经在 ReturnValue 中
+    bool IsNRVO = false;
+    if (this->ReturnValue && !IsSRetFn) {
+      if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(ReturnExpr)) {
+        if (auto *VD = llvm::dyn_cast<VarDecl>(DRE->getDecl())) {
+          if (isNRVOCandidate(VD)) {
+            IsNRVO = true;
+            // 值已经在 ReturnValue alloca 中，直接跳到 ReturnBlock
+          }
+        }
       }
-    } else if (RetVal) {
-      Builder.CreateRet(ReturnValue);
-      return;
+    }
+
+    if (!IsNRVO) {
+      llvm::Value *RetVal = EmitExpr(ReturnExpr);
+      if (RetVal && this->ReturnValue) {
+        if (IsSRetFn) {
+          // sret 模式：从 ReturnValue alloca 加载 sret 指针，写入返回值
+          llvm::Value *SRetPtr = Builder.CreateLoad(
+              llvm::PointerType::get(CGM.getLLVMContext(), 0),
+              this->ReturnValue, "sret.ptr");
+          Builder.CreateStore(RetVal, SRetPtr);
+        } else {
+          Builder.CreateStore(RetVal, this->ReturnValue);
+        }
+      } else if (RetVal) {
+        Builder.CreateRet(ReturnValue);
+        return;
+      }
     }
   }
 
@@ -539,7 +608,14 @@ void CodeGenFunction::EmitDeclStmt(DeclStmt *DeclarationStatement) {
   for (Decl *Declaration : DeclarationStatement->getDecls()) {
     if (auto *VariableDecl = llvm::dyn_cast<VarDecl>(Declaration)) {
       QualType VarType = VariableDecl->getType();
-      llvm::AllocaInst *Alloca = CreateAlloca(VarType, VariableDecl->getName());
+
+      // NRVO: 如果变量是 NRVO 候选，直接使用 ReturnValue alloca
+      llvm::AllocaInst *Alloca = nullptr;
+      if (isNRVOCandidate(VariableDecl) && ReturnValue && !IsSRetFn) {
+        Alloca = ReturnValue;
+      } else {
+        Alloca = CreateAlloca(VarType, VariableDecl->getName());
+      }
       if (!Alloca) {
         continue;
       }

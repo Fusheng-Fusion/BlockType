@@ -120,6 +120,12 @@ void CodeGenFunction::EmitFunctionBody(FunctionDecl *FunctionDecl,
       llvm::Type::getInt32Ty(CGM.getLLVMContext()), nullptr, "alloca.point");
   // AllocaInsertPt 本身就是锚点，后续 alloca 在其之前插入
 
+  // NRVO 分析：识别可以作为 NRVO 候选的局部变量
+  // 条件：函数返回类型是 record 类型，且函数体中有 return x; 其中 x 是局部变量
+  if (ReturnValue && !FnNeedsSRet && ReturnType->isRecordType()) {
+    analyzeNRVOCandidates(FunctionDecl->getBody(), ReturnType);
+  }
+
   // 生成函数体
   if (Stmt *Body = FunctionDecl->getBody()) {
     EmitStmt(Body);
@@ -499,6 +505,102 @@ llvm::MDNode *CodeGenFunction::createLoopBranchWeights(llvm::LLVMContext &Ctx,
     return nullptr;
   }
   return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
+// NRVO 分析
+//===----------------------------------------------------------------------===//
+
+void CodeGenFunction::analyzeNRVOCandidates(Stmt *Body, QualType ReturnType) {
+  if (!Body) return;
+
+  // 递归遍历函数体，查找所有 return 语句
+  // 如果 return 的表达式是一个简单变量引用（DeclRefExpr → VarDecl），
+  // 且变量类型与返回类型匹配，则标记为 NRVO 候选
+  llvm::SmallVector<Stmt *, 16> WorkList;
+  WorkList.push_back(Body);
+
+  while (!WorkList.empty()) {
+    Stmt *S = WorkList.pop_back_val();
+    if (!S) continue;
+
+    // 检查 ReturnStmt
+    if (auto *RS = llvm::dyn_cast<ReturnStmt>(S)) {
+      if (Expr *RetExpr = RS->getRetValue()) {
+        // 简单变量引用 return x;
+        if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(RetExpr)) {
+          if (auto *VD = llvm::dyn_cast<VarDecl>(DRE->getDecl())) {
+            // 条件：局部变量（非 static、非参数、非 constexpr）
+            if (!VD->isStatic() && !llvm::isa<ParmVarDecl>(VD)) {
+              QualType VarTy = VD->getType();
+              // 类型匹配（忽略 cv 限定符）
+              if (!VarTy.isNull() && !ReturnType.isNull() &&
+                  VarTy.getTypePtr()->getCanonicalType() ==
+                      ReturnType.getTypePtr()->getCanonicalType()) {
+                NRVOCandidates.insert(VD);
+              }
+            }
+          }
+        }
+      }
+      continue;
+    }
+
+    // 递归遍历子语句
+    // CompoundStmt
+    if (auto *CS = llvm::dyn_cast<CompoundStmt>(S)) {
+      for (Stmt *Child : CS->getBody()) {
+        WorkList.push_back(Child);
+      }
+      continue;
+    }
+
+    // IfStmt
+    if (auto *IS = llvm::dyn_cast<IfStmt>(S)) {
+      if (IS->getThen()) WorkList.push_back(IS->getThen());
+      if (IS->getElse()) WorkList.push_back(IS->getElse());
+      continue;
+    }
+
+    // WhileStmt
+    if (auto *WS = llvm::dyn_cast<WhileStmt>(S)) {
+      if (WS->getBody()) WorkList.push_back(WS->getBody());
+      continue;
+    }
+
+    // DoStmt
+    if (auto *DS = llvm::dyn_cast<DoStmt>(S)) {
+      if (DS->getBody()) WorkList.push_back(DS->getBody());
+      continue;
+    }
+
+    // ForStmt
+    if (auto *FS = llvm::dyn_cast<ForStmt>(S)) {
+      if (FS->getBody()) WorkList.push_back(FS->getBody());
+      continue;
+    }
+
+    // SwitchStmt
+    if (auto *SS = llvm::dyn_cast<SwitchStmt>(S)) {
+      if (SS->getBody()) WorkList.push_back(SS->getBody());
+      continue;
+    }
+
+    // CXXTryStmt
+    if (auto *TS = llvm::dyn_cast<CXXTryStmt>(S)) {
+      if (TS->getTryBlock()) WorkList.push_back(TS->getTryBlock());
+      for (Stmt *CB : TS->getCatchBlocks()) {
+        WorkList.push_back(CB);
+      }
+      continue;
+    }
+
+    // CXXForRangeStmt
+    if (auto *FRS = llvm::dyn_cast<CXXForRangeStmt>(S)) {
+      if (FRS->getBody()) WorkList.push_back(FRS->getBody());
+      continue;
+    }
+  }
 }
 
 //===----------------------------------------------------------------------===//

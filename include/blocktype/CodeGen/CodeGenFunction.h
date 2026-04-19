@@ -73,6 +73,19 @@ class CodeGenFunction {
   /// 当前函数是否使用 sret 返回
   bool IsSRetFn = false;
 
+  /// NRVO (Named Return Value Optimization) 候选变量集合。
+  /// 如果一个局部变量被识别为 NRVO 候选，它直接使用 ReturnValue alloca，
+  /// 避免返回时的 copy。
+  llvm::SmallPtrSet<const VarDecl *, 4> NRVOCandidates;
+
+  /// 查询变量是否是 NRVO 候选
+  bool isNRVOCandidate(const VarDecl *VD) const {
+    return NRVOCandidates.count(VD) > 0;
+  }
+
+  /// 分析函数体，识别 NRVO 候选变量
+  void analyzeNRVOCandidates(Stmt *Body, QualType ReturnType);
+
   /// Label → BasicBlock 映射（用于 goto/label 前向引用）
   llvm::DenseMap<const LabelDecl *, llvm::BasicBlock *> LabelMap;
 
