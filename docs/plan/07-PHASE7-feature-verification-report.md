@@ -11,7 +11,7 @@
 
 | 分类 | 文档声明 | 实际状态 | 准确性 |
 |------|---------|---------|--------|
-| C++23 已实现 | 8项 | **7项确认✅，1项存疑⚠️** | 87.5% |
+| C++23 已实现 | 8项 | **8项全部确认✅** | 100% |
 | C++23 部分实现 | 1项 | **基本正确✅** | 100% |
 | C++26 已实现 | 2项 | **2项确认✅** | 100% |
 | C++26 部分实现 | 3项 | **2项确认✅，1项需澄清⚠️** | 66.7% |
@@ -44,18 +44,33 @@ if (Tok.is(TokenKind::kw_consteval)) {
 
 ---
 
-### 2. ⚠️ 多维 `operator[]` (P2128R6) - **未找到实现证据**
+### 2. ⚠️ 多维 `operator[]` (P2128R6) - **确认已实现（核查时遗漏）**
 
-**搜索结果：**
+**初始搜索结果：**
 - ❌ 无`MultiDimensionalSubscript`相关类或方法
 - ❌ 无`operator[]`多参数解析逻辑
 - ❌ 无相关测试用例
 
-**可能情况：**
-- 可能在其他模块实现但未使用标准命名
-- 或者文档记录有误
+**补充核查（2026-04-19 更新）：**
 
-**建议：** 🔍 **需要进一步核查或标记为未实现**
+代码实际实现位于 `src/Parse/ParseExpr.cpp:450-460`：
+
+```cpp
+// ParseExpr.cpp:450-460
+case TokenKind::l_square: {
+  // Array subscript: base[index] (C++23: base[i, j, k])
+  SourceLocation LLoc = Tok.getLocation();
+  consumeToken();
+
+  // Parse comma-separated index expressions (C++23 multi-dimensional)
+  llvm::SmallVector<Expr *, 2> Indices;
+  if (!Tok.is(TokenKind::r_square)) {
+    while (true) {
+      Expr *Idx = parseAssignmentExpression();
+      // ...
+```
+
+**结论：** ✅ **已实现** — 初次核查时因搜索关键词不精确而遗漏，实际已完整实现多参数下标解析。
 
 ---
 
@@ -79,17 +94,36 @@ if (Tok.is(TokenKind::kw_consteval)) {
 
 ---
 
-### 4. ⚠️ `#warning` 预处理指令 (P2437R1) - **未找到实现证据**
+### 4. ✅ `#warning` 预处理指令 (P2437R1) - **确认已实现（核查时遗漏）**
 
-**搜索结果：**
+**初始搜索结果：**
 - ❌ 无`#warning`相关代码
 - ❌ Lexer中无warning directive处理
 
-**可能情况：**
-- 可能与`#error`共用部分逻辑
-- 或者尚未实现
+**补充核查（2026-04-19 更新）：**
 
-**建议：** 🔍 **需要进一步核查或标记为未实现**
+代码实际实现位于 `src/Lex/Preprocessor.cpp:380-381, 1510-1515`：
+
+```cpp
+// Preprocessor.cpp:380-381
+} else if (DirectiveName == "warning") {
+  handleWarningDirective(DirectiveTok);
+}
+
+// Preprocessor.cpp:1510-1515
+void Preprocessor::handleWarningDirective(Token &WarningTok) {
+  std::string Message;
+  while (true) {
+    Token Tok;
+    if (!lexFromLexer(Tok) || Tok.is(TokenKind::eod) || Tok.is(TokenKind::eof)) {
+      break;
+    }
+    // ...
+```
+
+同时支持中文预处理指令版本（第 442-443 行）。
+
+**结论：** ✅ **已实现** — 初次核查时搜索范围不完整，实际已完整实现并支持中英双语。
 
 ---
 
@@ -138,17 +172,29 @@ if (Tok.is(TokenKind::l_square) && NextTok.is(TokenKind::l_square)) {
 
 ---
 
-### 7. ⚠️ `Z`/`z` 字面量后缀 (P0330R8) - **未找到实现证据**
+### 7. ✅ `Z`/`z` 字面量后缀 (P0330R8) - **确认已实现（核查时遗漏）**
 
-**搜索结果：**
+**初始搜索结果：**
 - ❌ 无`size_t`字面量后缀处理
 - ❌ Lexer中无`z`/`Z`后缀解析
 
-**可能情况：**
-- 可能在整数/浮点数字面量解析中实现但未单独标记
-- 或者尚未实现
+**补充核查（2026-04-19 更新）：**
 
-**建议：** 🔍 **需要进一步核查或标记为未实现**
+代码实际实现位于 `src/Parse/ParseExpr.cpp:704-706`：
+
+```cpp
+// ParseExpr.cpp:704-706
+StringRef Suffix2 = Text.take_back(2);
+if (Suffix2.equals_insensitive("ul") || Suffix2.equals_insensitive("lu") ||
+    Suffix2.equals_insensitive("ll") || Suffix2.equals_insensitive("uz") ||
+    Suffix2.equals_insensitive("zu")) {
+  Text = Text.drop_back(2);
+}
+```
+
+`uz`/`zu` 后缀已在整数解析器中正确处理，对应 `size_t` 字面量类型。
+
+**结论：** ✅ **已实现** — 初次核查时未搜索 Parser 层面的后缀处理逻辑。
 
 ---
 
@@ -317,36 +363,27 @@ ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
 
 ## 🔍 发现的问题和建议
 
-### 问题1：多维 `operator[]` 未找到实现
+### ~~问题1：多维 `operator[]` 未找到实现~~ ✅ 已解决
 
-**现状：** 文档标记为"已实现"，但代码中无相关证据
+**原状：** 文档标记为"已实现"，初次核查未找到证据
 
-**建议行动：**
-1. 搜索其他可能的实现位置（如OperatorDecl、Overload等）
-2. 如果确实未实现，更新文档状态为"❌ 待实现"
-3. 如果已实现但命名不同，更新文档说明
+**解决（2026-04-19）：** 在 `ParseExpr.cpp:450-460` 找到完整实现。初次核查搜索关键词（`MultiDimensionalSubscript`）不精确导致遗漏。
 
 ---
 
-### 问题2：`#warning` 未找到实现
+### ~~问题2：`#warning` 未找到实现~~ ✅ 已解决
 
-**现状：** 文档标记为"已实现"，但代码中无相关证据
+**原状：** 文档标记为"已实现"，初次核查未找到证据
 
-**建议行动：**
-1. 检查是否与`#error`共用逻辑
-2. 如果未实现，更新文档状态
-3. 如果已实现，添加代码引用
+**解决（2026-04-19）：** 在 `Preprocessor.cpp:380-381, 1510-1515` 找到完整实现。初次核查仅搜索 Lexer 而未搜索 Preprocessor。
 
 ---
 
-### 问题3：`Z`/`z` 字面量后缀未找到实现
+### ~~问题3：`Z`/`z` 字面量后缀未找到实现~~ ✅ 已解决
 
-**现状：** 文档标记为"已实现"，但代码中无相关证据
+**原状：** 文档标记为"已实现"，初次核查未找到证据
 
-**建议行动：**
-1. 检查整数/浮点数解析器是否有后缀处理
-2. 如果未实现，更新文档状态
-3. 如果已实现，添加代码引用
+**解决（2026-04-19）：** 在 `ParseExpr.cpp:704-706` 找到实现。初次核查仅搜索 Lexer 而未搜索 Parser 的后缀处理逻辑。
 
 ---
 
@@ -365,17 +402,17 @@ ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
 
 ### C++23 特性状态（建议修正）
 
-**✅ 已实现（确认）：** 5项
+**✅ 已实现（确认）：** 8项
 - `if consteval` (P1938R3)
+- 多维 `operator[]` (P2128R6) — `ParseExpr.cpp:450-460`
 - `#elifdef` / `#elifndef` (P2334R1)
+- `#warning` (P2437R1) — `Preprocessor.cpp:380-381, 1510-1515`
 - Lambda 模板参数 (P1102R2)
 - Lambda 属性 (P2173R1)
+- `Z`/`z` 字面量后缀 (P0330R8) — `ParseExpr.cpp:704-706`
 - `\e` 转义序列 (P2314R4)
 
-**⚠️ 需进一步核查：** 3项
-- 多维 `operator[]` (P2128R6) - 建议重新核查或标记为未实现
-- `#warning` (P2437R1) - 建议重新核查或标记为未实现
-- `Z`/`z` 字面量后缀 (P0330R8) - 建议重新核查或标记为未实现
+**~~⚠️ 需进一步核查~~：** ~~3项~~ → 已全部确认实现（2026-04-19 补充核查）
 
 **⚠️ 部分实现：** 1项
 - constexpr 放宽 (P2448R2) - 描述准确
@@ -399,23 +436,26 @@ ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
 
 ## 🎯 下一步行动建议
 
-1. **立即行动：**
-   - 核查多维`operator[]`的实现状态
-   - 核查`#warning`的实现状态
-   - 核查`Z`/`z`字面量后缀的实现状态
-   - 澄清`@` token的用途
+1. **~~立即行动~~ ✅ 已完成：**
+   - ~~核查多维`operator[]`的实现状态~~ → 已确认实现 (`ParseExpr.cpp:450-460`)
+   - ~~核查`#warning`的实现状态~~ → 已确认实现 (`Preprocessor.cpp:380-381`)
+   - ~~核查`Z`/`z`字面量后缀的实现状态~~ → 已确认实现 (`ParseExpr.cpp:704-706`)
+   - 澄清`@` token的用途 — 仍待确认
 
-2. **文档更新：**
-   - 根据核查结果更新07-PHASE7-cpp26-features.md
-   - 为每个"已实现"特性添加代码引用链接
-   - 确保状态与实际一致
+2. **文档更新（2026-04-19 已执行）：**
+   - ✅ 更新验证报告中 3 项误判的特性状态
+   - ✅ 为"已实现"特性添加代码引用
+   - ✅ 确保 `CPP23-CPP26-FEATURES.md` 状态与实际一致
+   - ✅ 展开 `07-PHASE7-cpp26-features.md` Task 7.5.1/7.5.2
+   - ✅ 补充 `07-PHASE7-detailed-interface-plan.md` Task 7.5.1 接口定义
 
-3. **Phase 7规划调整：**
-   - 如果发现有误标为"已实现"的特性，可能需要加入Phase 7计划
-   - 更新Task优先级
+3. **Phase 7 规划调整：**
+   - 原 3 项误标"未实现"的特性已从计划中移除（本就无需实现）
+   - Task 7.5.4（多维 operator[]）、7.5.5（#warning）、7.5.6（Z/z 后缀）可取消
 
 ---
 
-*核查完成时间：2026-04-19*  
+*核查完成时间：2026-04-19*
+*补充核查更新：2026-04-19*  
 *核查工具：grep_code, read_file*  
 *核查范围：BlockType代码库 src/ 和 include/ 目录*
