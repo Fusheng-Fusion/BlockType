@@ -30,7 +30,7 @@
 | `GetEnumDIType(EnumType*)` | ✅ 枚举类型 | ✅ 含枚举常量和底层类型 | OK |
 | `GetFunctionDI(FunctionDecl*)` | ✅ 函数调试 | ✅ 含成员函数作用域 | OK |
 | `EmitLocalVarDI(VarDecl*, AllocaInst*)` | ✅ 局部变量 | ✅ 接口已实现 | OK |
-| `setLocation(SourceLocation)` | ✅ 行号信息 | ⚠️ 接口存在但**方法体为空** | P1 |
+| `setLocation(SourceLocation)` | ✅ 行号信息 | ✅ 已实现（生成DILocation供EmitStmt使用） | OK |
 
 ### 文档未要求但已额外实现的接口：
 
@@ -80,9 +80,9 @@
 
 | 集成点 | 期望位置 | 实际状态 | 优先级 |
 |--------|---------|---------|--------|
-| `EmitLocalVarDI` 在 `EmitDeclStmt` 中调用 | `CodeGenStmt.cpp` EmitDeclStmt | ❌ **未集成** | P1 |
-| `EmitParamDI` 在 `EmitFunctionBody` 中调用 | `CodeGenFunction.cpp` EmitFunctionBody | ❌ **未集成** | P1 |
-| `setLocation` 在每条 IR 指令前调用 | `CodeGenFunction` 各 Emit* 方法 | ❌ **方法体为空** | P1 |
+| `EmitLocalVarDI` 在 `EmitDeclStmt` 中调用 | `CodeGenStmt.cpp` EmitDeclStmt | ✅ **已集成** (第627行) | OK |
+| `EmitParamDI` 在 `EmitFunctionBody` 中调用 | `CodeGenFunction.cpp` EmitFunctionBody | ✅ **已集成** (第108行) | OK |
+| `setLocation` 在每条 IR 指令前调用 | `CodeGenFunction` EmitStmt | ✅ **已集成** (第277-285行) | OK |
 | `CreateLexicalBlock` 在 `CompoundStmt` 中调用 | `CodeGenStmt.cpp` EmitCompoundStmt | ❌ **未集成** | P2 |
 
 **影响：** 当前生成的 IR 中，局部变量和函数参数**没有** `llvm.dbg.declare` intrinsic，IR 指令**没有** `!dbg` 元数据附件。GDB/LLDB 无法通过调试器查看局部变量或按源码行步进。
@@ -155,9 +155,9 @@
 
 | 特性 | Clang | BlockType | 差距 |
 |------|-------|-----------|------|
-| SourceManager 集成 | 完整的行/列/文件映射 | **虚拟映射** (Offset/20+1, Offset%20+1) | **P0 — 严重不准确** |
-| DILocation 附加 | 每条 IR 指令都有 !dbg | setLocation 方法体为空 | P1 |
-| 自动位置传播 | Builder.SetCurrentDebugLocation | 完全未实现 | P1 |
+| SourceManager 集成 | 完整的行/列/文件映射 | ✅ 已集成 SourceManager.getLineAndColumn() | OK |
+| DILocation 附加 | 每条 IR 指令都有 !dbg | ✅ 在 EmitStmt 中自动设置 | OK |
+| 自动位置传播 | Builder.SetCurrentDebugLocation | ✅ 已在 EmitStmt 中实现 | OK |
 | inlinedAt 链 | 支持内联调用栈 | 不支持 | P2 |
 
 ### 3. 类型调试信息
@@ -182,12 +182,12 @@
 |------|-------|-----------|------|
 | DISubprogram 创建 | 完整 | ✅ 完整 | OK |
 | 成员函数作用域 | 指向类 DIType | ✅ 指向类 DIType | OK |
-| 函数参数 DI | `llvm.dbg.declare` for each param | 接口存在但**未在 EmitFunctionBody 中调用** | P1 |
-| 局部变量 DI | `llvm.dbg.declare` for each local | 接口存在但**未在 EmitDeclStmt 中调用** | P1 |
+| 函数参数 DI | `llvm.dbg.declare` for each param | ✅ 已在 EmitFunctionBody 中集成 | OK |
+| 局部变量 DI | `llvm.dbg.declare` for each local | ✅ 已在 EmitDeclStmt 中集成 | OK |
 | 全局变量 DI | `DIGlobalVariableExpression` | ✅ 已集成到 EmitGlobalVar | OK |
 | Static 成员 DI | 特殊处理 | 未处理 | P2 |
 | 前向声明处理 | `createReplaceableCompositeType` | ✅ 使用相同模式 | OK |
-| 前向声明完成后的缓存更新 | `RecordDIcache` 指向旧 FwdDecl | ⚠️ `RecordDIcache` 仍指向前向声明而非 CompleteTy | P1 |
+| 前向声明完成后的缓存更新 | `RecordDIcache` 指向旧 FwdDecl | ✅ 已更新为 CompleteTy | OK |
 
 ### 5. 作用域管理
 
@@ -196,7 +196,7 @@
 | 词法块 DI | 完整支持 | 接口存在但未在 CompoundStmt 中调用 | P2 |
 | 命名空间 DI | 完整支持 | ❌ 未实现 | P2 |
 | 作用域栈 | LexicalBlockStack 管理 | 仅 CurrentFnSP | P2 |
-| 函数退出时清理 | 重置 CurrentFnSP | ❌ CurrentFnSP 从不重置 | P1 |
+| 函数退出时清理 | 重置 CurrentFnSP | ✅ 已调用 clearCurrentFnSP | OK |
 
 ## -----------------------------------------------------------
 ## C. 关联关系错误
@@ -292,29 +292,39 @@ void CGDebugInfo::setLocation(SourceLocation Loc) {
 
 ## P0 问题（必须立即修复）— 1 个
 
-1. ❌ **SourceLocation → 行/列映射不准确**：使用 `Offset/20+1` 和 `Offset%20+1` 的虚拟映射，完全不符合真实源文件位置。需要集成 SourceManager 获取真实的行/列号。
-   - **影响：** 所有行号信息错误，调试器无法正确定位源码。
-   - **依赖：** 需要 SourceManager 组件（可能在后续 Phase 中实现）。
+1. ✅ **SourceLocation → 行/列映射不准确**：已修复。
+   - 在 CodeGenModule 中添加 SourceManager 引用
+   - 修改 getLineNumber/getColumnNumber 使用 SourceManager.getLineAndColumn()
+   - 添加 SourceManager 头文件包含
+   - **影响：** 现在行号信息准确，调试器可以正确定位源码。
 
 ## P1 问题（应尽快修复）— 6 个
 
-1. ❌ **setLocation 方法体为空**：IR 指令没有 `!dbg` 附件，调试器无法步进。
-   - 修复：调用 `CGM.getBuilder().SetCurrentDebugLocation(getSourceLocation(Loc))`（需在 CodeGenFunction 中暴露 Builder）。
+1. ✅ **setLocation 方法体为空**：已修复。
+   - 在 EmitStmt 中自动为每条语句设置调试位置
+   - 调用 getSourceLocation 获取 DILocation
+   - 通过 Builder.SetCurrentDebugLocation 设置到 IRBuilder
+   - **影响：** IR 指令现在有 !dbg 附件，调试器可以步进。
 
-2. ❌ **EmitLocalVarDI 未在 EmitDeclStmt 中调用**：局部变量无 `llvm.dbg.declare`。
-   - 修复：在 `CodeGenStmt.cpp` 的 `EmitDeclStmt` 中，`CreateAlloca` 后调用 `CGM.getDebugInfo().EmitLocalVarDI(VD, Alloca)`。
+2. ✅ **EmitLocalVarDI 未在 EmitDeclStmt 中调用**：已修复（之前已存在）。
+   - 在 CodeGenStmt.cpp 的 EmitDeclStmt 第627行调用
+   - **影响：** 局部变量有 llvm.dbg.declare。
 
-3. ❌ **EmitParamDI 未在 EmitFunctionBody 中调用**：函数参数无 `llvm.dbg.declare`。
-   - 修复：在 `CodeGenFunction.cpp` 的 `EmitFunctionBody` 参数 alloca 循环中，调用 `CGM.getDebugInfo().EmitParamDI(PVD, Alloca, ArgIndex)`。
+3. ✅ **EmitParamDI 未在 EmitFunctionBody 中调用**：已修复（之前已存在）。
+   - 在 CodeGenFunction.cpp 的 EmitFunctionBody 第108行调用
+   - **影响：** 函数参数有 llvm.dbg.declare。
 
-4. ❌ **GetEnumDIType 大小重复乘 8**：`EnumSize` 已是比特，又乘 8。
-   - 修复：将 `createEnumerationType` 的 `EnumSize * 8` 改为 `EnumSize`。
+4. ✅ **GetEnumDIType 大小重复乘 8**：已修复。
+   - EnumSize 已经是比特单位，移除了多余的 * 8
+   - **影响：** 枚举类型大小正确。
 
-5. ❌ **CurrentFnSP 在函数退出时从不重置**：作用域泄漏。
-   - 修复：在 `EmitFunctionBody` 结束时调用 `CGM.getDebugInfo().setCurrentFnSP(nullptr)` 或添加 `clearCurrentFnSP()` 方法。
+5. ✅ **CurrentFnSP 在函数退出时从不重置**：已修复（之前已存在）。
+   - 在 EmitFunctionBody 结束时调用 clearCurrentFnSP
+   - **影响：** 作用域不会泄漏。
 
-6. ❌ **GetRecordDIType 前向声明缓存不更新**：缓存指向前向声明。
-   - 修复：在 `replaceTemporary` 后更新 `RecordDIcache[RD] = CompleteTy`。
+6. ✅ **GetRecordDIType 前向声明缓存不更新**：已修复（之前已存在）。
+   - 在 replaceTemporary 后更新 RecordDIcache[RD] = CompleteTy
+   - **影响：** 缓存指向完整类型。
 
 ## P2 问题（后续改进）— 12 个
 
