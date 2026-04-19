@@ -683,9 +683,8 @@ void CodeGenFunction::EmitBindingDecl(BindingDecl *BD, llvm::Value *TupleAddr, u
   // 2. Create alloca for the binding variable
   // 3. Store the extracted value
   
-  // Simplified: just create an alloca for now
   // Note: Currently Sema creates VarDecl as placeholder for BindingDecl
-  // So we cast it back to VarDecl for CodeGen compatibility
+  // and sets Init to the tuple expression (should be std::get<N>(tuple))
   auto *VD = llvm::dyn_cast<VarDecl>(BD);
   if (!VD) {
     // If not a VarDecl (future: real BindingDecl), create a simple alloca
@@ -716,11 +715,20 @@ void CodeGenFunction::EmitBindingDecl(BindingDecl *BD, llvm::Value *TupleAddr, u
     CGM.getDebugInfo().EmitLocalVarDI(VD, Alloca);
   }
   
-  // TODO: Extract value from tuple and store
-  // For now, zero-initialize
-  llvm::Type *LLVMType = CGM.getTypes().ConvertType(BindingType);
-  if (LLVMType) {
-    Builder.CreateStore(llvm::Constant::getNullValue(LLVMType), Alloca);
+  // Initialize with the init expression
+  // TODO: This should be std::get<N>(tuple), currently it's just the tuple itself
+  if (Expr *Initializer = VD->getInit()) {
+    // Emit the initialization expression
+    llvm::Value *InitValue = EmitExpr(Initializer);
+    if (InitValue) {
+      Builder.CreateStore(InitValue, Alloca);
+    }
+  } else {
+    // Zero-initialize if no init
+    llvm::Type *LLVMType = CGM.getTypes().ConvertType(BindingType);
+    if (LLVMType) {
+      Builder.CreateStore(llvm::Constant::getNullValue(LLVMType), Alloca);
+    }
   }
 }
 

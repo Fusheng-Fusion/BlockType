@@ -402,12 +402,27 @@ DeclResult Sema::ActOnDecompositionDecl(SourceLocation Loc,
   // 3. Set binding expression to std::get<N>(init)
   // 4. Return DeclGroupRef containing all bindings
   
-  // Simplified implementation: create VarDecls for now
+  // Simplified implementation: create VarDecls with init expressions
   llvm::SmallVector<Decl *, 4> Decls;
+  
   for (unsigned i = 0; i < Names.size(); ++i) {
+    // TODO: Determine the correct type for each binding element
+    // For std::pair<T1, T2>: element 0 has type T1, element 1 has type T2
+    // For std::tuple<Ts...>: element i has type Ti
+    // For now, use the tuple type (should extract element type)
+    QualType ElementType = TupleType;  // Placeholder - needs proper extraction
+    
     // Create a BindingDecl (currently using VarDecl as placeholder)
-    // TODO: Replace with actual BindingDecl when CodeGen support is ready
-    auto *VD = Context.create<VarDecl>(Loc, Names[i], TupleType, nullptr, false);
+    auto *VD = Context.create<VarDecl>(Loc, Names[i], ElementType, nullptr, false);
+    
+    // TODO: Create std::get<N>(init) expression
+    // This requires:
+    // 1. Lookup std::get function template
+    // 2. Create template specialization get<i>
+    // 3. Create CallExpr: std::get<i>(init)
+    // For now, just use the original init expression as placeholder
+    VD->setInit(Init);  // Temporary: should be std::get<i>(init)
+    
     Decls.push_back(VD);
     
     if (CurContext) {
