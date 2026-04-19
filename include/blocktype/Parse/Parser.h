@@ -614,6 +614,11 @@ public:
   /// Parses a declaration statement.
   Stmt *parseDeclarationStatement();
 
+  /// Parses a condition (expression or declaration).
+  /// Supports both `expr` and `type name = expr` forms.
+  /// Returns {CondExpr, CondVarDecl}.
+  std::pair<Expr *, VarDecl *> parseCondition();
+
   /// Parses a label statement.
   Stmt *parseLabelStatement();
 

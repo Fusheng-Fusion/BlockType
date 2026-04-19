@@ -1316,7 +1316,8 @@ StmtResult Sema::ActOnIfStmt(Expr *Cond, Stmt *Then, Stmt *Else,
 }
 
 StmtResult Sema::ActOnWhileStmt(Expr *Cond, Stmt *Body,
-                                 SourceLocation WhileLoc) {
+                                 SourceLocation WhileLoc,
+                                 VarDecl *CondVar) {
   ++BreakScopeDepth;
   ++ContinueScopeDepth;
   if (Cond && !Cond->getType().isNull() && !TC.CheckCondition(Cond, WhileLoc)) {
@@ -1325,7 +1326,7 @@ StmtResult Sema::ActOnWhileStmt(Expr *Cond, Stmt *Body,
     return StmtResult::getInvalid();
   }
 
-  auto *WS = Context.create<WhileStmt>(WhileLoc, Cond, Body);
+  auto *WS = Context.create<WhileStmt>(WhileLoc, Cond, Body, CondVar);
   --BreakScopeDepth;
   --ContinueScopeDepth;
   return StmtResult(WS);
@@ -1363,7 +1364,8 @@ StmtResult Sema::ActOnDoStmt(Expr *Cond, Stmt *Body, SourceLocation DoLoc) {
 }
 
 StmtResult Sema::ActOnSwitchStmt(Expr *Cond, Stmt *Body,
-                                  SourceLocation SwitchLoc) {
+                                  SourceLocation SwitchLoc,
+                                  VarDecl *CondVar) {
   ++BreakScopeDepth;
   ++SwitchScopeDepth;
   // Defensive: skip type check if type not yet set (incremental migration)
@@ -1374,13 +1376,14 @@ StmtResult Sema::ActOnSwitchStmt(Expr *Cond, Stmt *Body,
     return StmtResult::getInvalid();
   }
 
-  auto *SS = Context.create<SwitchStmt>(SwitchLoc, Cond, Body);
+  auto *SS = Context.create<SwitchStmt>(SwitchLoc, Cond, Body, CondVar);
   --BreakScopeDepth;
   --SwitchScopeDepth;
   return StmtResult(SS);
 }
 
-StmtResult Sema::ActOnCaseStmt(Expr *Val, Stmt *Body, SourceLocation CaseLoc) {
+StmtResult Sema::ActOnCaseStmt(Expr *Val, Expr *RHS, Stmt *Body,
+                               SourceLocation CaseLoc) {
   if (SwitchScopeDepth == 0) {
     Diags.report(CaseLoc, DiagID::err_case_not_in_switch);
     // Fall through: still create the node for error recovery
@@ -1388,7 +1391,11 @@ StmtResult Sema::ActOnCaseStmt(Expr *Val, Stmt *Body, SourceLocation CaseLoc) {
   if (Val && !Val->getType().isNull() && !TC.CheckCaseExpression(Val, CaseLoc))
     return StmtResult::getInvalid();
 
-  auto *CS = Context.create<CaseStmt>(CaseLoc, Val, nullptr, Body);
+  // Validate GNU case range RHS
+  if (RHS && !RHS->getType().isNull() && !TC.CheckCaseExpression(RHS, CaseLoc))
+    return StmtResult::getInvalid();
+
+  auto *CS = Context.create<CaseStmt>(CaseLoc, Val, RHS, Body);
   return StmtResult(CS);
 }
 

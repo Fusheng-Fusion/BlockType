@@ -552,13 +552,16 @@ public:
                          bool IsConsteval = false,
                          bool IsNegated = false);
   StmtResult ActOnWhileStmt(Expr *Cond, Stmt *Body,
-                            SourceLocation WhileLoc);
+                            SourceLocation WhileLoc,
+                            VarDecl *CondVar = nullptr);
   StmtResult ActOnForStmt(Stmt *Init, Expr *Cond, Expr *Inc, Stmt *Body,
                           SourceLocation ForLoc);
   StmtResult ActOnDoStmt(Expr *Cond, Stmt *Body, SourceLocation DoLoc);
   StmtResult ActOnSwitchStmt(Expr *Cond, Stmt *Body,
-                             SourceLocation SwitchLoc);
-  StmtResult ActOnCaseStmt(Expr *Val, Stmt *Body, SourceLocation CaseLoc);
+                             SourceLocation SwitchLoc,
+                             VarDecl *CondVar = nullptr);
+  StmtResult ActOnCaseStmt(Expr *Val, Expr *RHS, Stmt *Body,
+                           SourceLocation CaseLoc);
   StmtResult ActOnDefaultStmt(Stmt *Body, SourceLocation DefaultLoc);
   StmtResult ActOnBreakStmt(SourceLocation BreakLoc);
   StmtResult ActOnContinueStmt(SourceLocation ContinueLoc);

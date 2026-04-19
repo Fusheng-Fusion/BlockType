@@ -122,113 +122,121 @@ void CodeGenFunction::EmitSwitchStmt(SwitchStmt *SwitchStatement) {
   // Push break target（switch 中 continue 无效，设为 nullptr）
   BreakContinueStack.push_back({EndBB, nullptr});
 
-  // 遍历 switch body，收集 case 分支并使用 SwitchInst
+  // Case 信息
   struct CaseInfo {
-    llvm::ConstantInt *Value;
+    llvm::ConstantInt *Value;     // 下界值（或普通 case 的值）
+    llvm::ConstantInt *UpperValue; // 上界值（仅 GNU case range 有效）
     llvm::BasicBlock *BB;
+    bool IsRange;
   };
   llvm::SmallVector<CaseInfo, 8> Cases;
+  llvm::SmallVector<CaseInfo, 4> RangeCases;
   llvm::DenseMap<llvm::ConstantInt *, llvm::BasicBlock *> CaseValueToBB;
   llvm::BasicBlock *FoundDefaultBB = nullptr;
 
-  // 收集函数：从 body 中提取 case/default 分支
-  auto CollectCases = [&](Stmt *Body) {
-    if (auto *CS = llvm::dyn_cast<CompoundStmt>(Body)) {
-      for (Stmt *S : CS->getBody()) {
-        if (auto *CaseS = llvm::dyn_cast<CaseStmt>(S)) {
-          if (auto *CaseExpr = CaseS->getLHS()) {
-            llvm::Constant *ConstVal = CGM.getConstants().EmitConstant(CaseExpr);
-            if (auto *CI = llvm::dyn_cast_or_null<llvm::ConstantInt>(ConstVal)) {
-              llvm::BasicBlock *CaseBB = createBasicBlock("switch.case");
-              Cases.push_back({CI, CaseBB});
-              CaseValueToBB[CI] = CaseBB;
-            }
-          }
-          // GNU case range: case LHS ... RHS → 生成 LHS 到 RHS 之间的所有值
-          // 对于大范围（如 case 'a'...'z'），逐值添加会消耗大量内存
-          // 简化实现：只处理 LHS，RHS 作为 fallthrough 记录
-          // 完整实现需要位检测范围或线性判断
-          if (auto *CaseS2 = llvm::dyn_cast<CaseStmt>(S)) {
-            if (CaseS2->getRHS()) {
-              // GNU case range — 标记为需要范围判断（简化处理）
-              // TODO: 实现范围判断代码生成
-            }
-          }
-        } else if (auto *DefaultS = llvm::dyn_cast<DefaultStmt>(S)) {
-          FoundDefaultBB = DefaultBB;
-        }
-      }
-    } else if (Body) {
-      // 非 CompoundStmt 的 switch body（如 switch(x) case 1: ...）
-      // 尝试将 body 直接作为单个语句处理
-      if (auto *CaseS = llvm::dyn_cast<CaseStmt>(Body)) {
+  // 递归收集单个 stmt 中的 case/default 信息。
+  // 处理 CaseStmt → SubStmt → CaseStmt 链式结构（非 CompoundStmt body）。
+  auto collectCasesFromStmt = [&](Stmt *S, auto &Self) -> void {
+    while (S) {
+      if (auto *CaseS = llvm::dyn_cast<CaseStmt>(S)) {
         if (auto *CaseExpr = CaseS->getLHS()) {
           llvm::Constant *ConstVal = CGM.getConstants().EmitConstant(CaseExpr);
           if (auto *CI = llvm::dyn_cast_or_null<llvm::ConstantInt>(ConstVal)) {
             llvm::BasicBlock *CaseBB = createBasicBlock("switch.case");
-            Cases.push_back({CI, CaseBB});
+            bool IsRange = (CaseS->getRHS() != nullptr);
+            llvm::ConstantInt *UpperCI = nullptr;
+            if (IsRange) {
+              llvm::Constant *UpperVal =
+                  CGM.getConstants().EmitConstant(CaseS->getRHS());
+              UpperCI = llvm::dyn_cast_or_null<llvm::ConstantInt>(UpperVal);
+              if (!UpperCI) {
+                IsRange = false; // RHS 不是常量整数，降级为普通 case
+              }
+            }
+            CaseInfo Info{CI, IsRange ? UpperCI : nullptr, CaseBB, IsRange};
+            if (IsRange) {
+              RangeCases.push_back(Info);
+            }
+            Cases.push_back(Info);
             CaseValueToBB[CI] = CaseBB;
           }
         }
-      } else if (auto *DefaultS = llvm::dyn_cast<DefaultStmt>(Body)) {
+        // 递归处理 SubStmt（可能是下一个 CaseStmt 或 DefaultStmt）
+        S = CaseS->getSubStmt();
+      } else if (auto *DefaultS = llvm::dyn_cast<DefaultStmt>(S)) {
         FoundDefaultBB = DefaultBB;
+        // DefaultStmt 的 SubStmt 也可能包含更多 case
+        S = DefaultS->getSubStmt();
+      } else {
+        break; // 普通语句，停止
       }
     }
   };
 
-  CollectCases(SwitchStatement->getBody());
+  // 统一收集：CompoundStmt 和非 CompoundStmt 共用递归逻辑
+  Stmt *Body = SwitchStatement->getBody();
+  if (auto *CS = llvm::dyn_cast<CompoundStmt>(Body)) {
+    for (Stmt *S : CS->getBody()) {
+      collectCasesFromStmt(S, collectCasesFromStmt);
+    }
+  } else if (Body) {
+    collectCasesFromStmt(Body, collectCasesFromStmt);
+  }
 
   // 如果条件值需要截断/扩展以匹配 case 常量的位宽，确保类型一致
   // SwitchInst 要求条件值和所有 case 值类型一致
   if (!Cases.empty()) {
     llvm::Type *CaseTy = Cases[0].Value->getType();
     if (Condition->getType() != CaseTy) {
-      Condition = Builder.CreateIntCast(Condition, CaseTy, Condition->getType()->isIntegerTy(1) ? false : true, "switch.cast");
+      Condition = Builder.CreateIntCast(
+          Condition, CaseTy,
+          Condition->getType()->isIntegerTy(1) ? false : true, "switch.cast");
     }
   }
 
-  // 创建 SwitchInst
-  auto *SwitchInst = Builder.CreateSwitch(Condition, DefaultBB, Cases.size());
-  for (auto &C : Cases) {
-    SwitchInst->addCase(C.Value, C.BB);
+  // 如果有 range case，需要在 default 路径中插入范围判断
+  // 将 SwitchInst 的 default 目标改为 range check block
+  llvm::BasicBlock *SwitchDefaultBB = DefaultBB;
+  if (!RangeCases.empty()) {
+    SwitchDefaultBB = createBasicBlock("switch.rangecheck");
   }
 
-  // 生成每个 case/default 的代码
-  auto EmitSwitchBody = [&](Stmt *Body) {
-    if (auto *CS = llvm::dyn_cast<CompoundStmt>(Body)) {
-      for (Stmt *S : CS->getBody()) {
-        if (auto *CaseS = llvm::dyn_cast<CaseStmt>(S)) {
-          // 从缓存的映射中查找 BB
-          llvm::BasicBlock *CaseBB = nullptr;
-          if (auto *CaseExpr = CaseS->getLHS()) {
-            llvm::Constant *ConstVal = CGM.getConstants().EmitConstant(CaseExpr);
-            if (auto *CI = llvm::dyn_cast_or_null<llvm::ConstantInt>(ConstVal)) {
-              auto It = CaseValueToBB.find(CI);
-              if (It != CaseValueToBB.end()) {
-                CaseBB = It->second;
-              }
-            }
-          }
-          if (CaseBB) {
-            EmitBlock(CaseBB);
-          }
-          if (CaseS->getSubStmt()) {
-            EmitStmt(CaseS->getSubStmt());
-          }
-          // fallthrough: 不添加 br，允许继续到下一个 case
-        } else if (auto *DefaultS = llvm::dyn_cast<DefaultStmt>(S)) {
-          EmitBlock(DefaultBB);
-          if (DefaultS->getSubStmt()) {
-            EmitStmt(DefaultS->getSubStmt());
-          }
-        } else {
-          // 普通 fallthrough 代码
-          EmitStmt(S);
-        }
+  // 创建 SwitchInst（只包含普通 case，range case 在 default 路径中处理）
+  unsigned NormalCaseCount = Cases.size() - RangeCases.size();
+  auto *SwitchInst =
+      Builder.CreateSwitch(Condition, SwitchDefaultBB, NormalCaseCount);
+  for (auto &C : Cases) {
+    if (!C.IsRange) {
+      SwitchInst->addCase(C.Value, C.BB);
+    }
+  }
+
+  // 生成 GNU case range 的范围判断代码（在 default 路径中）
+  if (!RangeCases.empty()) {
+    EmitBlock(SwitchDefaultBB);
+    for (unsigned i = 0, e = RangeCases.size(); i < e; ++i) {
+      auto &RC = RangeCases[i];
+      llvm::BasicBlock *NextBB =
+          (i + 1 < e) ? createBasicBlock("switch.rangecheck")
+                      : DefaultBB;
+      llvm::Value *LowerCmp =
+          Builder.CreateICmpSGE(Condition, RC.Value, "range.lb");
+      llvm::Value *UpperCmp =
+          Builder.CreateICmpSLE(Condition, RC.UpperValue, "range.ub");
+      llvm::Value *InRange =
+          Builder.CreateAnd(LowerCmp, UpperCmp, "range.in");
+      Builder.CreateCondBr(InRange, RC.BB, NextBB);
+      if (i + 1 < e) {
+        EmitBlock(NextBB);
       }
-    } else if (Body) {
-      // 非 CompoundStmt body — 直接处理
-      if (auto *CaseS = llvm::dyn_cast<CaseStmt>(Body)) {
+    }
+  }
+
+  // 递归生成 case/default 的代码
+  auto emitSwitchBodyFromStmt = [&](Stmt *S, auto &Self) -> void {
+    while (S) {
+      if (auto *CaseS = llvm::dyn_cast<CaseStmt>(S)) {
+        // 从缓存的映射中查找 BB
         llvm::BasicBlock *CaseBB = nullptr;
         if (auto *CaseExpr = CaseS->getLHS()) {
           llvm::Constant *ConstVal = CGM.getConstants().EmitConstant(CaseExpr);
@@ -242,21 +250,29 @@ void CodeGenFunction::EmitSwitchStmt(SwitchStmt *SwitchStatement) {
         if (CaseBB) {
           EmitBlock(CaseBB);
         }
-        if (CaseS->getSubStmt()) {
-          EmitStmt(CaseS->getSubStmt());
-        }
-      } else if (auto *DefaultS = llvm::dyn_cast<DefaultStmt>(Body)) {
+        // 递归处理 SubStmt（可能是下一个 CaseStmt 或普通语句）
+        S = CaseS->getSubStmt();
+        // 注意：不 EmitStmt(SubStmt) 然后 break
+        // 而是继续 while 循环处理链式结构
+      } else if (auto *DefaultS = llvm::dyn_cast<DefaultStmt>(S)) {
         EmitBlock(DefaultBB);
-        if (DefaultS->getSubStmt()) {
-          EmitStmt(DefaultS->getSubStmt());
-        }
+        S = DefaultS->getSubStmt();
       } else {
-        EmitStmt(Body);
+        // 普通语句 — 发射并停止
+        EmitStmt(S);
+        break;
       }
     }
   };
 
-  EmitSwitchBody(SwitchStatement->getBody());
+  // 统一生成 body
+  if (auto *CS = llvm::dyn_cast<CompoundStmt>(Body)) {
+    for (Stmt *S : CS->getBody()) {
+      emitSwitchBodyFromStmt(S, emitSwitchBodyFromStmt);
+    }
+  } else if (Body) {
+    emitSwitchBodyFromStmt(Body, emitSwitchBodyFromStmt);
+  }
 
   // Default case（如果没有在 body 中遇到 DefaultStmt）
   if (!FoundDefaultBB) {

@@ -84,6 +84,105 @@ bool Parser::isDeclarationStatement() {
 }
 
 //===----------------------------------------------------------------------===//
+// Condition parsing (supports condition variable declarations)
+//===----------------------------------------------------------------------===//
+
+std::pair<Expr *, VarDecl *> Parser::parseCondition() {
+  // Check if this looks like a condition variable declaration:
+  //   type identifier = expr
+  // Heuristic: if isDeclarationStatement() and after consuming the type specifiers
+  // we see identifier followed by '=' or '{', parse as declaration.
+  // Otherwise, parse as expression.
+  //
+  // Since parseDeclSpecifierSeq consumes tokens, we need to check carefully.
+  // Strategy: only accept simple type keywords (int, bool, float, etc.) or
+  // known type-name identifiers followed by identifier + '='.
+  bool CouldBeDecl = false;
+
+  // Quick check: current token is a simple type keyword and NextTok is identifier
+  if (Tok.is(TokenKind::kw_int) || Tok.is(TokenKind::kw_bool) ||
+      Tok.is(TokenKind::kw_float) || Tok.is(TokenKind::kw_double) ||
+      Tok.is(TokenKind::kw_char) || Tok.is(TokenKind::kw_short) ||
+      Tok.is(TokenKind::kw_long) || Tok.is(TokenKind::kw_unsigned) ||
+      Tok.is(TokenKind::kw_signed) || Tok.is(TokenKind::kw_auto) ||
+      Tok.is(TokenKind::kw_void) || Tok.is(TokenKind::kw_wchar_t) ||
+      Tok.is(TokenKind::kw_char8_t) || Tok.is(TokenKind::kw_char16_t) ||
+      Tok.is(TokenKind::kw_char32_t)) {
+    // For simple types: need NextTok to be identifier (after consuming all type
+    // specifiers, the next should be identifier)
+    // E.g., "unsigned int x = ..." — need more lookahead.
+    // Simple approach: just try parsing DeclSpec + Declarator.
+    CouldBeDecl = true;
+  } else if (Tok.is(TokenKind::identifier)) {
+    if (NamedDecl *D = Actions.LookupName(Tok.getText())) {
+      if (llvm::isa<TypeDecl>(D)) {
+        CouldBeDecl = true;
+      }
+    }
+  }
+
+  if (!CouldBeDecl) {
+    // Definitely not a declaration, parse as expression
+    Expr *Cond = parseExpression();
+    return {Cond, nullptr};
+  }
+
+  // Try to parse as condition variable declaration:
+  //   decl-specifier-seq declarator '=' expression
+  DeclSpec DS;
+  parseDeclSpecifierSeq(DS);
+  if (!DS.hasTypeSpecifier()) {
+    // Failed to parse type, shouldn't happen since we checked above
+    Expr *Cond = parseExpression();
+    return {Cond, nullptr};
+  }
+
+  // After type specifiers, must see identifier
+  if (!Tok.is(TokenKind::identifier)) {
+    // This is not a condition variable (e.g., type followed by '(' is a cast)
+    // We've already consumed the type keywords...
+    // Create a recovery: parse remaining as expression (this is a cast expr)
+    // Actually this case is tricky. For now, create a DeclRefExpr if possible
+    // or return error.
+    emitError(DiagID::err_expected);
+    Expr *Cond = createRecoveryExpr(Tok.getLocation());
+    return {Cond, nullptr};
+  }
+
+  SourceLocation VarLoc = Tok.getLocation();
+  llvm::StringRef VarName = Tok.getText();
+
+  // Look ahead: after identifier, must be '=' or '{'
+  if (!NextTok.is(TokenKind::equal) && !NextTok.is(TokenKind::l_brace)) {
+    // Not a condition variable declaration (e.g., "MyType(x)" cast expression)
+    // We've consumed type specifiers but need to backtrack...
+    // Report error since we can't easily backtrack past DeclSpec parsing
+    emitError(DiagID::err_expected);
+    Expr *Cond = createRecoveryExpr(Tok.getLocation());
+    return {Cond, nullptr};
+  }
+
+  Declarator D(DS, DeclaratorContext::ConditionContext);
+  parseDeclarator(D);
+  QualType VarType = D.buildType(Context);
+
+  Expr *Init = nullptr;
+  if (tryConsumeToken(TokenKind::equal)) {
+    Init = parseExpression();
+  } else if (Tok.is(TokenKind::l_brace)) {
+    Init = parseInitializerList();
+  }
+
+  // Create VarDecl
+  auto *VD = llvm::cast<VarDecl>(
+      Actions.ActOnVarDecl(VarLoc, VarName, VarType, Init).get());
+
+  // Condition expression: reference to the variable (will be converted to bool)
+  Expr *Cond = Actions.ActOnDeclRefExpr(VarLoc, VD).get();
+  return {Cond, VD};
+}
+
+//===----------------------------------------------------------------------===//
 // Statement parsing entry point
 //===----------------------------------------------------------------------===//
 
@@ -293,11 +392,22 @@ Stmt *Parser::parseCaseStatement() {
   SourceLocation CaseLoc = Tok.getLocation();
   consumeToken(); // consume 'case'
 
-  // Parse the case value
+  // Parse the case value (LHS)
   Expr *CaseVal = parseExpression();
   if (!CaseVal) {
     emitError(DiagID::err_expected_expression);
     CaseVal = createRecoveryExpr(CaseLoc);
+  }
+
+  // GNU case range extension: case LHS ... RHS :
+  Expr *RHSVal = nullptr;
+  if (Tok.is(TokenKind::ellipsis)) {
+    consumeToken(); // consume '...'
+    RHSVal = parseExpression();
+    if (!RHSVal) {
+      emitError(DiagID::err_expected_expression);
+      RHSVal = createRecoveryExpr(Tok.getLocation());
+    }
   }
 
   if (!tryConsumeToken(TokenKind::colon)) {
@@ -310,7 +420,7 @@ Stmt *Parser::parseCaseStatement() {
     SubStmt = Actions.ActOnNullStmt(CaseLoc).get();
   }
 
-  return Actions.ActOnCaseStmt(CaseVal, SubStmt, CaseLoc).get();
+  return Actions.ActOnCaseStmt(CaseVal, RHSVal, SubStmt, CaseLoc).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -414,6 +524,7 @@ Stmt *Parser::parseIfStatement() {
   }
 
   Expr *Cond = nullptr;
+  VarDecl *CondVar = nullptr;
   if (!IsConsteval) {
     // Parse condition (only for regular if)
     if (!tryConsumeToken(TokenKind::l_paren)) {
@@ -421,7 +532,9 @@ Stmt *Parser::parseIfStatement() {
       return Actions.ActOnNullStmt(IfLoc).get();
     }
 
-    Cond = parseExpression();
+    auto [CondExpr, CV] = parseCondition();
+    Cond = CondExpr;
+    CondVar = CV;
     if (!Cond) {
       emitError(DiagID::err_expected_expression);
       Cond = createRecoveryExpr(IfLoc);
@@ -449,7 +562,7 @@ Stmt *Parser::parseIfStatement() {
   }
 
   return Actions.ActOnIfStmt(Cond, ThenStmt, ElseStmt, IfLoc,
-                             nullptr, IsConsteval, IsNegated).get();
+                             CondVar, IsConsteval, IsNegated).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -466,7 +579,7 @@ Stmt *Parser::parseSwitchStatement() {
     return Actions.ActOnNullStmt(SwitchLoc).get();
   }
 
-  Expr *Cond = parseExpression();
+  auto [Cond, CondVar] = parseCondition();
   if (!Cond) {
     emitError(DiagID::err_expected_expression);
     Cond = createRecoveryExpr(SwitchLoc);
@@ -482,7 +595,7 @@ Stmt *Parser::parseSwitchStatement() {
     Body = Actions.ActOnNullStmt(SwitchLoc).get();
   }
 
-  return Actions.ActOnSwitchStmt(Cond, Body, SwitchLoc).get();
+  return Actions.ActOnSwitchStmt(Cond, Body, SwitchLoc, CondVar).get();
 }
 
 //===----------------------------------------------------------------------===//
@@ -499,7 +612,7 @@ Stmt *Parser::parseWhileStatement() {
     return Actions.ActOnNullStmt(WhileLoc).get();
   }
 
-  Expr *Cond = parseExpression();
+  auto [Cond, CondVar] = parseCondition();
   if (!Cond) {
     emitError(DiagID::err_expected_expression);
     Cond = createRecoveryExpr(WhileLoc);
@@ -515,7 +628,7 @@ Stmt *Parser::parseWhileStatement() {
     Body = Actions.ActOnNullStmt(WhileLoc).get();
   }
 
-  return Actions.ActOnWhileStmt(Cond, Body, WhileLoc).get();
+  return Actions.ActOnWhileStmt(Cond, Body, WhileLoc, CondVar).get();
 }
 
 //===----------------------------------------------------------------------===//
