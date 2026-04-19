@@ -137,8 +137,8 @@ public:
   void setCanonicalType(const Type *CT) { CanonicalType = CT; }
 
   /// dump - Debug dump.
-  void dump() const;
-  void dump(llvm::raw_ostream &OS) const;
+  virtual void dump() const;
+  virtual void dump(llvm::raw_ostream &OS) const;
 
   static bool classof(const Type *T) { return true; }
 };

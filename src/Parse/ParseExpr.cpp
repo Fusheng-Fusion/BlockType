@@ -495,10 +495,9 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       consumeToken();
 
       // Look up member in the base type
-      // Note: Full type inference is not yet implemented, so we pass an empty type.
-      // When type is empty, access control check is skipped (will be done in semantic analysis).
-      // This will be improved when type inference is added to the Expr class.
-      ValueDecl *MemberDecl = lookupMemberInType(MemberName, QualType(), MemberLoc);
+      // 从 Base 表达式获取类型，用于成员查找
+      QualType BaseType = Base ? Base->getType() : QualType();
+      ValueDecl *MemberDecl = lookupMemberInType(MemberName, BaseType, MemberLoc);
 
       // Create MemberExpr via Sema (direct form, Parser already looked up member)
       Base = Actions.ActOnMemberExprDirect(OpLoc, Base, MemberDecl, false).get();
@@ -522,10 +521,9 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       consumeToken();
 
       // Look up member in the base type
-      // Note: Full type inference is not yet implemented, so we pass an empty type.
-      // When type is empty, access control check is skipped (will be done in semantic analysis).
-      // This will be improved when type inference is added to the Expr class
-      ValueDecl *MemberDecl = lookupMemberInType(MemberName, QualType(), MemberLoc);
+      // 从 Base 表达式获取类型，用于成员查找（箭头操作符需要指针类型）
+      QualType BaseType = Base ? Base->getType() : QualType();
+      ValueDecl *MemberDecl = lookupMemberInType(MemberName, BaseType, MemberLoc);
 
       // Create MemberExpr with IsArrow = true via Sema
       Base = Actions.ActOnMemberExprDirect(OpLoc, Base, MemberDecl, true).get();
