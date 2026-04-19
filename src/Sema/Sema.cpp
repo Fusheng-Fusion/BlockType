@@ -368,6 +368,25 @@ DeclResult Sema::ActOnVarDeclFull(SourceLocation Loc, llvm::StringRef Name,
   return DeclResult(VD);
 }
 
+// P7.4.2: Placeholder variable `_` implementation
+DeclResult Sema::ActOnPlaceholderVarDecl(SourceLocation Loc, QualType T, Expr *Init) {
+  // Create a VarDecl with name "_" but mark it as placeholder
+  auto *VD = Context.create<VarDecl>(Loc, "_", T, Init, false);
+  VD->setPlaceholder(true);
+  
+  // IMPORTANT: Do NOT add to symbol table or current context
+  // Each `_` is a separate variable, even in the same scope
+  // We still need to register for CodeGen, but not for name lookup
+  
+  // Only add to CurContext for CodeGen purposes (so it gets emitted)
+  // But don't add to Symbols (symbol table)
+  if (CurContext) {
+    CurContext->addDecl(VD);
+  }
+  
+  return DeclResult(VD);
+}
+
 DeclResult Sema::ActOnFunctionDeclFull(SourceLocation Loc, llvm::StringRef Name,
                                        QualType T,
                                        llvm::ArrayRef<ParmVarDecl *> Params,
@@ -1680,8 +1699,19 @@ FunctionDecl *Sema::ResolveOverload(llvm::StringRef Name,
     return Best;
 
   if (Result == OverloadResult::Deleted) {
-    Diags.report(SourceLocation(), DiagID::err_ovl_deleted_function,
-                 Best->getName());
+    // P7.4.1: Check if deleted function has a custom reason
+    if (auto *FD = llvm::dyn_cast<FunctionDecl>(Best)) {
+      if (FD->hasDeletedReason()) {
+        Diags.report(SourceLocation(), DiagID::err_ovl_deleted_function_with_reason,
+                     Best->getName(), FD->getDeletedReason()->getValue());
+      } else {
+        Diags.report(SourceLocation(), DiagID::err_ovl_deleted_function,
+                     Best->getName());
+      }
+    } else {
+      Diags.report(SourceLocation(), DiagID::err_ovl_deleted_function,
+                   Best->getName());
+    }
     return nullptr;
   }
 

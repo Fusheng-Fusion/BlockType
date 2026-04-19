@@ -508,6 +508,7 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
     Stmt *Body = nullptr;
     bool IsDefaulted = false;
     bool IsDeleted = false;
+    StringLiteral *DeleteReason = nullptr;  // P7.4.1: delete("reason")
 
     if (Tok.is(TokenKind::l_brace)) {
       Body = parseCompoundStatement();
@@ -519,6 +520,15 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
       } else if (Tok.is(TokenKind::kw_delete)) {
         IsDeleted = true;
         consumeToken();
+        
+        // P7.4.1: Check for delete("reason") syntax
+        if (Tok.is(TokenKind::l_paren)) {
+          consumeToken(); // consume '('
+          if (Tok.is(TokenKind::string_literal)) {
+            DeleteReason = llvm::cast<StringLiteral>(parsePrimaryExpression());
+          }
+          expectAndConsume(TokenKind::r_paren, "expected ')' after delete reason");
+        }
       }
     }
 
@@ -538,6 +548,10 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
     // P7.1.3: Mark as static operator if static
     if (Method && IsStaticOp)
       Method->setStaticOperator(true);
+    
+    // P7.4.1: Set delete reason if present
+    if (Method && DeleteReason)
+      Method->setDeletedReason(DeleteReason);
 
     return Method;
   }

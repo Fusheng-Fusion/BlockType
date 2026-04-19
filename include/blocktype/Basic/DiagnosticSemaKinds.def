@@ -77,6 +77,21 @@ DIAG(err_ovl_ambiguous_call,     Error, \
 DIAG(err_ovl_deleted_function,   Error, \
   "call to deleted function '%0'",               \
   "调用了已删除的函数 '%0'")
+DIAG(err_ovl_deleted_function_with_reason, Error, \
+  "call to deleted function '%0': %1",           \
+  "调用已删除函数 '%0'：%1")
+
+//===----------------------------------------------------------------------===//
+// P7.4.2: Placeholder variable diagnostics (P2169R4)
+//===----------------------------------------------------------------------===//
+
+DIAG(warn_placeholder_var_with_linkage, Warning, \
+  "placeholder variable '_' declared with external linkage", \
+  "占位符变量 '_' 声明了外部链接")
+
+DIAG(err_placeholder_var_not_auto, Error, \
+  "placeholder variable '_' must have an auto type or be initialized", \
+  "占位符变量 '_' 必须有 auto 类型或被初始化")
 DIAG(note_ovl_candidate,         Note, \
   "candidate function",                           \
   "候选函数")

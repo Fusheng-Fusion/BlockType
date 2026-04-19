@@ -294,6 +294,20 @@ public:
   DeclResult ActOnVarDecl(SourceLocation Loc, llvm::StringRef Name,
                           QualType T, Expr *Init = nullptr);
 
+  // P7.4.2: Placeholder variable `_` (P2169R4)
+  /// Handle placeholder variable declaration `_`
+  ///
+  /// **Rules**:
+  /// - `_` is not added to symbol table (each `_` is a new variable)
+  /// - No "unused variable" warning
+  /// - Multiple `auto _ = expr` in same scope are allowed
+  DeclResult ActOnPlaceholderVarDecl(SourceLocation Loc, QualType T, Expr *Init);
+
+  /// Check if identifier is the placeholder `_`
+  static bool isPlaceholderIdentifier(llvm::StringRef Name) {
+    return Name == "_";
+  }
+
   DeclResult ActOnFunctionDecl(SourceLocation Loc, llvm::StringRef Name,
                                QualType T,
                                llvm::ArrayRef<ParmVarDecl *> Params,

@@ -26,6 +26,7 @@ namespace blocktype {
 class Expr;
 class Stmt;
 class CompoundStmt;
+class StringLiteral; // Forward declaration for P7.4.1
 class ParmVarDecl; // Forward declaration
 class CXXMethodDecl; // Forward declaration
 class CXXRecordDecl; // Forward declaration
@@ -120,6 +121,9 @@ protected:
   bool IsStatic;
   bool IsConstexpr;
 
+  // P7.4.2: Placeholder variable `_` (P2169R4)
+  bool IsPlaceholder = false;
+
 public:
   VarDecl(SourceLocation Loc, llvm::StringRef Name, QualType T, 
           Expr *Init = nullptr, bool IsStatic = false, bool IsConstexpr = false)
@@ -132,6 +136,16 @@ public:
   void setStatic(bool S) { IsStatic = S; }
   bool isConstexpr() const { return IsConstexpr; }
   void setConstexpr(bool C = true) { IsConstexpr = C; }
+
+  //===------------------------------------------------------------------===//
+  // P7.4.2: Placeholder variable `_` (P2169R4)
+  //===------------------------------------------------------------------===//
+
+  /// Whether this is a placeholder variable (named `_`).
+  bool isPlaceholder() const { return IsPlaceholder; }
+
+  /// Mark this variable as a placeholder.
+  void setPlaceholder(bool V) { IsPlaceholder = V; }
 
   NodeKind getKind() const override { return NodeKind::VarDeclKind; }
 
@@ -161,6 +175,9 @@ class FunctionDecl : public ValueDecl {
   // P7.1.1: Deducing this (P0847R7) - Explicit object parameter
   ParmVarDecl *ExplicitObjectParam = nullptr;
   bool HasExplicitObjectParam = false;
+
+  // P7.4.1: = delete("reason") (P2573R2) - Deleted function with reason
+  StringLiteral *DeletedReason = nullptr;
 
 public:
   FunctionDecl(SourceLocation Loc, llvm::StringRef Name, QualType T,
@@ -221,6 +238,19 @@ public:
   /// If hasExplicitObjectParam(), returns the parameter type.
   /// Otherwise, returns the traditional this pointer type.
   QualType getThisType(ASTContext &Ctx) const;
+
+  //===------------------------------------------------------------------===//
+  // P7.4.1: = delete("reason") (P2573R2) - Deleted function with reason
+  //===------------------------------------------------------------------===//
+
+  /// Whether this deleted function has a custom reason string.
+  bool hasDeletedReason() const { return DeletedReason != nullptr; }
+
+  /// Get the deletion reason string literal, if any.
+  StringLiteral *getDeletedReason() const { return DeletedReason; }
+
+  /// Set the deletion reason string.
+  void setDeletedReason(StringLiteral *S) { DeletedReason = S; }
 
   NodeKind getKind() const override { return NodeKind::FunctionDeclKind; }
 

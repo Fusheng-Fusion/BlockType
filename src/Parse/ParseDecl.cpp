@@ -1653,6 +1653,45 @@ VarDecl *Parser::buildVarDecl(Declarator &D) {
   SourceLocation NameLoc = D.getNameLoc();
   const DeclSpec &DS = D.getDeclSpec();
 
+  // P7.4.2: Check for placeholder variable `_`
+  if (Sema::isPlaceholderIdentifier(Name)) {
+    // Parse initializer
+    Expr *Init = nullptr;
+
+    if (Tok.is(TokenKind::equal)) {
+      consumeToken();
+      Init = parseExpression();
+    } else if (Tok.is(TokenKind::l_paren)) {
+      // Direct initialization: int _(10);
+      consumeToken();
+      llvm::SmallVector<Expr *, 4> Args;
+      while (!Tok.is(TokenKind::r_paren)) {
+        Expr *Arg = parseExpression();
+        if (Arg)
+          Args.push_back(Arg);
+        if (!Tok.is(TokenKind::comma))
+          break;
+        consumeToken();
+      }
+      expectAndConsume(TokenKind::r_paren, "expected ')' after initializer");
+      Init = Actions.ActOnCXXConstructExpr(NameLoc, T, Args).get();
+    } else if (Tok.is(TokenKind::l_brace)) {
+      Init = parseInitializerList(T);
+      if (!Init)
+        return nullptr;
+    }
+
+    // Expect semicolon
+    if (!Tok.is(TokenKind::semicolon)) {
+      emitError(DiagID::err_expected_semi);
+      return nullptr;
+    }
+    consumeToken();
+
+    // Create placeholder variable - not added to symbol table
+    return llvm::cast<VarDecl>(Actions.ActOnPlaceholderVarDecl(NameLoc, T, Init).get());
+  }
+
   // Parse initializer
   Expr *Init = nullptr;
 
@@ -1726,6 +1765,16 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
     consumeToken();
     if (Tok.is(TokenKind::kw_delete)) {
       consumeToken();
+      // P7.4.1: Check for delete("reason") syntax
+      if (Tok.is(TokenKind::l_paren)) {
+        consumeToken(); // consume '('
+        if (Tok.is(TokenKind::string_literal)) {
+          StringLiteral *DeleteReason = llvm::cast<StringLiteral>(parsePrimaryExpression());
+          // Note: DeleteReason will be set in Sema when FunctionDecl is created
+          // For now, we just parse and discard - full implementation needs Sema changes
+        }
+        expectAndConsume(TokenKind::r_paren, "expected ')' after delete reason");
+      }
     } else if (Tok.is(TokenKind::kw_default)) {
       consumeToken();
     }
