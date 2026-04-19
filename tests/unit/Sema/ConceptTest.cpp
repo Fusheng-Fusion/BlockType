@@ -57,7 +57,7 @@ TEST_F(ConceptTest, CheckConstraintSatisfactionTrueLiteral) {
   auto *TrueLit = Context.create<CXXBoolLiteral>(
       SourceLocation(1), true, Context.getBoolType());
 
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   EXPECT_TRUE(Checker.CheckConstraintSatisfaction(TrueLit, EmptyArgs));
 }
 
@@ -66,13 +66,13 @@ TEST_F(ConceptTest, CheckConstraintSatisfactionFalseLiteral) {
   auto *FalseLit = Context.create<CXXBoolLiteral>(
       SourceLocation(1), false, Context.getBoolType());
 
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   EXPECT_FALSE(Checker.CheckConstraintSatisfaction(FalseLit, EmptyArgs));
 }
 
 TEST_F(ConceptTest, CheckConstraintSatisfactionNullConstraint) {
   auto &CS = S->getConstraintChecker();
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   EXPECT_TRUE(CS.CheckConstraintSatisfaction(nullptr, EmptyArgs));
 }
 
@@ -88,7 +88,7 @@ TEST_F(ConceptTest, ConjunctionBothTrue) {
   auto *And = Context.create<BinaryOperator>(SourceLocation(3), True1, True2,
                                               BinaryOpKind::LAnd);
 
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   EXPECT_TRUE(Checker.CheckConstraintSatisfaction(And, EmptyArgs));
 }
 
@@ -102,7 +102,7 @@ TEST_F(ConceptTest, ConjunctionLeftFalse) {
   auto *And = Context.create<BinaryOperator>(SourceLocation(3), False, True,
                                               BinaryOpKind::LAnd);
 
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   EXPECT_FALSE(Checker.CheckConstraintSatisfaction(And, EmptyArgs));
 }
 
@@ -116,7 +116,7 @@ TEST_F(ConceptTest, DisjunctionLeftTrue) {
   auto *Or = Context.create<BinaryOperator>(SourceLocation(3), True, False,
                                              BinaryOpKind::LOr);
 
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   EXPECT_TRUE(Checker.CheckConstraintSatisfaction(Or, EmptyArgs));
 }
 
@@ -130,7 +130,7 @@ TEST_F(ConceptTest, DisjunctionBothFalse) {
   auto *Or = Context.create<BinaryOperator>(SourceLocation(3), False1, False2,
                                              BinaryOpKind::LOr);
 
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   EXPECT_FALSE(Checker.CheckConstraintSatisfaction(Or, EmptyArgs));
 }
 
@@ -144,7 +144,7 @@ TEST_F(ConceptTest, UnaryNotTrue) {
   auto *Not = Context.create<UnaryOperator>(SourceLocation(2), True,
                                              UnaryOpKind::LNot);
 
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   EXPECT_FALSE(Checker.CheckConstraintSatisfaction(Not, EmptyArgs));
 }
 
@@ -156,7 +156,7 @@ TEST_F(ConceptTest, UnaryNotFalse) {
   auto *Not = Context.create<UnaryOperator>(SourceLocation(2), False,
                                              UnaryOpKind::LNot);
 
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   EXPECT_TRUE(Checker.CheckConstraintSatisfaction(Not, EmptyArgs));
 }
 
@@ -247,7 +247,7 @@ TEST_F(ConceptTest, ComplexConstraintTree) {
   auto *Or = Context.create<BinaryOperator>(SourceLocation(4), And, False,
                                              BinaryOpKind::LOr);
 
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   EXPECT_TRUE(Checker.CheckConstraintSatisfaction(Or, EmptyArgs));
 }
 

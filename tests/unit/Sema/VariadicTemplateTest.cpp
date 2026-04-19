@@ -83,7 +83,7 @@ TEST_F(VariadicTemplateTest, TemplateArgumentListGetPack) {
   PackElems.push_back(TemplateArgument(Context.getFloatType()));
   TemplateArgument PackArg(PackElems);
 
-  TemplateArgumentList Args;
+  llvm::SmallVector<TemplateArgument, 2> Args;
   Args.push_back(PackArg);
 
   auto PackArgs = Args.getPackArgument();
@@ -93,7 +93,7 @@ TEST_F(VariadicTemplateTest, TemplateArgumentListGetPack) {
 }
 
 TEST_F(VariadicTemplateTest, TemplateArgumentListNoPackReturnsEmpty) {
-  TemplateArgumentList Args;
+  llvm::SmallVector<TemplateArgument, 2> Args;
   Args.push_back(TemplateArgument(Context.getIntType()));
 
   auto PackArgs = Args.getPackArgument();
@@ -112,7 +112,7 @@ TEST_F(VariadicTemplateTest, FoldIdentityAdd) {
                                           nullptr, nullptr, Pattern,
                                           BinaryOpKind::Add, true);
 
-  TemplateArgumentList EmptyPackArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyPackArgs;
   auto *Result = Inst.InstantiateFoldExpr(FE, EmptyPackArgs);
   ASSERT_NE(Result, nullptr);
   auto *IL = llvm::dyn_cast<IntegerLiteral>(Result);
@@ -130,7 +130,7 @@ TEST_F(VariadicTemplateTest, FoldIdentityMul) {
                                           nullptr, nullptr, Pattern,
                                           BinaryOpKind::Mul, true);
 
-  TemplateArgumentList EmptyPackArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyPackArgs;
   auto *Result = Inst.InstantiateFoldExpr(FE, EmptyPackArgs);
   ASSERT_NE(Result, nullptr);
   auto *IL = llvm::dyn_cast<IntegerLiteral>(Result);
@@ -147,7 +147,7 @@ TEST_F(VariadicTemplateTest, FoldIdentityLAnd) {
                                           nullptr, nullptr, Pattern,
                                           BinaryOpKind::LAnd, true);
 
-  TemplateArgumentList EmptyPackArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyPackArgs;
   auto *Result = Inst.InstantiateFoldExpr(FE, EmptyPackArgs);
   ASSERT_NE(Result, nullptr);
   auto *IL = llvm::dyn_cast<IntegerLiteral>(Result);
@@ -164,7 +164,7 @@ TEST_F(VariadicTemplateTest, FoldIdentityLOr) {
                                           nullptr, nullptr, Pattern,
                                           BinaryOpKind::LOr, true);
 
-  TemplateArgumentList EmptyPackArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyPackArgs;
   auto *Result = Inst.InstantiateFoldExpr(FE, EmptyPackArgs);
   ASSERT_NE(Result, nullptr);
   auto *IL = llvm::dyn_cast<IntegerLiteral>(Result);
@@ -184,7 +184,7 @@ TEST_F(VariadicTemplateTest, FoldExprLeftFoldWithPack) {
                                           nullptr, nullptr, Pattern,
                                           BinaryOpKind::Add, false);
 
-  TemplateArgumentList Args;
+  llvm::SmallVector<TemplateArgument, 2> Args;
   llvm::SmallVector<TemplateArgument, 4> Pack;
   Pack.push_back(TemplateArgument(Context.getIntType()));
   Pack.push_back(TemplateArgument(Context.getIntType()));
@@ -207,7 +207,7 @@ TEST_F(VariadicTemplateTest, FoldExprRightFoldWithPack) {
                                           nullptr, nullptr, Pattern,
                                           BinaryOpKind::Add, true);
 
-  TemplateArgumentList Args;
+  llvm::SmallVector<TemplateArgument, 2> Args;
   llvm::SmallVector<TemplateArgument, 4> Pack;
   Pack.push_back(TemplateArgument(Context.getIntType()));
   Pack.push_back(TemplateArgument(Context.getIntType()));
@@ -232,7 +232,7 @@ TEST_F(VariadicTemplateTest, FoldExprBinaryLeftFoldWithInit) {
                                           Init, nullptr, Pattern,
                                           BinaryOpKind::Add, false);
 
-  TemplateArgumentList EmptyPackArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyPackArgs;
   auto *Result = Inst.InstantiateFoldExpr(FE, EmptyPackArgs);
   ASSERT_NE(Result, nullptr);
   auto *IL = llvm::dyn_cast<IntegerLiteral>(Result);
@@ -249,7 +249,7 @@ TEST_F(VariadicTemplateTest, ExpandPackWithSubstitution) {
                                                   llvm::APInt(32, 42),
                                                   Context.getIntType());
 
-  TemplateArgumentList Args;
+  llvm::SmallVector<TemplateArgument, 2> Args;
   llvm::SmallVector<TemplateArgument, 4> Pack;
   Pack.push_back(TemplateArgument(Context.getIntType()));
   Pack.push_back(TemplateArgument(Context.getFloatType()));
@@ -266,7 +266,7 @@ TEST_F(VariadicTemplateTest, ExpandPackEmptyReturnsEmpty) {
                                                   llvm::APInt(32, 0),
                                                   Context.getIntType());
 
-  TemplateArgumentList EmptyArgs;
+  llvm::SmallVector<TemplateArgument, 2> EmptyArgs;
   auto Results = Inst.ExpandPack(Pattern, EmptyArgs);
   EXPECT_TRUE(Results.empty());
 }
@@ -284,7 +284,7 @@ TEST_F(VariadicTemplateTest, PackIndexingExpr) {
                                                 Context.getIntType());
   auto *PIE = Context.create<PackIndexingExpr>(SourceLocation(1), Pack, Index);
 
-  TemplateArgumentList Args;
+  llvm::SmallVector<TemplateArgument, 2> Args;
   llvm::SmallVector<TemplateArgument, 4> PackArgs;
   PackArgs.push_back(TemplateArgument(Context.getIntType()));
   PackArgs.push_back(TemplateArgument(Context.getFloatType()));
