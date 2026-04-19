@@ -62,17 +62,41 @@ void CodeGenFunction::EmitFunctionBody(FunctionDecl *FunctionDecl,
     }
   }
 
+  // 检测当前函数是否需要 sret（大型结构体通过隐式首参数返回）
+  bool FnNeedsSRet = !ReturnType.isNull() && !ReturnType->isVoidType() &&
+                     CGM.getTypes().needsSRet(ReturnType);
+  IsSRetFn = FnNeedsSRet;
+
   if (!ReturnType.isNull() && !ReturnType->isVoidType()) {
     ReturnBlock =
         llvm::BasicBlock::Create(CGM.getLLVMContext(), "return", Function);
-    ReturnValue = CreateAlloca(ReturnType, "retval");
+    if (FnNeedsSRet) {
+      // sret 模式：ReturnValue 使用第 0 个参数（隐式 sret 指针）
+      // 跳过 sret 隐式首参数后才是真正的用户参数
+      auto ArgIt = Function->arg_begin();
+      if (ArgIt != Function->arg_end()) {
+        llvm::AllocaInst *SRetSave = CreateEntryBlockAlloca(
+            llvm::PointerType::get(CGM.getLLVMContext(), 0), "sret.save");
+        Builder.CreateStore(&*ArgIt, SRetSave);
+        ReturnValue = SRetSave;
+      }
+    } else {
+      ReturnValue = CreateAlloca(ReturnType, "retval");
+    }
   }
 
   // 为函数参数创建 alloca 并拷贝参数值
+  // sret 函数：跳过隐式首参数（sret 指针）
   unsigned ArgIndex = 0;
+  unsigned ArgSkip = FnNeedsSRet ? 1 : 0;
   for (auto &Arg : Function->args()) {
-    if (ArgIndex < FunctionDecl->getNumParams()) {
-      ParmVarDecl *ParamDecl = FunctionDecl->getParamDecl(ArgIndex);
+    if (ArgIndex < ArgSkip) {
+      ++ArgIndex;
+      continue;
+    }
+    unsigned ParamIdx = ArgIndex - ArgSkip;
+    if (ParamIdx < FunctionDecl->getNumParams()) {
+      ParmVarDecl *ParamDecl = FunctionDecl->getParamDecl(ParamIdx);
       llvm::AllocaInst *AllocaInst =
           CreateAlloca(ParamDecl->getType(), ParamDecl->getName());
       Builder.CreateStore(&Arg, AllocaInst);
@@ -80,7 +104,7 @@ void CodeGenFunction::EmitFunctionBody(FunctionDecl *FunctionDecl,
 
       // 生成参数调试信息
       if (CGM.getDebugInfo().isInitialized()) {
-        CGM.getDebugInfo().EmitParamDI(ParamDecl, AllocaInst, ArgIndex);
+        CGM.getDebugInfo().EmitParamDI(ParamDecl, AllocaInst, ParamIdx);
       }
     }
     ++ArgIndex;
@@ -106,9 +130,14 @@ void CodeGenFunction::EmitFunctionBody(FunctionDecl *FunctionDecl,
       Builder.CreateBr(ReturnBlock);
     }
     Builder.SetInsertPoint(ReturnBlock);
-    llvm::Type *ReturnTy = CGM.getTypes().ConvertType(ReturnType);
-    llvm::Value *RetVal = Builder.CreateLoad(ReturnTy, ReturnValue, "ret");
-    Builder.CreateRet(RetVal);
+    if (FnNeedsSRet) {
+      // sret 模式：返回 void（结果已写入 sret 指针指向的内存）
+      Builder.CreateRetVoid();
+    } else {
+      llvm::Type *ReturnTy = CGM.getTypes().ConvertType(ReturnType);
+      llvm::Value *RetVal = Builder.CreateLoad(ReturnTy, ReturnValue, "ret");
+      Builder.CreateRet(RetVal);
+    }
   } else {
     // void 函数：确保有终止指令
     if (haveInsertPoint()) {
@@ -127,6 +156,38 @@ void CodeGenFunction::EmitFunctionBody(FunctionDecl *FunctionDecl,
 llvm::Value *CodeGenFunction::EmitExpr(Expr *Expression) {
   if (!Expression) {
     return nullptr;
+  }
+
+  // ExprValueKind 感知：对 glvalue 表达式（lvalue/xvalue），统一走
+  // EmitLValue 获取地址 + CreateLoad 读取值，避免各 Emit* 方法重复 load 逻辑。
+  // 特例：DeclRefExpr 可能引用函数或枚举常量（prvalue），不走此路径。
+  if (Expression->isGLValue()) {
+    auto Kind = Expression->getKind();
+    // DeclRefExpr 特殊处理：函数引用和枚举常量不是变量地址
+    if (Kind == ASTNode::NodeKind::DeclRefExprKind) {
+      auto *DRE = llvm::cast<DeclRefExpr>(Expression);
+      ValueDecl *D = DRE->getDecl();
+      if (!D) return nullptr;
+      // 函数引用 → 直接返回函数指针
+      if (llvm::isa<FunctionDecl>(D))
+        return CGM.GetOrCreateFunctionDecl(llvm::cast<FunctionDecl>(D));
+      // 枚举常量 → 直接返回常量值
+      if (auto *ECD = llvm::dyn_cast<EnumConstantDecl>(D)) {
+        llvm::Type *EnumTy = CGM.getTypes().ConvertType(ECD->getType());
+        if (!EnumTy) EnumTy = llvm::Type::getInt32Ty(CGM.getLLVMContext());
+        return llvm::ConstantInt::get(EnumTy, ECD->getVal());
+      }
+      // 变量引用 → EmitLValue + load
+      llvm::Value *Addr = EmitLValue(Expression);
+      if (!Addr) return nullptr;
+      llvm::Type *Ty = CGM.getTypes().ConvertType(Expression->getType());
+      return Builder.CreateLoad(Ty, Addr, "lv.load");
+    }
+    // MemberExpr / ArraySubscriptExpr 等 glvalue → EmitLValue + load
+    llvm::Value *Addr = EmitLValue(Expression);
+    if (!Addr) return nullptr;
+    llvm::Type *Ty = CGM.getTypes().ConvertType(Expression->getType());
+    return Builder.CreateLoad(Ty, Addr, "lv.load");
   }
 
   switch (Expression->getKind()) {
@@ -148,14 +209,6 @@ llvm::Value *CodeGenFunction::EmitExpr(Expr *Expression) {
         llvm::cast<CXXBoolLiteral>(Expression)->getValue());
   case ASTNode::NodeKind::CXXNullPtrLiteralKind:
     return CGM.getConstants().EmitNullPointer(Expression->getType());
-
-  // 引用
-  case ASTNode::NodeKind::DeclRefExprKind:
-    return EmitDeclRefExpr(llvm::cast<DeclRefExpr>(Expression));
-  case ASTNode::NodeKind::MemberExprKind:
-    return EmitMemberExpr(llvm::cast<MemberExpr>(Expression));
-  case ASTNode::NodeKind::ArraySubscriptExprKind:
-    return EmitArraySubscriptExpr(llvm::cast<ArraySubscriptExpr>(Expression));
 
   // 运算符
   case ASTNode::NodeKind::BinaryOperatorKind:

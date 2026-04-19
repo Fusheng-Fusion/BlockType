@@ -67,8 +67,11 @@ class CodeGenFunction {
   /// Return 目标基本块
   llvm::BasicBlock *ReturnBlock = nullptr;
 
-  /// 返回值 alloca
+  /// 返回值 alloca（sret 模式下保存 sret 指针的 alloca）
   llvm::AllocaInst *ReturnValue = nullptr;
+
+  /// 当前函数是否使用 sret 返回
+  bool IsSRetFn = false;
 
   /// Label → BasicBlock 映射（用于 goto/label 前向引用）
   llvm::DenseMap<const LabelDecl *, llvm::BasicBlock *> LabelMap;
@@ -202,7 +205,8 @@ private:
   llvm::Value *EmitArraySubscriptExpr(ArraySubscriptExpr *ASE);
   llvm::Value *EmitConditionalOperator(ConditionalOperator *CO);
   llvm::Value *EmitInitListExpr(InitListExpr *ILE);
-  llvm::Value *EmitCXXConstructExpr(CXXConstructExpr *CCE);
+  llvm::Value *EmitCXXConstructExpr(CXXConstructExpr *CCE,
+                                     llvm::Value *DestPtr = nullptr);
   llvm::Value *EmitCXXThisExpr(CXXThisExpr *TE);
   llvm::Value *EmitCXXNewExpr(CXXNewExpr *NE);
   llvm::Value *EmitCXXDeleteExpr(CXXDeleteExpr *DE);

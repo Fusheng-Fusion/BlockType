@@ -166,6 +166,9 @@ public:
   /// 获取类型对齐常量。
   llvm::Constant *GetAlign(uint64_t AlignInBytes);
 
+  /// 判断返回类型是否需要通过 sret 传递（公开供 CodeGenFunction 使用）
+  bool needsSRet(QualType RetTy) const;
+
 private:
   //===------------------------------------------------------------------===//
   // 内部类型转换分派
@@ -191,9 +194,6 @@ private:
 
   /// 递归检查类或其基类是否有虚函数
   static bool hasVirtualInHierarchy(CXXRecordDecl *RD);
-
-  /// 判断返回类型是否需要通过 sret 传递
-  bool needsSRet(QualType RetTy) const;
 
   /// 判断参数是否应该标记 inreg
   bool shouldUseInReg(QualType ParamTy) const;

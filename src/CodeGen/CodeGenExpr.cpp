@@ -835,6 +835,23 @@ llvm::Value *CodeGenFunction::EmitCallExpr(CallExpr *CallExpression) {
       !llvm::cast<CXXMethodDecl>(CalleeDecl)->isStatic();
   unsigned ParamOffset = IsNonStaticMember ? 1 : 0;
   bool IsVarArg = CalleeDecl->isVariadic();
+
+  // 检测被调函数是否需要 sret 返回
+  const FunctionABITy *CalleeABI = CGM.getTypes().GetFunctionABI(CalleeDecl);
+  bool CalleeNeedsSRet = CalleeABI && CalleeABI->RetInfo.isSRet();
+
+  // sret 缓冲区：如果被调函数需要 sret，在参数列表最前面插入缓冲区指针
+  llvm::AllocaInst *SRetAlloca = nullptr;
+  if (CalleeNeedsSRet) {
+    QualType RetQT;
+    QualType FDType = CalleeDecl->getType();
+    if (auto *FnTy = llvm::dyn_cast<FunctionType>(FDType.getTypePtr())) {
+      RetQT = QualType(FnTy->getReturnType(), Qualifier::None);
+    }
+    SRetAlloca = CreateAlloca(RetQT, "sret.call");
+    Arguments.insert(Arguments.begin(), SRetAlloca);
+  }
+
   for (unsigned I = 0; I < CallExpression->getNumArgs(); ++I) {
     Expr *ArgExpr = CallExpression->getArgs()[I];
     llvm::Value *ArgValue = EmitExpr(ArgExpr);
@@ -857,12 +874,28 @@ llvm::Value *CodeGenFunction::EmitCallExpr(CallExpr *CallExpression) {
     if (CalleeFunction->doesNotReturn()) {
       Invoke->setDoesNotReturn();
     }
+    // sret: 从缓冲区 load 返回值
+    if (CalleeNeedsSRet && SRetAlloca) {
+      llvm::Type *RetTy = CGM.getTypes().ConvertType(
+          QualType(llvm::cast<FunctionType>(CalleeDecl->getType().getTypePtr())
+                       ->getReturnType(),
+                   Qualifier::None));
+      return Builder.CreateLoad(RetTy, SRetAlloca, "sret.val");
+    }
     return Invoke;
   }
 
   auto *Call = Builder.CreateCall(CalleeFunction, Arguments, "call");
   if (CalleeFunction->doesNotReturn()) {
     Call->setDoesNotReturn();
+  }
+  // sret: 从缓冲区 load 返回值
+  if (CalleeNeedsSRet && SRetAlloca) {
+    llvm::Type *RetTy = CGM.getTypes().ConvertType(
+        QualType(llvm::cast<FunctionType>(CalleeDecl->getType().getTypePtr())
+                     ->getReturnType(),
+                 Qualifier::None));
+    return Builder.CreateLoad(RetTy, SRetAlloca, "sret.val");
   }
   return Call;
 }
@@ -1348,7 +1381,7 @@ llvm::Value *CodeGenFunction::EmitCXXThisExpr(CXXThisExpr *ThisExpression) {
 }
 
 llvm::Value *CodeGenFunction::EmitCXXConstructExpr(
-    CXXConstructExpr *ConstructExpression) {
+    CXXConstructExpr *ConstructExpression, llvm::Value *DestPtr) {
   if (!ConstructExpression) {
     return nullptr;
   }
@@ -1361,8 +1394,15 @@ llvm::Value *CodeGenFunction::EmitCXXConstructExpr(
     return nullptr;
   }
 
-  // 分配 alloca 存储构造的对象
-  llvm::AllocaInst *Alloca = CreateAlloca(ConstructType, "construct");
+  // 如果提供了 DestPtr（copy elision），直接在目标地址构造
+  // 否则分配临时 alloca
+  llvm::Value *ConstructAddr = DestPtr;
+  bool NeedsLoad = false;
+  if (!ConstructAddr) {
+    auto *Alloca = CreateAlloca(ConstructType, "construct");
+    ConstructAddr = Alloca;
+    NeedsLoad = true;
+  }
 
   if (CtorDecl) {
     // 获取构造函数的 LLVM Function
@@ -1370,7 +1410,7 @@ llvm::Value *CodeGenFunction::EmitCXXConstructExpr(
     if (CtorFn) {
       // 构建参数列表：this + 构造函数参数
       llvm::SmallVector<llvm::Value *, 8> Args;
-      Args.push_back(Alloca); // this 指针指向 alloca
+      Args.push_back(ConstructAddr); // this 指针指向构造地址
 
       for (Expr *Arg : ConstructExpression->getArgs()) {
         llvm::Value *ArgVal = EmitExpr(Arg);
@@ -1383,14 +1423,18 @@ llvm::Value *CodeGenFunction::EmitCXXConstructExpr(
       Builder.CreateCall(CtorFn, Args, "ctor.call");
     } else {
       // 无法获取构造函数，零初始化
-      Builder.CreateStore(llvm::Constant::getNullValue(Type), Alloca);
+      Builder.CreateStore(llvm::Constant::getNullValue(Type), ConstructAddr);
     }
   } else {
     // 无构造函数声明（trivial 类型或隐式默认构造）
-    Builder.CreateStore(llvm::Constant::getNullValue(Type), Alloca);
+    Builder.CreateStore(llvm::Constant::getNullValue(Type), ConstructAddr);
   }
 
-  return Builder.CreateLoad(Type, Alloca, "construct.val");
+  // Copy elision 模式：返回构造地址（而非 load 值）
+  if (!NeedsLoad) {
+    return ConstructAddr;
+  }
+  return Builder.CreateLoad(Type, ConstructAddr, "construct.val");
 }
 
 llvm::Value *CodeGenFunction::EmitCXXNewExpr(CXXNewExpr *NewExpression) {

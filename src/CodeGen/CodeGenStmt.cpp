@@ -461,10 +461,18 @@ void CodeGenFunction::EmitReturnStmt(ReturnStmt *ReturnStatement) {
   EmitCleanupsForScope(0);
 
   if (Expr *ReturnExpr = ReturnStatement->getRetValue()) {
-    llvm::Value *ReturnValue = EmitExpr(ReturnExpr);
-    if (ReturnValue && this->ReturnValue) {
-      Builder.CreateStore(ReturnValue, this->ReturnValue);
-    } else if (ReturnValue) {
+    llvm::Value *RetVal = EmitExpr(ReturnExpr);
+    if (RetVal && this->ReturnValue) {
+      if (IsSRetFn) {
+        // sret 模式：从 ReturnValue alloca 加载 sret 指针，写入返回值
+        llvm::Value *SRetPtr = Builder.CreateLoad(
+            llvm::PointerType::get(CGM.getLLVMContext(), 0),
+            this->ReturnValue, "sret.ptr");
+        Builder.CreateStore(RetVal, SRetPtr);
+      } else {
+        Builder.CreateStore(RetVal, this->ReturnValue);
+      }
+    } else if (RetVal) {
       Builder.CreateRet(ReturnValue);
       return;
     }
@@ -509,9 +517,23 @@ void CodeGenFunction::EmitDeclStmt(DeclStmt *DeclarationStatement) {
 
       // 初始化
       if (Expr *Initializer = VariableDecl->getInit()) {
-        llvm::Value *InitValue = EmitExpr(Initializer);
-        if (InitValue) {
-          Builder.CreateStore(InitValue, Alloca);
+        // Copy elision: 如果初始化器是 CXXConstructExpr（prvalue 直接构造），
+        // 直接在变量的 alloca 上构造，避免临时对象 + load/store
+        if (auto *CCE = llvm::dyn_cast<CXXConstructExpr>(Initializer)) {
+          if (CCE->isPRValue() || CCE->getType()->isRecordType()) {
+            EmitCXXConstructExpr(CCE, Alloca);
+            // 不需要额外 store，构造函数已直接写入 Alloca
+          } else {
+            llvm::Value *InitValue = EmitExpr(Initializer);
+            if (InitValue) {
+              Builder.CreateStore(InitValue, Alloca);
+            }
+          }
+        } else {
+          llvm::Value *InitValue = EmitExpr(Initializer);
+          if (InitValue) {
+            Builder.CreateStore(InitValue, Alloca);
+          }
         }
       } else {
         // 零初始化

@@ -46,8 +46,9 @@ llvm::Constant *CodeGenConstant::EmitConstant(Expr *E) {
     auto *DRE = llvm::cast<DeclRefExpr>(E);
     if (auto *ECD = llvm::dyn_cast<EnumConstantDecl>(DRE->getDecl())) {
       if (ECD->hasVal()) {
-        return llvm::ConstantInt::get(
-            llvm::Type::getInt32Ty(getLLVMContext()), ECD->getVal());
+        llvm::Type *EnumTy = CGM.getTypes().ConvertType(ECD->getType());
+        if (!EnumTy) EnumTy = llvm::Type::getInt32Ty(getLLVMContext());
+        return llvm::ConstantInt::get(EnumTy, ECD->getVal());
       }
     }
     break;
