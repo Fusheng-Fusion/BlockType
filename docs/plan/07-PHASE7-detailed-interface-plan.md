@@ -701,6 +701,229 @@ DIAG(err_use_of_deleted_function_with_reason, Error,
 
 ---
 
+## 🆕 新增：核查发现的未实现特性（2026-04-19）
+
+> **背景：** 在核查Phase 7特性状态时，发现3项之前误标为“已实现”的特性实际未实现。
+> **影响：** 需要将这3项加入Phase 7计划或后续Phase。
+> **优先级：** P2（次要优先级）
+
+### Task 7.5.4 多维 `operator[]` (P2128R6)
+
+**目标：** 实现C++23的多维下标运算符，支持 `obj[i, j, k]` 语法
+
+**⚠️ 接口预置清单：**
+
+**1. `include/blocktype/AST/Expr.h`**
+
+```cpp
+/// MultiDimensionalSubscriptExpr - 多维下标表达式 obj[i, j, k]
+class MultiDimensionalSubscriptExpr : public Expr {
+  Expr *Base;  // 基表达式
+  llvm::SmallVector<Expr *, 4> Indices;  // 多个索引
+  
+public:
+  MultiDimensionalSubscriptExpr(SourceLocation Loc, Expr *Base,
+                                 llvm::ArrayRef<Expr *> Indices)
+      : Expr(Loc), Base(Base), Indices(Indices.begin(), Indices.end()) {}
+  
+  Expr *getBase() const { return Base; }
+  llvm::ArrayRef<Expr *> getIndices() const { return Indices; }
+  unsigned getNumIndices() const { return Indices.size(); }
+  
+  NodeKind getKind() const override { 
+    return NodeKind::MultiDimensionalSubscriptExprKind; 
+  }
+  
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::MultiDimensionalSubscriptExprKind;
+  }
+};
+```
+
+**2. `include/blocktype/AST/Stmt.h`**
+
+```cpp
+enum class NodeKind {
+  // ... 现有值 ...
+  
+  // ⚠️ P7.5.4 新增
+  MultiDimensionalSubscriptExprKind,
+};
+```
+
+**3. `include/blocktype/Sema/Sema.h`**
+
+```cpp
+class Sema {
+public:
+  /// 处理多维下标表达式
+  /// 
+  /// 检查：
+  /// - operator[] 是否接受多个参数
+  /// - 类型匹配
+  ExprResult ActOnMultiDimensionalSubscript(SourceLocation Loc,
+                                             Expr *Base,
+                                             llvm::ArrayRef<Expr *> Indices);
+};
+```
+
+**4. `include/blocktype/Basic/DiagnosticSemaKinds.def`**
+
+```cpp
+DIAG(err_multidimensional_subscript_no_operator, Error,
+  "type '%0' does not support multidimensional subscript operator[]",
+  "类型 '%0' 不支持多维下标运算符[]")
+
+DIAG(err_multidimensional_subscript_arg_count, Error,
+  "operator[] expects %0 arguments but %1 were provided",
+  "operator[] 期望 %0 个参数但提供了 %1 个")
+```
+
+**开发要点：**
+- Parser需要解析逗号分隔的多个索引
+- Sema需要查找接受多个参数的operator[]
+- CodeGen生成函数调用
+
+**验收标准：**
+- [ ] 能解析 `obj[i, j, k]` 语法
+- [ ] 能查找到多参数operator[]
+- [ ] 生成正确的函数调用
+- [ ] 至少3个测试用例
+
+---
+
+### Task 7.5.5 `#warning` 预处理指令 (P2437R1)
+
+**目标：** 实现#warning预处理指令，输出警告但不终止编译
+
+**⚠️ 接口预置清单：**
+
+**1. `include/blocktype/Lex/Preprocessor.h`**
+
+```cpp
+// 在 DirectiveKind 枚举中添加
+enum class DirectiveKind {
+  // ... 现有值 ...
+  
+  // ⚠️ P7.5.5 新增
+  Warning,  // #warning
+};
+```
+
+**2. `src/Lex/Preprocessor.cpp`**
+
+```cpp
+// 在 handleDirective 中添加
+} else if (DirectiveName == "warning") {
+  Directive = DirectiveKind::Warning;
+}
+
+// 实现 #warning 处理
+void Preprocessor::handleWarningDirective(SourceLocation Loc,
+                                           llvm::StringRef Message) {
+  // 输出警告消息，但不终止编译
+  Diags.report(Loc, DiagLevel::Warning, Message.str());
+}
+```
+
+**3. `include/blocktype/Basic/DiagnosticLexKinds.def`**（如果不存在则新建）
+
+```cpp
+DIAG(warn_pp_warning_directive, Warning,
+  "#warning: %0",
+  "#warning：%0")
+```
+
+**开发要点：**
+- Lexer识别#warning关键字
+- Preprocessor处理并输出警告
+- 与#error的区别：不终止编译
+
+**验收标准：**
+- [ ] 能解析#warning指令
+- [ ] 输出警告消息
+- [ ] 编译继续执行
+- [ ] 至少2个测试用例
+
+---
+
+### Task 7.5.6 `Z`/`z` 字面量后缀 (P0330R8)
+
+**目标：** 实现size_t类型的字面量后缀 `z`/`Z`
+
+**⚠️ 接口预置清单：**
+
+**1. `include/blocktype/Lex/Lexer.h`**
+
+```cpp
+// 在整数/浮点数解析中添加后缀处理
+bool isSizeTSuffix(char C) const {
+  return C == 'z' || C == 'Z';
+}
+```
+
+**2. `src/Lex/Lexer.cpp`**
+
+```cpp
+// 在 lexNumericConstant 或相关方法中
+if (isSizeTSuffix(*BufferPtr)) {
+  ++BufferPtr;
+  // 标记为 size_t 类型
+  LiteralInfo.HasSizeTSuffix = true;
+}
+```
+
+**3. `include/blocktype/AST/Expr.h`**
+
+```cpp
+// IntegerLiteral 或 FloatingLiteral 添加字段
+class IntegerLiteral : public Expr {
+  // ... 现有字段 ...
+  
+  // ⚠️ P7.5.6 新增
+  bool HasSizeTSuffix = false;
+  
+public:
+  bool hasSizeTSuffix() const { return HasSizeTSuffix; }
+  void setSizeTSuffix(bool V) { HasSizeTSuffix = V; }
+};
+```
+
+**4. `include/blocktype/Sema/Sema.h`**
+
+```cpp
+class Sema {
+public:
+  /// 处理带 z/Z 后缀的字面量
+  /// 
+  /// 将字面量类型设置为 size_t (std::size_t)
+  ExprResult ActOnIntegerLiteralWithSizeTSuffix(SourceLocation Loc,
+                                                 llvm::APSInt Value);
+};
+```
+
+**5. `include/blocktype/Basic/DiagnosticSemaKinds.def`**
+
+```cpp
+DIAG(warn_size_t_suffix_overflow, Warning,
+  "integer literal with 'z' suffix overflows size_t",
+  "带 'z' 后缀的整数字面量溢出 size_t")
+```
+
+**开发要点：**
+- Lexer识别z/Z后缀
+- Sema将类型设置为size_t
+- 检查溢出
+- CodeGen生成正确的类型
+
+**验收标准：**
+- [ ] 能解析 `123z` 和 `456Z`
+- [ ] 类型为 size_t
+- [ ] 溢出时给出警告
+- [ ] 至少3个测试用例
+
+---
+
 ## 🎯 总结
 
 **核心原则重申：**
