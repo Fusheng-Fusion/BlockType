@@ -358,6 +358,48 @@ public:
   bool CheckBindingCondition(llvm::ArrayRef<class BindingDecl *> Bindings,
                               SourceLocation Loc);
 
+  //===------------------------------------------------------------------===//
+  // Structured Binding Helper Methods (P7.4.3)
+  //===------------------------------------------------------------------===//
+
+  /// Create std::get<N>(expr) call expression for structured binding
+  /// 
+  /// This method:
+  /// 1. Looks up std::get function template in std namespace
+  /// 2. Creates template argument list with index N
+  /// 3. Instantiates the template specialization get<N>
+  /// 4. Builds CallExpr: std::get<N>(expr)
+  /// 
+  /// @param Index The index N for std::get<N>
+  /// @param TupleExpr The tuple/pair expression to extract from
+  /// @param ElementType The expected element type (for validation)
+  /// @param Loc Source location for diagnostics
+  /// @return CallExpr for std::get<N>(tupleExpr), or nullptr on failure
+  ExprResult BuildStdGetCall(unsigned Index, Expr *TupleExpr,
+                              QualType ElementType, SourceLocation Loc);
+
+  /// Lookup std::get function template
+  /// 
+  /// Searches in the std namespace for the 'get' function template.
+  /// This is used by BuildStdGetCall to find the correct template.
+  /// 
+  /// @return FunctionTemplateDecl for std::get, or nullptr if not found
+  class FunctionTemplateDecl *LookupStdGetFunction();
+
+  /// Instantiate std::get<N> template specialization
+  /// 
+  /// Given the std::get function template and an index N,
+  /// creates a template specialization with template argument N.
+  /// 
+  /// @param GetTemplate The std::get function template
+  /// @param Index The index N for get<N>
+  /// @param TupleType The tuple/pair type being decomposed
+  /// @param Loc Source location
+  /// @return FunctionDecl for get<N>, or nullptr on failure
+  class FunctionDecl *InstantiateStdGetSpecialization(
+      class FunctionTemplateDecl *GetTemplate, unsigned Index,
+      QualType TupleType, SourceLocation Loc);
+
   DeclResult ActOnFunctionDecl(SourceLocation Loc, llvm::StringRef Name,
                                QualType T,
                                llvm::ArrayRef<ParmVarDecl *> Params,
