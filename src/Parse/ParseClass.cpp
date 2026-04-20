@@ -801,7 +801,12 @@ Decl *Parser::parseClassMember(CXXRecordDecl *Class) {
   
   AccessSpecifier Access =
       static_cast<AccessSpecifier>(Class->getCurrentAccess());
-  return llvm::cast<FieldDecl>(Actions.ActOnFieldDeclFactory(NameLoc, Name, Type, BitWidth, IsMutable, InClassInit, Access).get());
+  FieldDecl *FD = llvm::cast<FieldDecl>(Actions.ActOnFieldDeclFactory(NameLoc, Name, Type, BitWidth, IsMutable, InClassInit, Access).get());
+  
+  // Add field to the class's Fields array
+  Class->addField(FD);
+  
+  return FD;
 }
 
 //===----------------------------------------------------------------------===//
