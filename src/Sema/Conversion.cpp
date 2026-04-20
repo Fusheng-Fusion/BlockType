@@ -653,7 +653,9 @@ ImplicitConversionSequence ConversionChecker::GetConversion(QualType From,
   // accept From (or something From converts to) as a single argument.
   if (ToTy) {
     if (auto *ToRT = llvm::dyn_cast<RecordType>(ToTy)) {
-      if (auto *ToRD = llvm::dyn_cast<CXXRecordDecl>(ToRT->getDecl())) {
+      auto *ToDecl = ToRT->getDecl();
+      if (!ToDecl) return ImplicitConversionSequence::getBad();  // Incomplete type
+      if (auto *ToRD = llvm::dyn_cast<CXXRecordDecl>(ToDecl)) {
         auto ICS = TryConvertingConstructor(From, ToRD);
         if (!ICS.isBad())
           return ICS;
@@ -666,7 +668,9 @@ ImplicitConversionSequence ConversionChecker::GetConversion(QualType From,
   // whose return type can convert to To via a standard conversion.
   if (FromTy) {
     if (auto *FromRT = llvm::dyn_cast<RecordType>(FromTy)) {
-      if (auto *FromRD = llvm::dyn_cast<CXXRecordDecl>(FromRT->getDecl())) {
+      auto *FromDecl = FromRT->getDecl();
+      if (!FromDecl) return ImplicitConversionSequence::getBad();  // Incomplete type
+      if (auto *FromRD = llvm::dyn_cast<CXXRecordDecl>(FromDecl)) {
         auto ICS = TryConversionOperator(FromRD, To);
         if (!ICS.isBad())
           return ICS;

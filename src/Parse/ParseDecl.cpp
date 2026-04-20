@@ -1820,7 +1820,10 @@ VarDecl *Parser::buildVarDecl(Declarator &D) {
     consumeToken();
 
     // Create placeholder variable - not added to symbol table
-    return llvm::cast<VarDecl>(Actions.ActOnPlaceholderVarDecl(NameLoc, T, Init).get());
+    DeclResult Result = Actions.ActOnPlaceholderVarDecl(NameLoc, T, Init);
+    if (Result.isInvalid())
+      return nullptr;
+    return llvm::cast<VarDecl>(Result.get());
   }
 
   // Parse initializer
@@ -1857,7 +1860,10 @@ VarDecl *Parser::buildVarDecl(Declarator &D) {
   consumeToken();
 
   bool IsStatic = (DS.SC == StorageClass::Static);
-  return llvm::cast<VarDecl>(Actions.ActOnVarDeclFull(NameLoc, Name, T, Init, IsStatic).get());
+  DeclResult Result = Actions.ActOnVarDeclFull(NameLoc, Name, T, Init, IsStatic);
+  if (Result.isInvalid())
+    return nullptr;
+  return llvm::cast<VarDecl>(Result.get());
 }
 
 /// buildFunctionDecl - Build a FunctionDecl from a parsed Declarator.

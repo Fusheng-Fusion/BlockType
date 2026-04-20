@@ -322,24 +322,13 @@ void Sema::ActOnFinishDecl(Decl *D) {
 
 DeclResult Sema::ActOnVarDecl(SourceLocation Loc, llvm::StringRef Name,
                                QualType T, Expr *Init) {
-  // Check if the type is a TemplateSpecializationType that needs instantiation
-  QualType ActualType = T;
-  if (auto *TST = llvm::dyn_cast<TemplateSpecializationType>(T.getTypePtr())) {
-    // Try to instantiate the class template
-    QualType InstantiatedType = InstantiateClassTemplate(TST->getTemplateName(), TST);
-    if (!InstantiatedType.isNull()) {
-      ActualType = InstantiatedType;
-    } else {
-      // Instantiation failed, error already reported
-      return DeclResult::getInvalid();
-    }
+  // Check if type is a TemplateSpecializationType (not yet instantiated)
+  if (T.getTypePtr() && T->getTypeClass() == TypeClass::TemplateSpecialization) {
+    Diags.report(Loc, DiagID::err_incomplete_type);
+    return DeclResult::getInvalid();
   }
   
-  // Check type completeness
-  if (!RequireCompleteType(ActualType, Loc))
-    return DeclResult::getInvalid();
-
-  auto *VD = Context.create<VarDecl>(Loc, Name, ActualType, Init);
+  auto *VD = Context.create<VarDecl>(Loc, Name, T, Init);
 
   // Check initializer if present
   if (Init) {
@@ -603,6 +592,12 @@ DeclResult Sema::ActOnAttributeDeclWithNamespace(SourceLocation Loc,
 
 DeclResult Sema::ActOnVarDeclFull(SourceLocation Loc, llvm::StringRef Name,
                                   QualType T, Expr *Init, bool IsStatic) {
+  // Check if type is a TemplateSpecializationType (not yet instantiated)
+  if (T.getTypePtr() && T->getTypeClass() == TypeClass::TemplateSpecialization) {
+    Diags.report(Loc, DiagID::err_incomplete_type);
+    return DeclResult::getInvalid();
+  }
+  
   // Auto type deduction: replace AutoType with initializer's type
   QualType ActualType = T;
   if (T.getTypePtr() && T->getTypeClass() == TypeClass::Auto && Init) {
@@ -2675,12 +2670,16 @@ bool Sema::isCompleteType(QualType T) const {
 
   if (Ty->isRecordType()) {
     auto *RT = static_cast<const RecordType *>(Ty);
-    return RT->getDecl()->isCompleteDefinition();
+    auto *Decl = RT->getDecl();
+    if (!Decl) return false;  // No declaration, incomplete
+    return Decl->isCompleteDefinition();
   }
 
   if (Ty->isEnumType()) {
     auto *ET = static_cast<const EnumType *>(Ty);
-    return ET->getDecl()->isCompleteDefinition();
+    auto *Decl = ET->getDecl();
+    if (!Decl) return false;  // No declaration, incomplete
+    return Decl->isCompleteDefinition();
   }
 
   if (Ty->getTypeClass() == TypeClass::Typedef) {
@@ -2704,6 +2703,12 @@ bool Sema::isCompleteType(QualType T) const {
     auto *AT = static_cast<const AutoType *>(Ty);
     if (AT->isDeduced()) return isCompleteType(AT->getDeducedType());
     return false;
+  }
+
+  // TemplateSpecializationType: treat as incomplete for now
+  // TODO: Instantiate the template and check the result
+  if (Ty->getTypeClass() == TypeClass::TemplateSpecialization) {
+    return false;  // Template not yet instantiated
   }
 
   if (Ty->isVoidType()) return false;
