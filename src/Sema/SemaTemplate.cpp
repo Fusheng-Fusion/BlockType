@@ -113,6 +113,7 @@ DeclResult Sema::ActOnClassTemplateDecl(ClassTemplateDecl *CTD) {
   // 1. Validate template parameter list
   auto *Params = CTD->getTemplateParameterList();
   if (!Params || Params->empty()) {
+    llvm::errs() << "DEBUG ActOnClassTemplateDecl [L116]: Template '" << CTD->getName().str() << "' has no parameters\n";
     Diags.report(CTD->getLocation(), DiagID::err_template_not_in_scope,
                  CTD->getName());
     return DeclResult::getInvalid();
@@ -158,6 +159,7 @@ DeclResult Sema::ActOnFunctionTemplateDecl(FunctionTemplateDecl *FTD) {
   // 1. Validate template parameter list
   auto *Params = FTD->getTemplateParameterList();
   if (!Params || Params->empty()) {
+    llvm::errs() << "DEBUG ActOnFunctionTemplateDecl [L162]: Template '" << FTD->getName().str() << "' has no parameters\n";
     Diags.report(FTD->getLocation(), DiagID::err_template_not_in_scope,
                  FTD->getName());
     return DeclResult::getInvalid();
@@ -200,6 +202,7 @@ DeclResult Sema::ActOnVarTemplateDecl(VarTemplateDecl *VTD) {
 
   auto *Params = VTD->getTemplateParameterList();
   if (!Params || Params->empty()) {
+    llvm::errs() << "DEBUG ActOnVariableTemplateDecl [L205]: Template '" << VTD->getName().str() << "' has no parameters\n";
     Diags.report(VTD->getLocation(), DiagID::err_template_not_in_scope,
                  VTD->getName());
     return DeclResult::getInvalid();
@@ -228,6 +231,7 @@ DeclResult Sema::ActOnTypeAliasTemplateDecl(TypeAliasTemplateDecl *TATD) {
 
   auto *Params = TATD->getTemplateParameterList();
   if (!Params || Params->empty()) {
+    llvm::errs() << "DEBUG ActOnTypeAliasTemplateDecl [L234]: Template '" << TATD->getName().str() << "' has no parameters\n";
     Diags.report(TATD->getLocation(), DiagID::err_template_not_in_scope,
                  TATD->getName());
     return DeclResult::getInvalid();
@@ -293,6 +297,7 @@ TypeResult Sema::ActOnTemplateId(llvm::StringRef Name,
   }
 
   if (!TD) {
+    llvm::errs() << "DEBUG ActOnTemplateId: Template '" << Name.str() << "' not found, reporting error\n";
     Diags.report(NameLoc, DiagID::err_template_not_in_scope, Name);
     return TypeResult::getInvalid();
   }
@@ -473,6 +478,7 @@ DeclResult Sema::ActOnClassTemplatePartialSpecialization(
   // 1. Look up the primary template
   ClassTemplateDecl *Primary = PartialSpec->getSpecializedTemplate();
   if (!Primary) {
+    llvm::errs() << "DEBUG ActOnClassTemplatePartialSpecDecl [L481]: Primary template not found for '" << PartialSpec->getName().str() << "'\n";
     Diags.report(PartialSpec->getLocation(),
                  DiagID::err_template_not_in_scope,
                  PartialSpec->getName());
@@ -483,6 +489,7 @@ DeclResult Sema::ActOnClassTemplatePartialSpecialization(
   //    parameter list (a non-empty subset of the primary's parameters)
   auto *PartialParams = PartialSpec->getTemplateParameterList();
   if (!PartialParams || PartialParams->empty()) {
+    llvm::errs() << "DEBUG ActOnClassTemplatePartialSpecDecl [L490]: Partial spec '" << PartialSpec->getName().str() << "' has no parameters\n";
     Diags.report(PartialSpec->getLocation(),
                  DiagID::err_template_not_in_scope,
                  PartialSpec->getName());
@@ -532,6 +539,7 @@ DeclResult Sema::ActOnVarTemplatePartialSpecialization(
 
   VarTemplateDecl *Primary = PartialSpec->getSpecializedTemplate();
   if (!Primary) {
+    llvm::errs() << "DEBUG ActOnVarTemplatePartialSpecialization [L542]: Primary template not found for '" << PartialSpec->getName().str() << "'\n";
     Diags.report(PartialSpec->getLocation(),
                  DiagID::err_template_not_in_scope,
                  PartialSpec->getName());
@@ -540,6 +548,7 @@ DeclResult Sema::ActOnVarTemplatePartialSpecialization(
 
   auto *PartialParams = PartialSpec->getTemplateParameterList();
   if (!PartialParams || PartialParams->empty()) {
+    llvm::errs() << "DEBUG ActOnVarTemplatePartialSpecialization [L550]: Partial spec '" << PartialSpec->getName().str() << "' has no parameters\n";
     Diags.report(PartialSpec->getLocation(),
                  DiagID::err_template_not_in_scope,
                  PartialSpec->getName());

@@ -187,8 +187,10 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
 
   // For class templates, pre-register the ClassTemplateDecl before parsing the class body
   // This allows member functions to reference the template by name
+  ClassTemplateDecl *PreRegisteredCTD = nullptr;
   if ((Tok.is(TokenKind::kw_class) || Tok.is(TokenKind::kw_struct)) && NextTok.is(TokenKind::identifier)) {
     llvm::errs() << "DEBUG: Pre-registering class template '" << NextTok.getText().str() << "'\n";
+    llvm::errs() << "DEBUG: Params size = " << Params.size() << "\n";
     llvm::StringRef ClassName = NextTok.getText();
     SourceLocation ClassLoc = NextTok.getLocation();
     
@@ -202,6 +204,7 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
     // Create and register the ClassTemplateDecl
     auto *CTD = Context.create<ClassTemplateDecl>(TemplateLoc, ClassName, ForwardDecl);
     CTD->setTemplateParameterList(TPL);
+    PreRegisteredCTD = CTD;  // Save for later use
     
     auto Result = Actions.ActOnClassTemplateDecl(CTD);
     if (Result.isUsable()) {
@@ -257,8 +260,15 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
     }
     
     // Regular class template
-    Template = llvm::cast<ClassTemplateDecl>(
-        Actions.ActOnClassTemplateDeclFactory(TemplateLoc, ClassDecl->getName(), TemplatedDecl).get());
+    if (PreRegisteredCTD) {
+      // Use the pre-registered ClassTemplateDecl
+      // The TemplatedDecl will be updated by replacing the forward declaration
+      Template = PreRegisteredCTD;
+      llvm::errs() << "DEBUG: Using pre-registered CTD for '" << ClassDecl->getName().str() << "'\n";
+    } else {
+      Template = llvm::cast<ClassTemplateDecl>(
+          Actions.ActOnClassTemplateDeclFactory(TemplateLoc, ClassDecl->getName(), TemplatedDecl).get());
+    }
   } else if (auto *VD = llvm::dyn_cast<VarDecl>(TemplatedDecl)) {
     // Check for variable template partial specialization
     bool IsPartialSpec = false;

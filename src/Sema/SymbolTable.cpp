@@ -73,6 +73,7 @@ void SymbolTable::addNamespaceDecl(NamespaceDecl *D) {
 }
 
 void SymbolTable::addTemplateDecl(TemplateDecl *D) {
+  llvm::errs() << "DEBUG addTemplateDecl: Adding '" << D->getName().str() << "'\n";
   Templates[D->getName()] = D;
 }
 

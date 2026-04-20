@@ -107,10 +107,12 @@ QualType Parser::parseTypeSpecifier() {
 
           // Layer 2: Check if the identifier is a known template in symbol table
           if (!ShouldParseAsTemplate) {
-            if (NamedDecl *D = Actions.LookupName(TypeName)) {
-              if (llvm::isa<TemplateDecl>(D)) {
-                ShouldParseAsTemplate = true;
-              }
+            NamedDecl *D = Actions.LookupName(TypeName);
+            llvm::errs() << "DEBUG parseTypeSpecifier: LookupName('" << TypeName.str() 
+                         << "') = " << (D ? D->getName().str() : "null") << "\n";
+            if (D) {
+              ShouldParseAsTemplate = llvm::isa<TemplateDecl>(D);
+              llvm::errs() << "DEBUG parseTypeSpecifier: IsTemplateDecl = " << ShouldParseAsTemplate << "\n";
             }
           }
 

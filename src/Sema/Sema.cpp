@@ -106,6 +106,9 @@ NamedDecl *Sema::LookupName(llvm::StringRef Name) const {
   }
   // 2. Fall back to the global SymbolTable
   auto Decls = Symbols.lookup(Name);
+  if (Name == "MyPair") {
+    llvm::errs() << "DEBUG LookupName: Looking for 'MyPair', found " << Decls.size() << " decl(s)\n";
+  }
   return Decls.empty() ? nullptr : Decls.front();
 }
 
