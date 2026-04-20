@@ -93,6 +93,10 @@ DIAG(err_placeholder_var_not_auto, Error, \
   "placeholder variable '_' must have an auto type or be initialized", \
   "占位符变量 '_' 必须有 auto 类型或被初始化")
 
+DIAG(err_auto_return_no_deduction, Error, \
+  "cannot deduce return type for function '%0'", \
+  "无法推导函数 '%0' 的返回类型")
+
 //===----------------------------------------------------------------------===//
 // P7.4.3: Structured binding diagnostics (P0963R3, P1061R10)
 //===----------------------------------------------------------------------===//

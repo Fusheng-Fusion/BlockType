@@ -25,6 +25,43 @@
 namespace blocktype {
 
 //===----------------------------------------------------------------------===//
+// Helper Functions
+//===----------------------------------------------------------------------===//
+
+/// deduceReturnTypeFromBody - Deduce function return type from return statements.
+/// Traverses the function body to find all return statements and extracts their types.
+/// Returns the first non-void return type found, or null if no return statements.
+static QualType deduceReturnTypeFromBody(Stmt *Body, SourceLocation Loc) {
+  if (!Body) {
+    return {};
+  }
+  
+  // Simple implementation: traverse CompoundStmt to find ReturnStmt
+  auto *CS = llvm::dyn_cast<CompoundStmt>(Body);
+  if (!CS) {
+    return {};
+  }
+  
+  for (auto *S : CS->getBody()) {
+    if (auto *RS = llvm::dyn_cast<ReturnStmt>(S)) {
+      Expr *RetVal = RS->getRetValue();
+      if (RetVal) {
+        QualType RetType = RetVal->getType();
+        if (!RetType.isNull()) {
+          return RetType;
+        }
+      } else {
+        // return; with no value -> void
+        return {};
+      }
+    }
+  }
+  
+  // No return statement found
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // Construction / Destruction
 //===----------------------------------------------------------------------===//
 
@@ -219,7 +256,22 @@ DeclResult Sema::ActOnFunctionDecl(SourceLocation Loc, llvm::StringRef Name,
                                     QualType T,
                                     llvm::ArrayRef<ParmVarDecl *> Params,
                                     Stmt *Body) {
-  auto *FD = Context.create<FunctionDecl>(Loc, Name, T, Params, Body);
+  // Auto return type deduction: if return type is AutoType and we have a body,
+  // deduce the return type from return statements in the body
+  QualType ActualReturnType = T;
+  
+  if (Body && T.getTypePtr() && T->getTypeClass() == TypeClass::Auto) {
+    // Traverse the function body to find return statements
+    QualType DeducedType = deduceReturnTypeFromBody(Body, Loc);
+    if (!DeducedType.isNull()) {
+      ActualReturnType = DeducedType;
+    } else {
+      // Could not deduce - keep AutoType (will be handled later or error)
+      Diags.report(Loc, DiagID::err_auto_return_no_deduction, Name);
+    }
+  }
+  
+  auto *FD = Context.create<FunctionDecl>(Loc, Name, ActualReturnType, Params, Body);
 
   registerDecl(FD);
   if (CurContext)
