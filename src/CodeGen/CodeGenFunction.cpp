@@ -101,6 +101,20 @@ void CodeGenFunction::EmitFunctionBody(FunctionDecl *FunctionDecl,
         ThisValue = &*ArgIt;
         ++ArgIndex;  // Skip this pointer in parameter loop
       }
+      
+      // P7.1.5: If this is a lambda operator(), register captured variables
+      auto *ParentClass = MD->getParent();
+      if (ParentClass && ParentClass->isLambda()) {
+        // Iterate through fields and register them as captured vars
+        unsigned FieldIndex = 0;
+        for (auto *Field : ParentClass->fields()) {
+          // The field name matches the captured variable name
+          // We need to find the corresponding VarDecl from Sema context
+          // For now, we'll use a simplified approach: store field index by name
+          // TODO: Properly map VarDecl to FieldIndex using LambdaExpr captures
+          // This requires passing LambdaExpr info to CodeGen
+        }
+      }
     }
   }
   
@@ -512,6 +526,20 @@ llvm::AllocaInst *CodeGenFunction::getLocalDecl(VarDecl *VariableDecl) const {
     return Iterator->second;
   }
   return nullptr;
+}
+
+// P7.1.5: Captured variable support for lambda operator()
+bool CodeGenFunction::isCapturedVar(const VarDecl *VD) const {
+  return CapturedVars.count(VD) > 0;
+}
+
+unsigned CodeGenFunction::getCapturedFieldIndex(const VarDecl *VD) const {
+  auto It = CapturedVars.find(VD);
+  return It != CapturedVars.end() ? It->second : 0;
+}
+
+void CodeGenFunction::registerCapturedVar(const VarDecl *VD, unsigned FieldIndex) {
+  CapturedVars[VD] = FieldIndex;
 }
 
 llvm::Value *CodeGenFunction::LoadLocalVar(VarDecl *VariableDecl) {

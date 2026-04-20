@@ -60,6 +60,9 @@ class CodeGenFunction {
   
   // P7.4.3: BindingDecl map for structured bindings
   llvm::DenseMap<const BindingDecl *, llvm::AllocaInst *> BindingDecls;
+  
+  // P7.1.5: Captured variables in lambda operator(): VarDecl → FieldIndex
+  llvm::DenseMap<const VarDecl *, unsigned> CapturedVars;
 
   //===------------------------------------------------------------------===//
   // 控制流栈
@@ -193,6 +196,15 @@ public:
 
   /// 获取局部变量的 alloca。
   llvm::AllocaInst *getLocalDecl(VarDecl *VD) const;
+  
+  /// P7.1.5: Check if VarDecl is a captured variable in lambda
+  bool isCapturedVar(const VarDecl *VD) const;
+  
+  /// P7.1.5: Get field index for captured variable
+  unsigned getCapturedFieldIndex(const VarDecl *VD) const;
+  
+  /// P7.1.5: Register captured variable mapping
+  void registerCapturedVar(const VarDecl *VD, unsigned FieldIndex);
 
   /// 加载局部变量的值。
   llvm::Value *LoadLocalVar(VarDecl *VD);

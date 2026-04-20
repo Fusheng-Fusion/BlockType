@@ -1406,6 +1406,29 @@ llvm::Value *CodeGenFunction::EmitLValue(Expr *Expression) {
 
   if (auto *DeclRef = llvm::dyn_cast<DeclRefExpr>(Expression)) {
     if (auto *VariableDecl = llvm::dyn_cast<VarDecl>(DeclRef->getDecl())) {
+      // P7.1.5: Check if this is a captured variable in lambda operator()
+      if (isCapturedVar(VariableDecl)) {
+        // Load from closure object's field
+        unsigned FieldIndex = getCapturedFieldIndex(VariableDecl);
+        if (ThisValue) {
+          // ThisValue is already the closure object pointer (ptr)
+          // Get the closure type from CurFD's parent (the CXXRecordDecl)
+          if (auto *MD = llvm::dyn_cast<CXXMethodDecl>(CurFD)) {
+            auto *ClosureClass = MD->getParent();
+            if (ClosureClass) {
+              auto &Ctx = CGM.getASTContext();
+              auto *ClosureTy = llvm::dyn_cast<llvm::StructType>(
+                  CGM.getTypes().ConvertType(Ctx.getRecordType(ClosureClass)));
+              if (ClosureTy && FieldIndex < ClosureTy->getNumElements()) {
+                // Calculate field address
+                llvm::Value *FieldPtr = Builder.CreateStructGEP(ClosureTy, ThisValue, FieldIndex, "capture_field");
+                return FieldPtr;
+              }
+            }
+          }
+        }
+      }
+      
       if (auto *Alloca = getLocalDecl(VariableDecl)) {
         return Alloca;
       }
