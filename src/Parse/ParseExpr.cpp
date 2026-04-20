@@ -1204,30 +1204,48 @@ Expr *Parser::tryParseTemplateOrComparison(SourceLocation Loc, llvm::StringRef N
 Expr *Parser::parseParenExpression() {
   SourceLocation LParenLoc = Tok.getLocation();
   
-  // P7.1.6: Check for C-style cast: (type)expr
-  // Lookahead to see if this is a type
+  // P7.1.6: Use tentative parsing for C-style cast detection
+  // This allows us to try parsing as cast and fall back to normal paren expression
   Token Next = PP.peekToken(0);
   
-  // Try to parse a type-specifier
+  bool MightBeCast = false;
+  
+  // Check if next token is a basic type keyword
   if (Next.is(TokenKind::kw_int) || Next.is(TokenKind::kw_float) || 
       Next.is(TokenKind::kw_double) || Next.is(TokenKind::kw_char) ||
       Next.is(TokenKind::kw_void) || Next.is(TokenKind::kw_bool) ||
       Next.is(TokenKind::kw_long) || Next.is(TokenKind::kw_short) ||
       Next.is(TokenKind::kw_signed) || Next.is(TokenKind::kw_unsigned)) {
-    // This is likely a C-style cast
-    return parseCStyleCastExpr();
+    MightBeCast = true;
   }
   
-  // For identifiers, we need more careful lookahead
+  // Check for identifier that might be a type
   if (Next.is(TokenKind::identifier)) {
     Token NextNext = PP.peekToken(1);
-    // If next-next token is ')' or a qualifier, it might be a type
     if (NextNext.is(TokenKind::r_paren) || NextNext.is(TokenKind::kw_const) || 
         NextNext.is(TokenKind::kw_volatile) || NextNext.is(TokenKind::star)) {
-      return parseCStyleCastExpr();
+      MightBeCast = true;
     }
   }
   
+  if (MightBeCast) {
+    // Try parsing as C-style cast using tentative parsing
+    TentativeParsingAction TPA(*this);
+    
+    Expr *CastExpr = parseCStyleCastExpr();
+    
+    // Check if parsing succeeded (not a recovery expression)
+    if (CastExpr && !llvm::isa<RecoveryExpr>(CastExpr)) {
+      // Success! Commit the parsing
+      TPA.commit();
+      return CastExpr;
+    }
+    
+    // Failed to parse as cast, abort and fall through to normal paren expression
+    TPA.abort();
+  }
+  
+  // Normal parenthesized expression
   consumeToken();
 
   Expr *Inner = parseExpression();
