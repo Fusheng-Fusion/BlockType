@@ -161,7 +161,9 @@ public:
 //===----------------------------------------------------------------------===//
 
 /// FunctionDecl - Function declaration.
-class FunctionDecl : public ValueDecl {
+// P2: FunctionDecl now inherits from both ValueDecl and DeclContext
+// This allows functions to contain nested declarations (classes, enums, etc.)
+class FunctionDecl : public ValueDecl, public DeclContext {
   llvm::SmallVector<ParmVarDecl *, 8> Params;
   Stmt *Body; // CompoundStmt or nullptr
   bool IsInline;
@@ -187,7 +189,8 @@ public:
                bool HasNoexceptSpec = false, bool NoexceptValue = false,
                Expr *NoexceptExpr = nullptr,
                class AttributeListDecl *Attrs = nullptr)
-      : ValueDecl(Loc, Name, T), Params(Params.begin(), Params.end()),
+      : ValueDecl(Loc, Name, T), DeclContext(DeclContextKind::Function),
+        Params(Params.begin(), Params.end()),
         Body(Body), IsInline(IsInline), IsConstexpr(IsConstexpr),
         IsConsteval(IsConsteval),
         HasNoexceptSpec(HasNoexceptSpec), NoexceptValue(NoexceptValue),

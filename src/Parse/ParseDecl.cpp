@@ -1838,7 +1838,6 @@ VarDecl *Parser::buildVarDecl(Declarator &D) {
 /// Parameters are already parsed in the Function chunk.
 /// Handles: function body, = delete, = default, semicolon.
 FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
-  llvm::errs() << "DEBUG: buildFunctionDecl - Entry\n";
   QualType T = D.buildType(Context);
   if (T.isNull())
     return nullptr;
@@ -1857,22 +1856,42 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
     }
   }
 
-  // Parse function body (if not already consumed as part of function chunk)
-  Stmt *Body = nullptr;
+  bool IsInline = DS.IsInline;
+  bool IsConstexpr = DS.IsConstexpr;
 
+  // P7.1.1: Extract explicit object parameter if present.
+  if (!Params.empty() && Params.front()->isExplicitObjectParam()) {
+    Params.erase(Params.begin());
+  }
+
+  // Phase 1: Create FunctionDecl without body
+  auto Result = Actions.ActOnFunctionDecl(NameLoc, Name, T, Params, nullptr);
+  if (!Result) return nullptr;
+  
+  auto *FD = llvm::cast<FunctionDecl>(Result.get());
+  
+  // Parse function body (if present)
+  Stmt *Body = nullptr;
   if (Tok.is(TokenKind::l_brace)) {
+    // P2: Set CurContext to FunctionDecl and start function definition scope
+    Actions.PushDeclContext(FD);  // FD now inherits from DeclContext
+    Actions.ActOnStartOfFunctionDef(FD);
+    
     Body = parseCompoundStatement();
+    
+    Actions.ActOnFinishOfFunctionDef(FD);
+    Actions.PopDeclContext();
+    
+    // Update FD's body
+    FD->setBody(Body);
   } else if (Tok.is(TokenKind::equal)) {
     consumeToken();
     if (Tok.is(TokenKind::kw_delete)) {
       consumeToken();
-      // P7.4.1: Check for delete("reason") syntax
       if (Tok.is(TokenKind::l_paren)) {
-        consumeToken(); // consume '('
+        consumeToken();
         if (Tok.is(TokenKind::string_literal)) {
-          StringLiteral *DeleteReason = llvm::cast<StringLiteral>(parsePrimaryExpression());
-          // Note: DeleteReason will be set in Sema when FunctionDecl is created
-          // For now, we just parse and discard - full implementation needs Sema changes
+          parsePrimaryExpression();
         }
         expectAndConsume(TokenKind::r_paren, "expected ')' after delete reason");
       }
@@ -1884,24 +1903,7 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
     consumeToken();
   }
 
-  bool IsInline = DS.IsInline;
-  bool IsConstexpr = DS.IsConstexpr;
-
-  // P7.1.1: Extract explicit object parameter if present.
-  // For free functions, explicit object parameter is not valid — but we still
-  // remove it from Params to avoid cascading errors (diagnostic already emitted).
-  if (!Params.empty() && Params.front()->isExplicitObjectParam()) {
-    // Explicit object param on a free function — will be diagnosed by SemaCXX.
-    // For now just remove it from params and store it.
-    Params.erase(Params.begin());
-  }
-
-  llvm::errs() << "DEBUG: buildFunctionDecl - Calling ActOnFunctionDeclFull\n";
-  auto Result = Actions.ActOnFunctionDeclFull(NameLoc, Name, T, Params, Body,
-                                       IsInline, IsConstexpr, false);
-  llvm::errs() << "DEBUG: buildFunctionDecl - ActOnFunctionDeclFull returned " 
-               << (Result ? "non-null" : "null") << "\n";
-  return llvm::cast<FunctionDecl>(Result.get());
+  return FD;
 }
 
 } // namespace blocktype
