@@ -44,6 +44,8 @@ bool Parser::isDeclarationStatement() {
   case TokenKind::kw_constexpr:
   case TokenKind::kw_consteval:
   case TokenKind::kw_constinit:
+  case TokenKind::kw_const:     // P1: const qualifier
+  case TokenKind::kw_volatile:  // P1: volatile qualifier
     return true;
 
   // Check for type names (built-in types)
@@ -799,6 +801,7 @@ Stmt *Parser::parseForStatement() {
     // Check if it's a declaration
     if (isDeclarationStatement()) {
       Init = parseDeclarationStatement();
+      // Note: parseDeclarationStatement already consumed the semicolon
     } else {
       // Parse as expression statement
       SourceLocation InitLoc = Tok.getLocation();
@@ -806,10 +809,14 @@ Stmt *Parser::parseForStatement() {
       if (InitExpr) {
         Init = Actions.ActOnExprStmt(InitLoc, InitExpr).get();
       }
+      // Expression statement needs semicolon
+      if (!tryConsumeToken(TokenKind::semicolon)) {
+        emitError(DiagID::err_expected_semi);
+      }
     }
-  }
-  if (!tryConsumeToken(TokenKind::semicolon)) {
-    emitError(DiagID::err_expected_semi);
+  } else {
+    // Empty init, just consume the semicolon
+    consumeToken();
   }
 
   // Parse condition
