@@ -1434,6 +1434,35 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
   if (!Fn)
     return ExprResult::getInvalid();
 
+  // P7.1.5 Phase 2: Handle lambda expression calls
+  if (auto *LE = llvm::dyn_cast<LambdaExpr>(Fn)) {
+    // Lambda call: get the operator() from closure class
+    auto *ClosureClass = LE->getClosureClass();
+    if (!ClosureClass) {
+      return ExprResult::getInvalid();
+    }
+    
+    // Find operator() method
+    CXXMethodDecl *CallOp = nullptr;
+    for (auto *Method : ClosureClass->methods()) {
+      if (Method->getName() == "operator()") {
+        CallOp = Method;
+        break;
+      }
+    }
+    
+    if (!CallOp) {
+      return ExprResult::getInvalid();
+    }
+    
+    // Create CallExpr with operator() as callee
+    // Note: For lambda calls, we need to pass the lambda object as 'this'
+    // This is a simplified version - full implementation needs proper this handling
+    auto *CE = Context.create<CallExpr>(LParenLoc, Fn, Args);
+    CE->setType(CallOp->getType());
+    return ExprResult(CE);
+  }
+
   // Resolve the callee
   FunctionDecl *FD = nullptr;
 
