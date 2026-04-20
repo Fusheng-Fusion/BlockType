@@ -1860,10 +1860,7 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
   // Parse function body (if not already consumed as part of function chunk)
   Stmt *Body = nullptr;
 
-  llvm::errs() << "DEBUG: buildFunctionDecl - Current token kind: " 
-               << static_cast<int>(Tok.getKind()) << ", text: '" << Tok.getText() << "'\n";
   if (Tok.is(TokenKind::l_brace)) {
-    llvm::errs() << "DEBUG: buildFunctionDecl - Parsing compound statement\n";
     Body = parseCompoundStatement();
   } else if (Tok.is(TokenKind::equal)) {
     consumeToken();

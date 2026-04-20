@@ -197,8 +197,13 @@ class Sema {
 
   /// Register a declaration in both the Scope chain and SymbolTable.
   void registerDecl(NamedDecl *ND) {
-    if (CurrentScope) CurrentScope->addDecl(ND);
-    Symbols.addDecl(ND);
+    bool AddedToScope = false;
+    if (CurrentScope) AddedToScope = CurrentScope->addDecl(ND);
+    // Only add to global SymbolTable for translation-unit level declarations
+    // Local variables should only be in Scope, not in SymbolTable
+    if (AddedToScope && CurrentScope && CurrentScope->isTranslationUnitScope()) {
+      Symbols.addDecl(ND);
+    }
   }
 
   /// Register a declaration allowing redeclaration (e.g., template params).

@@ -305,13 +305,14 @@ Stmt *Parser::parseStatement() {
 Stmt *Parser::parseCompoundStatement() {
   SourceLocation LBraceLoc = Tok.getLocation();
   consumeToken(); // consume '{'
+  
+  // P2: Enter a new scope for compound statement (block scope)
+  Actions.PushScope(ScopeFlags::BlockScope);
 
   llvm::SmallVector<Stmt *, 16> Body;
 
   // Parse statements until we hit '}'
   while (!Tok.is(TokenKind::r_brace) && !Tok.is(TokenKind::eof)) {
-    llvm::errs() << "DEBUG: parseCompoundStatement - Current token kind: " 
-                 << static_cast<int>(Tok.getKind()) << ", text: '" << Tok.getText() << "'\n";
     Stmt *S = parseStatement();
     if (S) {
       Body.push_back(S);
@@ -319,13 +320,13 @@ Stmt *Parser::parseCompoundStatement() {
   }
 
   SourceLocation RBraceLoc = Tok.getLocation();
-  llvm::errs() << "DEBUG: parseCompoundStatement - After loop, current token kind: " 
-               << static_cast<int>(Tok.getKind()) << ", text: '" << Tok.getText() << "'\n";
   if (!tryConsumeToken(TokenKind::r_brace)) {
     emitError(DiagID::err_expected_rbrace);
   }
+  
+  // P2: Exit the block scope
+  Actions.PopScope();
 
-  llvm::errs() << "DEBUG: parseCompoundStatement - Returning\n";
   return Actions.ActOnCompoundStmt(Body, LBraceLoc, RBraceLoc).get();
 }
 
@@ -795,6 +796,9 @@ Stmt *Parser::parseForStatement() {
   }
 
   // Parse traditional for loop
+  // P2: Enter a new scope for the for loop to isolate init variables
+  Actions.PushScope(ScopeFlags::ControlScope);
+  
   // Parse init (expression statement or declaration)
   Stmt *Init = nullptr;
   if (!Tok.is(TokenKind::semicolon)) {
@@ -843,6 +847,9 @@ Stmt *Parser::parseForStatement() {
   if (!Body) {
     Body = Actions.ActOnNullStmt(ForLoc).get();
   }
+  
+  // P2: Exit the for loop scope
+  Actions.PopScope();
 
   return Actions.ActOnForStmt(Init, Cond, Inc, Body, ForLoc).get();
 }
