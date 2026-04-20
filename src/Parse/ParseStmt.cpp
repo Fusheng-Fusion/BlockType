@@ -67,18 +67,27 @@ bool Parser::isDeclarationStatement() {
     return true;
 
   // Check for identifier (could be a user-defined type)
-  case TokenKind::identifier:
+  case TokenKind::identifier: {
     // Look up the identifier in the symbol table
-    // If it's a type name (TypeDecl), then this is a declaration statement
-    if (NamedDecl *D = Actions.LookupName(Tok.getText())) {
-      if (llvm::isa<TypeDecl>(D)) {
+    // If it's a type name (TypeDecl) or template (TemplateDecl), then this is a declaration statement
+    NamedDecl *LookupResult = Actions.LookupName(Tok.getText());
+    if (LookupResult) {
+      // Check if it's a TypeDecl (class, struct, enum, etc.)
+      if (llvm::isa<TypeDecl>(LookupResult)) {
         // This identifier is a type name, so this is likely a declaration
         // For example: "MyType x;" or "MyType* p;"
         return true;
       }
+      
+      // Check if it's a TemplateDecl (class template, function template)
+      // For example: "MyTemplate<int> x;"
+      if (llvm::isa<TemplateDecl>(LookupResult)) {
+        return true;
+      }
     }
-    // If not found or not a type, treat as expression statement
+    // If not found or not a type/template, treat as expression statement
     return false;
+  }
 
   default:
     return false;

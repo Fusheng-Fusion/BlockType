@@ -95,6 +95,9 @@ QualType Parser::parseTypeSpecifier() {
         // Layer 0: Check if next token is '<' (template specialization)
         Token NextTok = PP.peekToken(0);
         bool IsTemplateSpec = NextTok.is(TokenKind::less);
+        llvm::errs() << "DEBUG parseTypeSpecifier: Layer 0 - TypeName='" << TypeName.str() 
+                     << "', NextToken kind=" << static_cast<int>(NextTok.getKind()) 
+                     << ", IsTemplateSpec=" << IsTemplateSpec << "\n";
         
         consumeToken(); // consume identifier
 
@@ -119,12 +122,19 @@ QualType Parser::parseTypeSpecifier() {
 
           // Layer 2: Check if the identifier is a known template in symbol table
           if (!ShouldParseAsTemplate) {
-            NamedDecl *D = Actions.LookupName(TypeName);
+            NamedDecl *LookupResult = Actions.LookupName(TypeName);
             llvm::errs() << "DEBUG parseTypeSpecifier: Layer 2 - LookupName('" << TypeName.str() 
-                         << "') = " << (D ? D->getName().str() : "null") << "\n";
-            if (D) {
-              ShouldParseAsTemplate = llvm::isa<TemplateDecl>(D);
+                         << "') returned " << (LookupResult ? LookupResult->getName().str() : "null") << "\n";
+            if (LookupResult) {
+              llvm::errs() << "DEBUG parseTypeSpecifier: Layer 2 - Decl kind = " 
+                           << static_cast<int>(LookupResult->getKind()) << "\n";
+              ShouldParseAsTemplate = llvm::isa<TemplateDecl>(LookupResult);
               llvm::errs() << "DEBUG parseTypeSpecifier: Layer 2 - IsTemplateDecl = " << ShouldParseAsTemplate << "\n";
+              
+              // Also check if it's a ClassTemplateDecl specifically
+              if (auto *CTD = llvm::dyn_cast<ClassTemplateDecl>(LookupResult)) {
+                llvm::errs() << "DEBUG parseTypeSpecifier: Layer 2 - Found ClassTemplateDecl!\n";
+              }
             }
           }
 
