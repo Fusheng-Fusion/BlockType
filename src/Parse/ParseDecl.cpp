@@ -1831,7 +1831,10 @@ VarDecl *Parser::buildVarDecl(Declarator &D) {
 
   if (Tok.is(TokenKind::equal)) {
     consumeToken();
+    llvm::errs() << "DEBUG [ParseDecl L1834]: Parsing expression for initializer\n";
     Init = parseExpression();
+    llvm::errs() << "DEBUG [ParseDecl L1836]: After parseExpression, Init = " 
+                 << (Init ? std::to_string(static_cast<int>(Init->getKind())) : "null") << "\n";
   } else if (Tok.is(TokenKind::l_paren)) {
     // Direct initialization: int x(10);
     consumeToken();
@@ -1860,6 +1863,10 @@ VarDecl *Parser::buildVarDecl(Declarator &D) {
   consumeToken();
 
   bool IsStatic = (DS.SC == StorageClass::Static);
+  llvm::errs() << "DEBUG [ParseDecl L1863]: Calling ActOnVarDeclFull for '" 
+               << Name.str() << "', T class = " << (T.getTypePtr() ? std::to_string(static_cast<int>(T->getTypeClass())) : "null")
+               << ", Init = " << (Init ? std::to_string(static_cast<int>(Init->getKind())) : "null")
+               << "\n";
   DeclResult Result = Actions.ActOnVarDeclFull(NameLoc, Name, T, Init, IsStatic);
   if (Result.isInvalid())
     return nullptr;

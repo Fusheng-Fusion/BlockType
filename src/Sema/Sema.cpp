@@ -345,20 +345,10 @@ DeclResult Sema::ActOnFunctionDecl(SourceLocation Loc, llvm::StringRef Name,
                                     QualType T,
                                     llvm::ArrayRef<ParmVarDecl *> Params,
                                     Stmt *Body) {
-  // Auto return type deduction: if return type is AutoType and we have a body,
-  // deduce the return type from return statements in the body
+  // Auto return type deduction is deferred to template instantiation.
+  // For non-template functions with auto return type, we still need to deduce.
+  // But for now, keep the AutoType as-is and let TypeCheck handle it.
   QualType ActualReturnType = T;
-  
-  if (Body && T.getTypePtr() && T->getTypeClass() == TypeClass::Auto) {
-    // Traverse the function body to find return statements
-    QualType DeducedType = deduceReturnTypeFromBody(Body, Loc);
-    if (!DeducedType.isNull()) {
-      ActualReturnType = DeducedType;
-    } else {
-      // Could not deduce - keep AutoType (will be handled later or error)
-      Diags.report(Loc, DiagID::err_auto_return_no_deduction, Name);
-    }
-  }
   
   auto *FD = Context.create<FunctionDecl>(Loc, Name, ActualReturnType, Params, Body);
 
@@ -589,6 +579,11 @@ DeclResult Sema::ActOnAttributeDeclWithNamespace(SourceLocation Loc,
 
 DeclResult Sema::ActOnVarDeclFull(SourceLocation Loc, llvm::StringRef Name,
                                   QualType T, Expr *Init, bool IsStatic) {
+  llvm::errs() << "DEBUG [Sema L580]: ActOnVarDeclFull for '" << Name.str() 
+               << "', T class = " << (T.getTypePtr() ? std::to_string(static_cast<int>(T->getTypeClass())) : "null")
+               << ", Init = " << (Init ? std::to_string(static_cast<int>(Init->getKind())) : "null")
+               << "\n";
+  
   // Check if type needs template instantiation
   QualType ActualType = T;
   if (T.getTypePtr() && T->getTypeClass() == TypeClass::TemplateSpecialization) {
@@ -1405,7 +1400,14 @@ DeclResult Sema::ActOnClassTemplateDeclFactory(SourceLocation Loc, llvm::StringR
 
 DeclResult Sema::ActOnFunctionTemplateDeclFactory(SourceLocation Loc, llvm::StringRef Name,
                                                   Decl *TemplatedDecl) {
+  llvm::errs() << "DEBUG [Sema L1396]: ActOnFunctionTemplateDeclFactory called, TemplatedDecl kind = " 
+               << static_cast<int>(TemplatedDecl->getKind()) << "\n";
+  
   auto *FTD = Context.create<FunctionTemplateDecl>(Loc, Name, TemplatedDecl);
+  
+  llvm::errs() << "DEBUG [Sema L1400]: After creation, FTD->getTemplatedDecl() kind = " 
+               << static_cast<int>(FTD->getTemplatedDecl()->getKind()) << "\n";
+  
   return DeclResult(FTD);
 }
 
@@ -1553,6 +1555,9 @@ ExprResult Sema::ActOnCXXNullPtrLiteral(SourceLocation Loc) {
 //===----------------------------------------------------------------------===//
 
 ExprResult Sema::ActOnDeclRefExpr(SourceLocation Loc, ValueDecl *D) {
+  llvm::errs() << "DEBUG [Sema L1557]: ActOnDeclRefExpr called, D = " 
+               << (D ? std::to_string(static_cast<int>(D->getKind())) : "NULL") << "\n";
+  
   auto *DRE = Context.create<DeclRefExpr>(Loc, D);
   // Mark the declaration as used (for warn_unused_variable/function diagnostics)
   if (D)
@@ -2081,6 +2086,9 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
   // Resolve the callee
   FunctionDecl *FD = nullptr;
 
+  llvm::errs() << "DEBUG [Sema L2082]: ActOnCallExpr, Fn type = " 
+               << (Fn ? std::to_string(static_cast<int>(Fn->getKind())) : "NULL") << "\n";
+
   if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(Fn)) {
     Decl *D = DRE->getDecl();
     if (!D) {
@@ -2104,8 +2112,16 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
         Name = ND->getName();
       if (!Name.empty()) {
         if (auto *FTD = Symbols.lookupTemplate(Name)) {
-          if (auto *FuncFTD = llvm::dyn_cast<FunctionTemplateDecl>(FTD)) {
-            FD = DeduceAndInstantiateFunctionTemplate(FuncFTD, Args, LParenLoc);
+          llvm::errs() << "DEBUG [Sema L2096]: Found template '" << Name.str() << "', calling DeduceAndInstantiateFunctionTemplate\n";
+          if (FTD) {
+            if (auto *FuncFTD = llvm::dyn_cast_or_null<FunctionTemplateDecl>(FTD)) {
+              llvm::errs() << "DEBUG [Sema L2098]: dyn_cast succeeded, FuncFTD is valid\n";
+              FD = DeduceAndInstantiateFunctionTemplate(FuncFTD, Args, LParenLoc);
+              llvm::errs() << "DEBUG [Sema L2100]: DeduceAndInstantiateFunctionTemplate returned " 
+                           << (FD ? "valid FD" : "NULL") << "\n";
+            } else {
+              llvm::errs() << "DEBUG [Sema L2099]: dyn_cast FAILED for FunctionTemplateDecl\n";
+            }
           }
         }
       }
@@ -2398,8 +2414,12 @@ StmtResult Sema::ActOnReturnStmt(Expr *RetVal, SourceLocation ReturnLoc) {
     QualType FnType = CurFunction->getType();
     if (auto *FT = llvm::dyn_cast<FunctionType>(FnType.getTypePtr())) {
       QualType RetType = QualType(FT->getReturnType(), Qualifier::None);
-      if (!TC.CheckReturn(RetVal, RetType, ReturnLoc))
-        return StmtResult::getInvalid();
+      
+      // Skip check if return type is AutoType (will be deduced during instantiation)
+      if (RetType.getTypePtr() && RetType->getTypeClass() != TypeClass::Auto) {
+        if (!TC.CheckReturn(RetVal, RetType, ReturnLoc))
+          return StmtResult::getInvalid();
+      }
     }
   }
 
@@ -3101,8 +3121,14 @@ FunctionDecl *Sema::InstantiateFunctionTemplate(
   }
   
   // Step 2: Get the templated function declaration
-  auto *TemplatedFunc = llvm::dyn_cast_or_null<FunctionDecl>(
-      FuncTemplate->getTemplatedDecl());
+  Decl *RawTemplated = FuncTemplate->getTemplatedDecl();
+  llvm::errs() << "DEBUG [Sema L3100]: InstantiateFunctionTemplate, RawTemplated kind = " 
+               << static_cast<int>(RawTemplated->getKind()) << "\n";
+  
+  auto *TemplatedFunc = llvm::dyn_cast_or_null<FunctionDecl>(RawTemplated);
+  
+  llvm::errs() << "DEBUG [Sema L3104]: After dyn_cast, TemplatedFunc = " 
+               << (TemplatedFunc ? "valid" : "NULL") << "\n";
   
   if (TemplatedFunc == nullptr) {
     Diags.report(Loc, DiagID::err_template_recursion);
@@ -3129,6 +3155,18 @@ FunctionDecl *Sema::InstantiateFunctionTemplate(
   // Step 4: Substitute function signature types
   QualType SubstFuncType = Inst.substituteType(TemplatedFunc->getType());
   
+  // Extract return type from substituted function type
+  QualType ReturnType;
+  if (SubstFuncType.getTypePtr() && SubstFuncType->isFunctionType()) {
+    auto *FT = static_cast<const FunctionType *>(SubstFuncType.getTypePtr());
+    ReturnType = QualType(FT->getReturnType(), Qualifier::None);
+  } else {
+    ReturnType = TemplatedFunc->getType();  // Fallback
+  }
+  
+  // If return type is AutoType, we need to deduce it from the body
+  bool NeedsAutoDeduction = (ReturnType.getTypePtr() && ReturnType->getTypeClass() == TypeClass::Auto);
+  
   // Step 5: Clone parameter declarations with substituted types
   llvm::SmallVector<ParmVarDecl *, 4> ClonedParams;
   for (auto *OrigParam : TemplatedFunc->getParams()) {
@@ -3146,17 +3184,38 @@ FunctionDecl *Sema::InstantiateFunctionTemplate(
     ClonedParams.push_back(ClonedParam);
   }
   
-  // Step 6: Create new FunctionDecl with substituted types and cloned params
+  // Step 6: Determine return type (handle auto deduction)
+  // If the substituted function type still has AutoType, deduce from body
+  if (ReturnType.getTypePtr() && ReturnType->getTypeClass() == TypeClass::Auto) {
+    // Clone body first to get the instantiated body
+    Stmt *ClonedBody = nullptr;
+    if (auto *Body = TemplatedFunc->getBody()) {
+      StmtCloner Cloner(Inst);
+      ClonedBody = Cloner.Clone(Body);
+    }
+    
+    // Deduce return type from cloned body
+    QualType DeducedType = deduceReturnTypeFromBody(ClonedBody, Loc);
+    if (!DeducedType.isNull()) {
+      ReturnType = DeducedType;
+    } else {
+      Diags.report(Loc, DiagID::err_auto_return_no_deduction, 
+                   FuncTemplate->getName());
+      return nullptr;
+    }
+  }
+  
+  // Step 7: Create new FunctionDecl with determined return type and cloned params
   auto *NewFD = Context.create<FunctionDecl>(
       TemplatedFunc->getLocation(),
       TemplatedFunc->getName(),
-      SubstFuncType,
+      ReturnType,
       ClonedParams);
   
-  // Step 7: Clone function body if present
-  if (auto *Body = TemplatedFunc->getBody()) {
+  // Step 8: Clone function body if present (if not already cloned above)
+  if (!NewFD->getBody() && TemplatedFunc->getBody()) {
     StmtCloner Cloner(Inst);
-    Stmt *ClonedBody = Cloner.Clone(Body);
+    Stmt *ClonedBody = Cloner.Clone(TemplatedFunc->getBody());
     NewFD->setBody(ClonedBody);
   }
   

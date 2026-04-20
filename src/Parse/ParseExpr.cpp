@@ -219,9 +219,12 @@ bool Parser::isMemberAccessible(ValueDecl *Member, CXXRecordDecl *AccessingClass
 //===----------------------------------------------------------------------===//
 
 Expr *Parser::parseExpression() {
+  llvm::errs() << "DEBUG [ParseExpr L221]: parseExpression called\n";
   pushContext(ParsingContext::Expression);
 
   Expr *LHS = parseUnaryExpression();
+  llvm::errs() << "DEBUG [ParseExpr L225]: After parseUnaryExpression, LHS = " 
+               << (LHS ? std::to_string(static_cast<int>(LHS->getKind())) : "NULL") << "\n";
   if (!LHS) {
     popContext();
     return nullptr;
@@ -328,6 +331,9 @@ Expr *Parser::parseRHS(Expr *LHS, PrecedenceLevel MinPrec) {
 //===----------------------------------------------------------------------===//
 
 Expr *Parser::parseUnaryExpression() {
+  llvm::errs() << "DEBUG [ParseExpr L333]: parseUnaryExpression called, Tok = " 
+               << static_cast<int>(Tok.getKind()) << "\n";
+  
   // P7.1.6: Check for C-style cast at the very beginning of unary expression parsing
   // This ensures we intercept (type)expr before any other path consumes the type token
   if (Tok.is(TokenKind::l_paren)) {
@@ -475,6 +481,8 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
     switch (Tok.getKind()) {
     case TokenKind::l_paren:
       // Function call
+      llvm::errs() << "DEBUG [ParseExpr L478]: parseCallExpression, Base = " 
+                   << (Base ? std::to_string(static_cast<int>(Base->getKind())) : "NULL") << "\n";
       Base = parseCallExpression(Base);
       break;
 
@@ -621,6 +629,9 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
 //===----------------------------------------------------------------------===//
 
 Expr *Parser::parsePrimaryExpression() {
+  llvm::errs() << "DEBUG [ParseExpr L631]: parsePrimaryExpression called, Tok = " 
+               << static_cast<int>(Tok.getKind()) << "\n";
+  
   switch (Tok.getKind()) {
   // Literals
   case TokenKind::numeric_constant: {
@@ -958,6 +969,9 @@ Expr *Parser::parseNullPtrLiteral() {
 }
 
 Expr *Parser::parseIdentifier() {
+  llvm::errs() << "DEBUG [ParseExpr L971]: parseIdentifier called, Tok text = '" 
+               << Tok.getText().str() << "'\n";
+  
   SourceLocation Loc = Tok.getLocation();
   StringRef Name = Tok.getText();
 
@@ -988,7 +1002,10 @@ Expr *Parser::parseIdentifier() {
 
     // Layer 2: Check if the identifier is a known template in the symbol table
     if (NamedDecl *D = Actions.LookupName(Name)) {
+        llvm::errs() << "DEBUG [ParseExpr L1004]: LookupName found '" << Name.str() 
+                     << "', isa<TemplateDecl> = " << llvm::isa<TemplateDecl>(D) << "\n";
         if (llvm::isa<TemplateDecl>(D)) {
+          llvm::errs() << "DEBUG [ParseExpr L1006]: Calling parseTemplateSpecializationExpr\n";
           return parseTemplateSpecializationExpr(Loc, Name);
         }
     }
@@ -1003,13 +1020,19 @@ Expr *Parser::parseIdentifier() {
   // Lookup the declaration in the current scope
   ValueDecl *VD = nullptr;
   if (NamedDecl *D = Actions.LookupName(Name)) {
+      llvm::errs() << "DEBUG [ParseExpr L1021]: LookupName found '" << Name.str() 
+                   << "', D kind = " << static_cast<int>(D->getKind()) << "\n";
       // Found the declaration, create a DeclRefExpr
       VD = dyn_cast<ValueDecl>(D);
   }
 
   // Create DeclRefExpr via Sema (with or without declaration)
   // If VD is nullptr, it's an undefined identifier (error recovery)
-  return Actions.ActOnDeclRefExpr(Loc, VD).get();
+  llvm::errs() << "DEBUG [ParseExpr L1032]: Calling ActOnDeclRefExpr with VD=" 
+               << (VD ? std::to_string(static_cast<int>(VD->getKind())) : "NULL") << "\n";
+  ExprResult Result = Actions.ActOnDeclRefExpr(Loc, VD);
+  llvm::errs() << "DEBUG [ParseExpr L1034]: ActOnDeclRefExpr returned, calling .get()\n";
+  return Result.get();
 }
 
 /// parseQualifiedName - Parse a qualified name (e.g., std::vector).
@@ -1267,6 +1290,9 @@ Expr *Parser::parseConditionalExpression(Expr *Cond) {
 //===----------------------------------------------------------------------===//
 
 Expr *Parser::parseCallExpression(Expr *Fn) {
+  llvm::errs() << "DEBUG [ParseExpr L1271]: parseCallExpression called, Fn = " 
+               << (Fn ? std::to_string(static_cast<int>(Fn->getKind())) : "NULL") << "\n";
+  
   consumeToken(); // consume '('
 
   llvm::SmallVector<Expr *, 8> Args = parseCallArguments();
@@ -1275,6 +1301,9 @@ Expr *Parser::parseCallExpression(Expr *Fn) {
     emitError(DiagID::err_expected_rparen);
   }
 
+  llvm::errs() << "DEBUG [ParseExpr L1278]: Calling ActOnCallExpr, Fn kind = " 
+               << static_cast<int>(Fn->getKind()) << "\n";
+  
   return Actions.ActOnCallExpr(Fn, Args, Fn->getLocation(),
                                Tok.getLocation()).get();
 }
@@ -1578,8 +1607,10 @@ QualType Parser::tryInterpretAsType(Expr *E) {
 
   // Case 1: DeclRefExpr referring to a RecordDecl
   if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(E)) {
-    if (auto *RD = llvm::dyn_cast<RecordDecl>(DRE->getDecl())) {
-      return Context.getRecordType(RD);
+    if (DRE->getDecl()) {
+      if (auto *RD = llvm::dyn_cast<RecordDecl>(DRE->getDecl())) {
+        return Context.getRecordType(RD);
+      }
     }
   }
 

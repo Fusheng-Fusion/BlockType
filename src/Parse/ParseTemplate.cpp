@@ -227,8 +227,26 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
   
   if (auto *FuncDecl = llvm::dyn_cast<FunctionDecl>(TemplatedDecl)) {
     // Function template
-    Template = llvm::cast<FunctionTemplateDecl>(
+    llvm::errs() << "DEBUG [ParseTemplate L234]: Creating FunctionTemplateDecl for '" 
+                 << FuncDecl->getName().str() << "', TemplatedDecl kind = " 
+                 << static_cast<int>(TemplatedDecl->getKind()) << "\n";
+    
+    auto *FTD = llvm::cast<FunctionTemplateDecl>(
         Actions.ActOnFunctionTemplateDeclFactory(TemplateLoc, FuncDecl->getName(), TemplatedDecl).get());
+    
+    // Set the template parameter list
+    auto *TPL = new TemplateParameterList(TemplateLoc, LAngleLoc, RAngleLoc, Params, RequiresClause);
+    FTD->setTemplateParameterList(TPL);
+    
+    // Register the function template
+    auto Result = Actions.ActOnFunctionTemplateDecl(FTD);
+    if (Result.isUsable()) {
+      Template = FTD;
+    } else {
+      Actions.PopScope(); // Pop TemplateScope
+      Actions.PopScope(); // Pop TemplateParamScope
+      return nullptr;
+    }
   } else if (auto *ClassDecl = llvm::dyn_cast<CXXRecordDecl>(TemplatedDecl)) {
     // Check if this is a partial specialization
     bool IsPartialSpec = false;
