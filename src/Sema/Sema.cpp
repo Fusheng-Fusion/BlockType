@@ -35,6 +35,9 @@ Sema::Sema(ASTContext &C, DiagnosticsEngine &D)
     Deduction(std::make_unique<TemplateDeduction>(*this)),
     ConstraintChecker(std::make_unique<ConstraintSatisfaction>(*this)) {
   PushScope(ScopeFlags::TranslationUnitScope);
+  
+  // Initialize std namespace and std::get for structured bindings
+  InitializeStdNamespace();
 }
 
 Sema::~Sema() {
@@ -656,6 +659,53 @@ bool Sema::CheckBindingCondition(llvm::ArrayRef<class BindingDecl *> Bindings,
 //===----------------------------------------------------------------------===//
 // Structured Binding Helper Methods (P7.4.3)
 //===----------------------------------------------------------------------===//
+
+void Sema::InitializeStdNamespace() {
+  // Create std namespace
+  auto *StdNS = Context.create<NamespaceDecl>(SourceLocation(), "std", /*IsInline=*/false);
+  
+  // Add to current context (translation unit)
+  if (CurContext) {
+    CurContext->addDecl(StdNS);
+  }
+  
+  // Add to symbol table
+  Symbols.addNamespaceDecl(StdNS);
+  
+  // Create a simplified std::get function template
+  // For structured bindings, we need: template<size_t N, class T> get(T&)
+  // We'll create a minimal version that can be instantiated
+  
+  // Create template parameter list with just one type parameter for simplicity
+  llvm::SmallVector<NamedDecl *, 1> TemplateParams;
+  auto *TParam = Context.create<TemplateTypeParmDecl>(
+      SourceLocation(), "_T", /*Depth=*/0, /*Index=*/0, /*IsParameterPack=*/false,
+      /*TypenameKeyword=*/true);
+  TemplateParams.push_back(TParam);
+  
+  auto *TPL = new TemplateParameterList(
+      SourceLocation(), SourceLocation(), SourceLocation(), TemplateParams);
+  
+  // Create function declaration with generic signature
+  QualType ParamType = Context.getAutoType();
+  auto *Param = Context.create<ParmVarDecl>(
+      SourceLocation(), "t", ParamType, /*HasDefaultArg=*/false);
+  
+  llvm::SmallVector<ParmVarDecl *, 1> Params;
+  Params.push_back(Param);
+  
+  auto *FD = Context.create<FunctionDecl>(
+      SourceLocation(), "get", Context.getAutoType(), Params,
+      /*Body=*/nullptr, /*IsInline=*/false, 
+      /*IsConstexpr=*/false, /*IsConsteval=*/false);
+  
+  // FunctionTemplateDecl takes (Loc, Name, TemplatedDecl)
+  auto *GetTemplate = Context.create<FunctionTemplateDecl>(
+      SourceLocation(), "get", FD);
+  
+  // Add to std namespace
+  StdNS->addDecl(GetTemplate);
+}
 
 FunctionTemplateDecl *Sema::LookupStdGetFunction() {
   // Lookup std namespace

@@ -432,6 +432,10 @@ public:
   /// 
   /// @return FunctionTemplateDecl for std::get, or nullptr if not found
   class FunctionTemplateDecl *LookupStdGetFunction();
+  
+  /// Initialize std namespace and std::get function template
+  /// Called during Sema construction to set up basic std library support
+  void InitializeStdNamespace();
 
   /// Instantiate std::get<N> template specialization
   /// 
