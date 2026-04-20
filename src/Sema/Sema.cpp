@@ -608,8 +608,9 @@ DeclGroupRef Sema::ActOnDecompositionDecl(SourceLocation Loc,
     // For array types, create arr[i] directly
     if (llvm::isa<ArrayType>(Ty)) {
       // Create ArraySubscriptExpr: init[i]
-      auto *IndexExpr = Context.create<IntegerLiteral>(Loc, i, Context.getIntType());
-      BindingExpr = Context.create<ArraySubscriptExpr>(Init, IndexExpr, ElementType, Loc);
+      llvm::APInt IndexValue(32, i);
+      auto *IndexExpr = Context.create<IntegerLiteral>(Loc, IndexValue, Context.getIntType());
+      BindingExpr = Context.create<ArraySubscriptExpr>(Loc, Init, IndexExpr);
     } else {
       // For tuple/pair types, create std::get<i>(init)
       ExprResult GetCall = BuildStdGetCall(i, Init, ElementType, Loc);
@@ -620,8 +621,9 @@ DeclGroupRef Sema::ActOnDecompositionDecl(SourceLocation Loc,
         // Fallback: use direct indexing with warning
         Diags.report(Loc, DiagID::warn_structured_binding_reference);
         // Try to create a simple subscript expression as fallback
-        auto *IndexExpr = Context.create<IntegerLiteral>(Loc, i, Context.getIntType());
-        BindingExpr = Context.create<ArraySubscriptExpr>(Init, IndexExpr, ElementType, Loc);
+        llvm::APInt IndexValue(32, i);
+        auto *IndexExpr = Context.create<IntegerLiteral>(Loc, IndexValue, Context.getIntType());
+        BindingExpr = Context.create<ArraySubscriptExpr>(Loc, Init, IndexExpr);
       }
     }
     
