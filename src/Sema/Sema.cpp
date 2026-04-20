@@ -142,13 +142,15 @@ NamedDecl *Sema::LookupInNamespace(NamespaceDecl *NS, llvm::StringRef Name) cons
 //===----------------------------------------------------------------------===//
 
 void Sema::PushDeclContext(DeclContext *DC) {
+  assert(DC && "pushing null declaration context");
+  DeclContextStack.push_back(DC);
   CurContext = DC;
 }
 
 void Sema::PopDeclContext() {
-  if (CurContext) {
-    CurContext = CurContext->getParent();
-  }
+  assert(!DeclContextStack.empty() && "popping empty context stack");
+  DeclContextStack.pop_back();
+  CurContext = DeclContextStack.empty() ? nullptr : DeclContextStack.back();
 }
 
 //===----------------------------------------------------------------------===//
@@ -157,6 +159,9 @@ void Sema::PopDeclContext() {
 
 void Sema::ActOnTranslationUnit(TranslationUnitDecl *TU) {
   CurTU = TU;
+  // Push TU onto the context stack as the root context
+  DeclContextStack.clear();
+  DeclContextStack.push_back(TU);
   CurContext = TU;
 }
 

@@ -214,6 +214,10 @@ class Sema {
 
   /// Current DeclContext - tracks the current semantic context.
   DeclContext *CurContext = nullptr;
+  
+  /// DeclContext stack - manages nested declaration contexts.
+  /// This ensures proper context restoration when exiting nested scopes.
+  llvm::SmallVector<DeclContext*, 8> DeclContextStack;
 
   /// Current function being analyzed (for return type checking).
   FunctionDecl *CurFunction = nullptr;
