@@ -501,13 +501,8 @@ QualType Parser::parseTemplateSpecializationType(llvm::StringRef TemplateName) {
   }
   consumeToken(); // consume '>'
   
-  // Try to instantiate the class template
-  QualType Result = Actions.InstantiateClassTemplate(TemplateName, TemplateSpec);
-  if (!Result.isNull()) {
-    return Result;
-  }
-  
-  // If instantiation failed, return the TemplateSpecializationType as-is
+  // Return TemplateSpecializationType as a placeholder
+  // Actual instantiation will happen in Sema during type checking
   return QualType(TemplateSpec, Qualifier::None);
 }
 
