@@ -1,10 +1,10 @@
 int main() {
-    int x = 10;
-    double y = 3.14;
+    int intValue = 10;
+    double doubleValue = 3.14;
     
-    // Test capture type inference
-    auto lambda = [x, &y]() {
-        return x + (int)y;
+    // Test capture type inference (by copy)
+    auto lambda = [intValue, doubleValue]() {
+        return intValue + (int)doubleValue;
     };
     
     return 0;

@@ -445,8 +445,18 @@ DeclResult Sema::ActOnAttributeDeclWithNamespace(SourceLocation Loc,
 
 DeclResult Sema::ActOnVarDeclFull(SourceLocation Loc, llvm::StringRef Name,
                                   QualType T, Expr *Init, bool IsStatic) {
-  if (!T.isNull()) RequireCompleteType(T, Loc);
-  auto *VD = Context.create<VarDecl>(Loc, Name, T, Init, IsStatic);
+  // P7.1.5 Fix: For auto variables with lambda initializer, use lambda's type
+  QualType ActualType = T;
+  if (T.getTypePtr() && T->getTypeClass() == TypeClass::Auto && Init) {
+    // Auto deduction: use the initializer's type
+    QualType InitType = Init->getType();
+    if (!InitType.isNull()) {
+      ActualType = InitType;
+    }
+  }
+  
+  if (!ActualType.isNull()) RequireCompleteType(ActualType, Loc);
+  auto *VD = Context.create<VarDecl>(Loc, Name, ActualType, Init, IsStatic);
   registerDecl(VD);
   if (CurContext) CurContext->addDecl(VD);
   return DeclResult(VD);
@@ -1341,6 +1351,10 @@ ExprResult Sema::ActOnLambdaExpr(SourceLocation Loc,
   auto *ClosureClass = Context.create<CXXRecordDecl>(Loc, ClosureName, TagDecl::TK_class);
   ClosureClass->setIsLambda(true);
   
+  // P7.1.5 Fix: Mark closure class as complete definition
+  // Lambda closure classes are always complete (they have all members defined)
+  ClosureClass->setCompleteDefinition(true);
+  
   // 2. Add capture members to the closure class
   for (const auto &Capture : Captures) {
     // P7.1.5 Phase 1: Infer capture type from context
@@ -1402,7 +1416,8 @@ ExprResult Sema::ActOnLambdaExpr(SourceLocation Loc,
                                          TemplateParams, Attrs);
   
   // Set lambda expression type to the closure class type
-  LE->setType(Context.getRecordType(ClosureClass));
+  QualType LambdaType = Context.getRecordType(ClosureClass);
+  LE->setType(LambdaType);
   
   return ExprResult(LE);
 }
