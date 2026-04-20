@@ -589,20 +589,19 @@ static QualType GetTupleElementType(QualType TupleType, unsigned Index) {
           }
         }
       }
-      
-      // Fallback: if not a specialization or index out of range,
-      // try to get field type from record declaration
-      unsigned FieldIndex = 0;
-      for (auto *Field : RD->fields()) {
-        if (FieldIndex == Index) {
-          return Field->getType();
-        }
-        FieldIndex++;
-      }
-      
-      // Last resort: return the original type
-      return TupleType;
     }
+    
+    // For all record types (including pair/tuple), try to get field type
+    unsigned FieldIndex = 0;
+    for (auto *Field : RD->fields()) {
+      if (FieldIndex == Index) {
+        return Field->getType();
+      }
+      FieldIndex++;
+    }
+    
+    // Last resort: return the original type
+    return TupleType;
   }
   
   // Not a recognized tuple-like type
@@ -623,10 +622,20 @@ static bool IsTupleLikeType(QualType Ty) {
   if (auto *RT = llvm::dyn_cast<RecordType>(TypePtr)) {
     RecordDecl *RD = RT->getDecl();
     if (RD) {
+      // Check for std::pair or std::tuple
       llvm::StringRef Name = RD->getName();
       if (Name == "pair" || Name.ends_with("::pair") ||
           Name == "tuple" || Name.ends_with("::tuple")) {
         return true;
+      }
+      
+      // For other record types, check if they have fields (aggregate)
+      unsigned FieldCount = 0;
+      for (auto *Field : RD->fields()) {
+        FieldCount++;
+      }
+      if (FieldCount > 0) {
+        return true;  // Any struct/class with fields is decomposable
       }
     }
   }
