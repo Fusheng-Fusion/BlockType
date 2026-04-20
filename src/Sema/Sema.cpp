@@ -1409,6 +1409,7 @@ ExprResult Sema::ActOnLambdaExpr(SourceLocation Loc,
     
     auto *Field = Context.create<FieldDecl>(Capture.Loc, Capture.Name, CaptureType);
     ClosureClass->addMember(Field);
+    ClosureClass->addField(Field);  // Also add to Fields array for CodeGen
   }
   
   // 3. Create operator() method
