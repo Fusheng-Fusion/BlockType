@@ -1874,6 +1874,7 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
   Stmt *Body = nullptr;
   if (Tok.is(TokenKind::l_brace)) {
     // P2: Set CurContext to FunctionDecl and start function definition scope
+    DeclContext *SavedContext = Actions.getCurrentContext();
     Actions.PushDeclContext(FD);  // FD now inherits from DeclContext
     Actions.ActOnStartOfFunctionDef(FD);
     
@@ -1881,6 +1882,8 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
     
     Actions.ActOnFinishOfFunctionDef(FD);
     Actions.PopDeclContext();
+    // Restore the previous context (e.g., TranslationUnit)
+    Actions.PushDeclContext(SavedContext);
     
     // Update FD's body
     FD->setBody(Body);
