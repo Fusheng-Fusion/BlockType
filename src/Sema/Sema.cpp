@@ -1390,14 +1390,14 @@ ExprResult Sema::ActOnLambdaExpr(SourceLocation Loc,
   }
   
   // 3. Create operator() method
-  // For simplicity, use void() for now
-  // TODO: Properly build function type with parameters
-  QualType OpCallType = QualType(Context.getFunctionType(Context.getVoidType().getTypePtr(),
+  // Use the ReturnType from lambda expression (or void if not specified)
+  QualType RetTy = ReturnType.isNull() ? Context.getVoidType() : ReturnType;
+  QualType OpCallType = QualType(Context.getFunctionType(RetTy.getTypePtr(),
                                                           llvm::ArrayRef<const Type *>(), false));
   
   auto *CallOp = Context.create<CXXMethodDecl>(Loc, "operator()", OpCallType,
                                                 Params, ClosureClass,
-                                                nullptr /* Body */,
+                                                Body /* Lambda body */,
                                                 false /* isStatic */,
                                                 !IsMutable /* isConst */,
                                                 false /* isVolatile */,

@@ -74,6 +74,24 @@ void CodeGenModule::EmitTranslationUnit(TranslationUnitDecl *TU) {
     if (auto *FD = llvm::dyn_cast<FunctionDecl>(D)) {
       // 创建函数声明（不生成函数体）
       GetOrCreateFunctionDecl(FD);
+      
+      // P7.1.5: Process lambda closure classes in function scope
+      for (Decl *SubDecl : FD->decls()) {
+        if (auto *CXXRD = llvm::dyn_cast<CXXRecordDecl>(SubDecl)) {
+          if (CXXRD->isLambda()) {
+            // Create closure type and layout
+            getTypes().GetRecordType(CXXRD);
+            EmitClassLayout(CXXRD);
+            
+            // Create declarations for operator()
+            for (CXXMethodDecl *Method : CXXRD->methods()) {
+              if (Method->getBody()) {
+                GetOrCreateFunctionDecl(Method);
+              }
+            }
+          }
+        }
+      }
     } else if (auto *VD = llvm::dyn_cast<VarDecl>(D)) {
       // 全局变量加入延迟队列
       DeferredGlobalVars.push_back(VD);
@@ -107,6 +125,20 @@ void CodeGenModule::EmitTranslationUnit(TranslationUnitDecl *TU) {
     if (auto *FD = llvm::dyn_cast<FunctionDecl>(D)) {
       if (FD->getBody()) {
         EmitFunction(FD);
+      }
+      
+      // P7.1.5: Generate lambda closure class methods
+      for (Decl *SubDecl : FD->decls()) {
+        if (auto *CXXRD = llvm::dyn_cast<CXXRecordDecl>(SubDecl)) {
+          if (CXXRD->isLambda()) {
+            // Generate operator() for lambda
+            for (CXXMethodDecl *MD : CXXRD->methods()) {
+              if (MD->getBody() && MD->getName() == "operator()") {
+                EmitFunction(MD);
+              }
+            }
+          }
+        }
       }
     } else if (auto *RD = llvm::dyn_cast<CXXRecordDecl>(D)) {
       // P2: 生成类内定义的方法体

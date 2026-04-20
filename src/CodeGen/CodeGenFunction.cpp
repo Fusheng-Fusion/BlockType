@@ -91,6 +91,19 @@ void CodeGenFunction::EmitFunctionBody(FunctionDecl *FunctionDecl,
   // sret 函数：跳过隐式首参数（sret 指针）
   unsigned ArgIndex = 0;
   unsigned ArgSkip = FnNeedsSRet ? 1 : 0;
+  
+  // P7.1.5: For CXXMethodDecl (including lambda operator()), first arg is this pointer
+  if (auto *MD = llvm::dyn_cast<CXXMethodDecl>(FunctionDecl)) {
+    if (!MD->isStatic()) {
+      // First LLVM argument is 'this' pointer
+      auto ArgIt = Function->arg_begin();
+      if (ArgIt != Function->arg_end()) {
+        ThisValue = &*ArgIt;
+        ++ArgIndex;  // Skip this pointer in parameter loop
+      }
+    }
+  }
+  
   for (auto &Arg : Function->args()) {
     if (ArgIndex < ArgSkip) {
       ++ArgIndex;
