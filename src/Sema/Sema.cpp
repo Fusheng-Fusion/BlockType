@@ -1398,7 +1398,12 @@ QualType Sema::deduceElementTypeForInitList(QualType AggrType,
 
   // RecordType → field type by index
   if (auto *RT = llvm::dyn_cast<RecordType>(Ty)) {
-    auto Fields = RT->getDecl()->fields();
+    auto *RD = RT->getDecl();
+    if (!RD)
+      return QualType();
+    
+    // Handle ClassTemplateSpecialization - get fields from the specialization
+    auto Fields = RD->fields();
     if (Index < Fields.size())
       return Fields[Index]->getType();
     return QualType();

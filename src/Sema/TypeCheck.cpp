@@ -227,9 +227,26 @@ bool TypeCheck::CheckReturn(Expr *RetVal, QualType FuncRetType,
   }
 
   QualType RetType = RetVal->getType();
+  
+  // Handle InitListExpr: if type is null but we have an expected record type,
+  // set the InitListExpr's type to the function return type
   if (RetType.isNull()) {
-    Diags.report(ReturnLoc, DiagID::err_return_type_mismatch);
-    return false;
+    if (auto *ILE = llvm::dyn_cast<InitListExpr>(RetVal)) {
+      // Check if function returns a record type (struct/class)
+      const Type *FuncTy = FuncRetType.getTypePtr();
+      if (FuncTy && (llvm::isa<RecordType>(FuncTy) || 
+                     llvm::isa<TemplateSpecializationType>(FuncTy))) {
+        // Set InitListExpr type to match function return type
+        ILE->setType(FuncRetType);
+        RetType = FuncRetType;
+      } else {
+        Diags.report(ReturnLoc, DiagID::err_return_type_mismatch);
+        return false;
+      }
+    } else {
+      Diags.report(ReturnLoc, DiagID::err_return_type_mismatch);
+      return false;
+    }
   }
 
   // void function: return expression is allowed if it's void

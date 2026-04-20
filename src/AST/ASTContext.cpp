@@ -199,7 +199,18 @@ QualType ASTContext::getTypeDeclType(const TypeDecl *D) {
     return QualType(TT, Qualifier::None);
   }
 
-  // For other TypeDecls (e.g., TemplateTypeParmDecl), create an unresolved type
+  // Handle TemplateTypeParmDecl - create TemplateTypeParmType
+  if (auto *TTPD = dyn_cast<TemplateTypeParmDecl>(D)) {
+    void *Mem = Allocator.Allocate(sizeof(TemplateTypeParmType), alignof(TemplateTypeParmType));
+    auto *TTPT = new (Mem) TemplateTypeParmType(
+        const_cast<TemplateTypeParmDecl*>(TTPD),
+        TTPD->getDepth(),
+        TTPD->getIndex(),
+        TTPD->isParameterPack());
+    return QualType(TTPT, Qualifier::None);
+  }
+
+  // For other TypeDecls, create an unresolved type
   return QualType(getUnresolvedType(D->getName()), Qualifier::None);
 }
 
