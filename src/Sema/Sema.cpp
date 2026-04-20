@@ -603,16 +603,26 @@ DeclGroupRef Sema::ActOnDecompositionDecl(SourceLocation Loc,
       return DeclGroupRef::getInvalid();
     }
     
-    // Create std::get<i>(init) expression
-    ExprResult GetCall = BuildStdGetCall(i, Init, ElementType, Loc);
-    
     Expr *BindingExpr = nullptr;
-    if (GetCall.isUsable()) {
-      BindingExpr = GetCall.get();
+    
+    // For array types, create arr[i] directly
+    if (llvm::isa<ArrayType>(Ty)) {
+      // Create ArraySubscriptExpr: init[i]
+      auto *IndexExpr = Context.create<IntegerLiteral>(Loc, i, Context.getIntType());
+      BindingExpr = Context.create<ArraySubscriptExpr>(Init, IndexExpr, ElementType, Loc);
     } else {
-      // Fallback: use init expression with warning
-      Diags.report(Loc, DiagID::warn_structured_binding_reference);
-      BindingExpr = Init;
+      // For tuple/pair types, create std::get<i>(init)
+      ExprResult GetCall = BuildStdGetCall(i, Init, ElementType, Loc);
+      
+      if (GetCall.isUsable()) {
+        BindingExpr = GetCall.get();
+      } else {
+        // Fallback: use direct indexing with warning
+        Diags.report(Loc, DiagID::warn_structured_binding_reference);
+        // Try to create a simple subscript expression as fallback
+        auto *IndexExpr = Context.create<IntegerLiteral>(Loc, i, Context.getIntType());
+        BindingExpr = Context.create<ArraySubscriptExpr>(Init, IndexExpr, ElementType, Loc);
+      }
     }
     
     // Create a BindingDecl with the correct type and binding expression
