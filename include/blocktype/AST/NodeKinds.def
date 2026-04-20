@@ -158,6 +158,9 @@ DECL(TagDecl, TypeDecl)
 DECL(EnumDecl, TagDecl)
 DECL(RecordDecl, TagDecl)
 
+// Template type parameters (must be after TypeDecl, before NamespaceDecl for classof range check)
+DECL(TemplateTypeParmDecl, TypeDecl)
+
 // C++ Records
 DECL(CXXRecordDecl, RecordDecl)
 
@@ -189,7 +192,7 @@ DECL(ClassTemplateDecl, TemplateDecl)
 DECL(VarTemplateDecl, TemplateDecl)
 DECL(TypeAliasTemplateDecl, TemplateDecl)
 DECL(TemplateTemplateParmDecl, TemplateDecl)
-DECL(TemplateTypeParmDecl, TypeDecl)
+// DECL(TemplateTypeParmDecl, TypeDecl)  // Moved to after TypeDecl (line 162)
 DECL(NonTypeTemplateParmDecl, ValueDecl)
 
 // Template specializations

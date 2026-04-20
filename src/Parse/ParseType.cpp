@@ -165,15 +165,31 @@ QualType Parser::parseTypeSpecifier() {
           // Try to look up the type name in the symbol table
           bool FoundInScope = false;
           if (NamedDecl *D = Actions.LookupName(TypeName)) {
+              llvm::errs() << "DEBUG: LookupName found '" << TypeName.str() << "', kind: " 
+                           << static_cast<int>(D->getKind()) << "\n";
               // Check if this is a type declaration
               if (auto *TD = llvm::dyn_cast<TypeDecl>(D)) {
+                llvm::errs() << "DEBUG: Is TypeDecl, getting type...\n";
                 Result = Context.getTypeDeclType(TD);
+                llvm::errs() << "DEBUG: Got type, class: " 
+                             << (Result.getTypePtr() ? static_cast<int>(Result->getTypeClass()) : -1) << "\n";
                 FoundInScope = true;
+              } else {
+                llvm::errs() << "DEBUG: NOT a TypeDecl! Actual class: " << D->getKind() << "\n";
+                // Try casting to TemplateTypeParmDecl directly
+                if (auto *TTPD = llvm::dyn_cast<class TemplateTypeParmDecl>(D)) {
+                  llvm::errs() << "DEBUG: It IS a TemplateTypeParmDecl! Creating TemplateTypeParmType...\n";
+                  Result = Context.getTypeDeclType(TTPD);
+                  FoundInScope = true;
+                }
               }
+          } else {
+            llvm::errs() << "DEBUG: LookupName NOT found for '" << TypeName.str() << "'\n";
           }
-
+        
           // If not found in scope, create an unresolved type
           if (!FoundInScope) {
+            llvm::errs() << "DEBUG: Creating UnresolvedType for '" << TypeName.str() << "'\n";
             UnresolvedType *Unresolved = Context.getUnresolvedType(TypeName);
             Result = QualType(Unresolved, Qualifier::None);
           }
