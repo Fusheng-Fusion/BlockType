@@ -49,17 +49,24 @@ llvm::Value *CodeGenFunction::EmitLambdaExpr(LambdaExpr *LE) {
     if (Capture.Kind == LambdaCapture::InitCopy && Capture.InitExpr) {
       // Init capture: [x = expr] - evaluate the initialization expression
       CaptureValue = EmitExpr(Capture.InitExpr);
-    } else {
-      // Named capture: [x] or [&x]
-      // Lookup the variable in current scope
-      NamedDecl *CapturedDecl = nullptr;
-      // For now, we need to find the VarDecl from the capture name
-      // This requires access to Sema's symbol table, which we don't have here
-      // So we'll use a simplified approach: assume the variable is in local scope
-      
-      // TODO: Properly lookup captured variable from Sema context
-      // For now, skip initialization (will be zero)
-      CaptureValue = nullptr;
+    } else if (Capture.CapturedDecl) {
+      // Named capture: [x] or [&x] - load from captured variable
+      if (auto *CapturedVar = llvm::dyn_cast<VarDecl>(Capture.CapturedDecl)) {
+        // Create a DeclRefExpr to the captured variable
+        auto &Ctx = CGM.getASTContext();
+        auto *DRE = Ctx.create<DeclRefExpr>(CapturedVar->getLocation(), CapturedVar);
+        DRE->setType(CapturedVar->getType());
+        
+        // Get the address using EmitLValue
+        llvm::Value *VarAddr = EmitLValue(DRE);
+        if (VarAddr) {
+          // Load the value
+          llvm::Type *ValTy = CGM.getTypes().ConvertType(CapturedVar->getType());
+          if (ValTy) {
+            CaptureValue = Builder.CreateLoad(ValTy, VarAddr, "capture_load");
+          }
+        }
+      }
     }
     
     // Store the capture value to the corresponding field
