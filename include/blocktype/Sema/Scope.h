@@ -65,6 +65,12 @@ enum class ScopeFlags : unsigned {
   
   /// This scope is for a for-range statement.
   ForRangeScope = 0x800,
+  
+  /// This is a lambda expression scope (C++11/14/17).
+  LambdaScope = 0x1000,
+  
+  /// This is a template parameter scope (for template parameters only).
+  TemplateParamScope = 0x2000,
 };
 
 /// Bitwise operators for ScopeFlags.
@@ -172,6 +178,12 @@ public:
     return hasFlags(ScopeFlags::TranslationUnitScope);
   }
   
+  /// Returns true if this is a lambda scope.
+  bool isLambdaScope() const { return hasFlags(ScopeFlags::LambdaScope); }
+  
+  /// Returns true if this is a template parameter scope.
+  bool isTemplateParamScope() const { return hasFlags(ScopeFlags::TemplateParamScope); }
+  
   /// Finds the nearest enclosing function scope.
   /// Returns nullptr if not found.
   Scope *getEnclosingFunctionScope();
@@ -187,6 +199,14 @@ public:
   /// Finds the nearest enclosing translation unit scope.
   /// Returns nullptr if not found.
   Scope *getEnclosingTranslationUnitScope();
+  
+  /// Finds the nearest enclosing lambda scope.
+  /// Returns nullptr if not found.
+  Scope *getEnclosingLambdaScope();
+  
+  /// Finds the nearest enclosing template parameter scope.
+  /// Returns nullptr if not found.
+  Scope *getEnclosingTemplateParamScope();
 
   /// Using directives in this scope (using namespace X).
   llvm::SmallVector<NamespaceDecl *, 4> UsingDirectives;

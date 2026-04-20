@@ -42,6 +42,38 @@ TEST_F(SemaTest, PushPopScope) {
   EXPECT_EQ(S->getCurrentScope(), Outer);
 }
 
+// --- LambdaScope and TemplateParamScope ---
+
+TEST_F(SemaTest, LambdaScope) {
+  Scope *Outer = S->getCurrentScope();
+  S->PushScope(ScopeFlags::LambdaScope);
+  Scope *LambdaScope = S->getCurrentScope();
+  EXPECT_TRUE(LambdaScope->isLambdaScope());
+  EXPECT_FALSE(LambdaScope->isBlockScope());
+  
+  // Test getEnclosingLambdaScope
+  EXPECT_EQ(LambdaScope->getEnclosingLambdaScope(), LambdaScope);
+  EXPECT_EQ(Outer->getEnclosingLambdaScope(), nullptr);
+  
+  S->PopScope();
+  EXPECT_EQ(S->getCurrentScope(), Outer);
+}
+
+TEST_F(SemaTest, TemplateParamScope) {
+  Scope *Outer = S->getCurrentScope();
+  S->PushScope(ScopeFlags::TemplateParamScope);
+  Scope *TPScope = S->getCurrentScope();
+  EXPECT_TRUE(TPScope->isTemplateParamScope());
+  EXPECT_FALSE(TPScope->isClassScope());
+  
+  // Test getEnclosingTemplateParamScope
+  EXPECT_EQ(TPScope->getEnclosingTemplateParamScope(), TPScope);
+  EXPECT_EQ(Outer->getEnclosingTemplateParamScope(), nullptr);
+  
+  S->PopScope();
+  EXPECT_EQ(S->getCurrentScope(), Outer);
+}
+
 // --- VarDecl ---
 
 TEST_F(SemaTest, ActOnVarDeclBasic) {

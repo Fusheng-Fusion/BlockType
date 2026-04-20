@@ -157,22 +157,25 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
   SourceLocation RAngleLoc = Tok.getLocation();
   consumeToken(); // consume '>'
 
-  // Enter template scope: template parameters are visible within the
-  // template body. This allows LookupUnqualifiedName to detect that
-  // we are inside a template definition via ScopeFlags::TemplateScope.
-  Actions.PushScope(ScopeFlags::TemplateScope);
+  // Enter template parameter scope: template parameters are registered here
+  Actions.PushScope(ScopeFlags::TemplateParamScope);
   for (auto *P : Params)
     Actions.RegisterTemplateParam(P);
+  
+  // Enter template body scope: the templated declaration is parsed in this scope
+  Actions.PushScope(ScopeFlags::TemplateScope);
 
   // Check for concept definition (C++20)
   if (Tok.is(TokenKind::kw_concept)) {
     ConceptDecl *Concept = parseConceptDefinition(TemplateLoc, Params);
     if (!Concept) {
-      Actions.PopScope();
+      Actions.PopScope(); // Pop TemplateScope
+      Actions.PopScope(); // Pop TemplateParamScope
       return nullptr;
     }
     // Return the concept's template
-    Actions.PopScope();
+    Actions.PopScope(); // Pop TemplateScope
+    Actions.PopScope(); // Pop TemplateParamScope
     return Concept->getTemplate();
   }
 
@@ -185,7 +188,8 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
   // Parse the templated declaration
   Decl *TemplatedDecl = parseDeclaration();
   if (!TemplatedDecl) {
-    Actions.PopScope();
+    Actions.PopScope(); // Pop TemplateScope
+    Actions.PopScope(); // Pop TemplateParamScope
     return nullptr;
   }
 
@@ -221,7 +225,8 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
       
       Template = llvm::cast<ClassTemplateDecl>(
           Actions.ActOnClassTemplateDeclFactory(TemplateLoc, ClassDecl->getName(), PartialSpec).get());
-      Actions.PopScope();
+      Actions.PopScope(); // Pop TemplateScope
+      Actions.PopScope(); // Pop TemplateParamScope
       return Template;
     }
     
@@ -252,7 +257,8 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
       
       Template = llvm::cast<VarTemplateDecl>(
           Actions.ActOnVarTemplateDeclFactory(TemplateLoc, VD->getName(), PartialSpec).get());
-      Actions.PopScope();
+      Actions.PopScope(); // Pop TemplateScope
+      Actions.PopScope(); // Pop TemplateParamScope
       return Template;
     }
     
@@ -274,7 +280,8 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
       TemplateLoc, LAngleLoc, RAngleLoc, Params, RequiresClause);
   Template->setTemplateParameterList(TPL);
 
-  Actions.PopScope();
+  Actions.PopScope(); // Pop TemplateScope
+  Actions.PopScope(); // Pop TemplateParamScope
   return Template;
 }
 

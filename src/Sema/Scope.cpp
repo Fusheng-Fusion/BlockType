@@ -104,6 +104,26 @@ Scope *Scope::getEnclosingTranslationUnitScope() {
   return nullptr;
 }
 
+Scope *Scope::getEnclosingLambdaScope() {
+  if (isLambdaScope())
+    return this;
+  
+  if (Parent)
+    return Parent->getEnclosingLambdaScope();
+  
+  return nullptr;
+}
+
+Scope *Scope::getEnclosingTemplateParamScope() {
+  if (isTemplateParamScope())
+    return this;
+  
+  if (Parent)
+    return Parent->getEnclosingTemplateParamScope();
+  
+  return nullptr;
+}
+
 void Scope::dump(llvm::raw_ostream &OS, unsigned Indent) const {
   // Print indentation
   for (unsigned I = 0; I < Indent; ++I)
@@ -129,6 +149,10 @@ void Scope::dump(llvm::raw_ostream &OS, unsigned Indent) const {
     OS << "[Switch] ";
   if (hasFlags(ScopeFlags::TemplateScope))
     OS << "[Template] ";
+  if (hasFlags(ScopeFlags::LambdaScope))
+    OS << "[Lambda] ";
+  if (hasFlags(ScopeFlags::TemplateParamScope))
+    OS << "[TemplateParam] ";
   
   OS << "(" << DeclList.size() << " decls)\n";
   
