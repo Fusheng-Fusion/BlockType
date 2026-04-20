@@ -1460,6 +1460,30 @@ QualType Sema::deduceElementTypeForInitList(QualType AggrType,
   if (auto *AT = llvm::dyn_cast<ArrayType>(Ty))
     return QualType(AT->getElementType(), AggrType.getQualifiers());
 
+  // TemplateSpecializationType → resolve to ClassTemplateSpecializationDecl
+  if (auto *TST = llvm::dyn_cast<TemplateSpecializationType>(Ty)) {
+    auto *TD = TST->getTemplateDecl();
+    if (!TD)
+      return QualType();
+    
+    // For class templates, the templated decl should be a CXXRecordDecl
+    auto *TemplatedDecl = TD->getTemplatedDecl();
+    if (!TemplatedDecl)
+      return QualType();
+    
+    // The specialized record should have fields
+    if (auto *CTSD = llvm::dyn_cast<ClassTemplateSpecializationDecl>(TemplatedDecl)) {
+      auto Fields = CTSD->fields();
+      if (Index < Fields.size())
+        return Fields[Index]->getType();
+    } else if (auto *RD = llvm::dyn_cast<CXXRecordDecl>(TemplatedDecl)) {
+      auto Fields = RD->fields();
+      if (Index < Fields.size())
+        return Fields[Index]->getType();
+    }
+    return QualType();
+  }
+
   // RecordType → field type by index
   if (auto *RT = llvm::dyn_cast<RecordType>(Ty)) {
     auto *RD = RT->getDecl();
