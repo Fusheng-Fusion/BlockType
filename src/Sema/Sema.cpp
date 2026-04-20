@@ -1207,7 +1207,8 @@ DeclResult Sema::ActOnTemplateDeclFactory(SourceLocation Loc, llvm::StringRef Na
 DeclResult Sema::ActOnClassTemplateDeclFactory(SourceLocation Loc, llvm::StringRef Name,
                                                Decl *TemplatedDecl) {
   auto *CTD = Context.create<ClassTemplateDecl>(Loc, Name, TemplatedDecl);
-  return DeclResult(CTD);
+  // Register the template declaration
+  return ActOnClassTemplateDecl(CTD);
 }
 
 DeclResult Sema::ActOnFunctionTemplateDeclFactory(SourceLocation Loc, llvm::StringRef Name,

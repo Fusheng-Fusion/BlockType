@@ -277,6 +277,12 @@ public:
   /// Parses an initializer list (brace-enclosed list).
   Expr *parseInitializerList(QualType ExpectedType = QualType());
 
+  /// Tries to interpret an expression as a type (for functional cast).
+  QualType tryInterpretAsType(Expr *E);
+
+  /// Parses Type(args) functional cast expression.
+  Expr *parseFunctionalCastExpr(QualType ConstructedType);
+
   /// Parses a designated initializer (C++20).
   /// \param ExpectedType The expected aggregate type for field lookup.
   Expr *parseDesignatedInitializer(QualType ExpectedType = QualType());

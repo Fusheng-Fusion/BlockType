@@ -112,6 +112,8 @@ NamespaceDecl *SymbolTable::lookupNamespace(llvm::StringRef Name) const {
 
 TemplateDecl *SymbolTable::lookupTemplate(llvm::StringRef Name) const {
   auto It = Templates.find(Name);
+  llvm::errs() << "DEBUG lookupTemplate: Looking for '" << Name.str() << "', found = " 
+               << (It != Templates.end() ? It->second->getName().str() : "null") << "\n";
   return It != Templates.end() ? It->second : nullptr;
 }
 
@@ -121,7 +123,20 @@ ConceptDecl *SymbolTable::lookupConcept(llvm::StringRef Name) const {
 }
 
 llvm::ArrayRef<NamedDecl *> SymbolTable::lookup(llvm::StringRef Name) const {
-  if (auto Ord = lookupOrdinary(Name); !Ord.empty()) return Ord;
+  if (auto Ord = lookupOrdinary(Name); !Ord.empty()) {
+    llvm::errs() << "DEBUG SymbolTable::lookup: Found '" << Name.str() << "' in OrdinarySymbols\n";
+    return Ord;
+  }
+  // Also check templates for ClassTemplateDecl, FunctionTemplateDecl, etc.
+  if (auto *TD = lookupTemplate(Name)) {
+    llvm::errs() << "DEBUG SymbolTable::lookup: Found '" << Name.str() << "' in Templates\n";
+    // Return the TemplateDecl as a single-element array
+    static llvm::SmallVector<NamedDecl *, 1> Result;
+    Result.clear();
+    Result.push_back(TD);
+    return Result;
+  }
+  llvm::errs() << "DEBUG SymbolTable::lookup: Not found '" << Name.str() << "'\n";
   // For single-result lookups, check tags/typedefs
   return {};
 }

@@ -185,6 +185,32 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
     RequiresClause = parseRequiresClause();
   }
 
+  // For class templates, pre-register the ClassTemplateDecl before parsing the class body
+  // This allows member functions to reference the template by name
+  if ((Tok.is(TokenKind::kw_class) || Tok.is(TokenKind::kw_struct)) && NextTok.is(TokenKind::identifier)) {
+    llvm::errs() << "DEBUG: Pre-registering class template '" << NextTok.getText().str() << "'\n";
+    llvm::StringRef ClassName = NextTok.getText();
+    SourceLocation ClassLoc = NextTok.getLocation();
+    
+    // Create a forward-declared CXXRecordDecl
+    auto *ForwardDecl = Context.create<CXXRecordDecl>(ClassLoc, ClassName, TagDecl::TK_class);
+    ForwardDecl->setCompleteDefinition(false);
+    
+    // Create a minimal TemplateParameterList (will be replaced later)
+    auto *TPL = new TemplateParameterList(TemplateLoc, LAngleLoc, RAngleLoc, Params, nullptr);
+    
+    // Create and register the ClassTemplateDecl
+    auto *CTD = Context.create<ClassTemplateDecl>(TemplateLoc, ClassName, ForwardDecl);
+    CTD->setTemplateParameterList(TPL);
+    
+    auto Result = Actions.ActOnClassTemplateDecl(CTD);
+    if (Result.isUsable()) {
+      llvm::errs() << "DEBUG: Successfully registered class template '" << ClassName.str() << "'\n";
+    } else {
+      llvm::errs() << "DEBUG: Failed to register class template '" << ClassName.str() << "'\n";
+    }
+  }
+
   // Parse the templated declaration
   Decl *TemplatedDecl = parseDeclaration();
   if (!TemplatedDecl) {

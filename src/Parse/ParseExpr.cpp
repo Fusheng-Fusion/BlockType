@@ -385,6 +385,18 @@ Expr *Parser::parseUnaryExpression() {
   if (!Base)
     return nullptr;
 
+  // Check for functional cast: Type{args} or Type(args)
+  if (Tok.is(TokenKind::l_brace) || Tok.is(TokenKind::l_paren)) {
+    QualType ConstructedType = tryInterpretAsType(Base);
+    if (!ConstructedType.isNull()) {
+      if (Tok.is(TokenKind::l_brace)) {
+        return parseInitializerList(ConstructedType);
+      } else {
+        return parseFunctionalCastExpr(ConstructedType);
+      }
+    }
+  }
+
   return parsePostfixExpression(Base);
 }
 
@@ -1554,6 +1566,67 @@ Expr *Parser::parseDesignatedInitializer(QualType ExpectedType) {
 
   // Create DesignatedInitExpr via Sema
   return Actions.ActOnDesignatedInitExpr(DotLoc, Designators, Init).get();
+}
+
+//===----------------------------------------------------------------------===//
+// Functional cast support
+//===----------------------------------------------------------------------===//
+
+QualType Parser::tryInterpretAsType(Expr *E) {
+  if (!E)
+    return QualType();
+
+  // Case 1: DeclRefExpr referring to a RecordDecl
+  if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(E)) {
+    if (auto *RD = llvm::dyn_cast<RecordDecl>(DRE->getDecl())) {
+      return Context.getRecordType(RD);
+    }
+  }
+
+  // Case 2: TemplateSpecializationExpr -> TemplateSpecializationType
+  if (auto *TSE = llvm::dyn_cast<TemplateSpecializationExpr>(E)) {
+    QualType ExprType = E->getType();
+    if (!ExprType.isNull())
+      return ExprType;
+    
+    NamedDecl *LookupResult = Actions.LookupName(TSE->getTemplateName());
+    TemplateDecl *TD = LookupResult ? llvm::dyn_cast<TemplateDecl>(LookupResult) : nullptr;
+    
+    if (!TD && LookupResult) {
+      if (auto *RD = llvm::dyn_cast<RecordDecl>(LookupResult))
+        return Context.getRecordType(RD);
+    }
+    
+    auto *TST = new TemplateSpecializationType(TSE->getTemplateName(), TD);
+    for (unsigned i = 0; i < TSE->getNumTemplateArgs(); ++i)
+      TST->addTemplateArg(TSE->getTemplateArg(i));
+    
+    return QualType(TST, Qualifier::None);
+  }
+
+  return QualType();
+}
+
+Expr *Parser::parseFunctionalCastExpr(QualType ConstructedType) {
+  SourceLocation Loc = Tok.getLocation();
+  consumeToken(); // consume '('
+
+  llvm::SmallVector<Expr *, 4> Args;
+  if (!Tok.is(TokenKind::r_paren)) {
+    while (true) {
+      Expr *Arg = parseAssignmentExpression();
+      if (Arg)
+        Args.push_back(Arg);
+      if (!Tok.is(TokenKind::comma))
+        break;
+      consumeToken();
+    }
+  }
+
+  if (!tryConsumeToken(TokenKind::r_paren))
+    emitError(DiagID::err_expected_rparen);
+
+  return Actions.ActOnCXXConstructExpr(Loc, ConstructedType, Args).get();
 }
 
 } // namespace blocktype

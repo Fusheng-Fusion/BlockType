@@ -124,6 +124,7 @@ DeclResult Sema::ActOnClassTemplateDecl(ClassTemplateDecl *CTD) {
 
   // 2. Register to symbol table as a template
   Symbols.addTemplateDecl(CTD);
+  llvm::errs() << "DEBUG ActOnClassTemplateDecl: Added '" << CTD->getName().str() << "' to Templates table\n";
 
   // 3. Also register as ordinary decl for general lookup
   Symbols.addDecl(CTD);
@@ -274,6 +275,8 @@ TypeResult Sema::ActOnTemplateId(llvm::StringRef Name,
                                   SourceLocation RAngleLoc) {
   // 1. Look up template name
   TemplateDecl *TD = Symbols.lookupTemplate(Name);
+  llvm::errs() << "DEBUG ActOnTemplateId: lookupTemplate('" << Name.str() << "') = " 
+               << (TD ? TD->getName().str() : "null") << "\n";
   if (!TD) {
     // Also check ordinary symbols (template may have been added as both)
     auto Decls = Symbols.lookup(Name);
