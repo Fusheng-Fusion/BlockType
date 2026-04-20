@@ -1335,7 +1335,7 @@ ExprResult Sema::ActOnReflectMembersBuiltin(SourceLocation Loc, QualType T) {
 }
 
 ExprResult Sema::ActOnLambdaExpr(SourceLocation Loc,
-                                 llvm::ArrayRef<LambdaCapture> Captures,
+                                 llvm::SmallVectorImpl<LambdaCapture> &Captures,
                                  llvm::ArrayRef<ParmVarDecl *> Params,
                                  Stmt *Body, bool IsMutable,
                                  QualType ReturnType,

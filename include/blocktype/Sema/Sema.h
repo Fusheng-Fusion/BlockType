@@ -716,7 +716,7 @@ public:
 
   // Complex expression factory methods (Phase 2C)
   ExprResult ActOnLambdaExpr(SourceLocation Loc,
-                             llvm::ArrayRef<LambdaCapture> Captures,
+                             llvm::SmallVectorImpl<LambdaCapture> &Captures,
                              llvm::ArrayRef<ParmVarDecl *> Params, Stmt *Body,
                              bool IsMutable, QualType ReturnType,
                              SourceLocation LBraceLoc,
