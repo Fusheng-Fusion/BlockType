@@ -81,6 +81,13 @@ void CodeGenModule::EmitTranslationUnit(TranslationUnitDecl *TU) {
       // 前向声明 struct 类型 + 计算类布局
       getTypes().GetRecordType(RD);
       EmitClassLayout(RD);
+      
+      // P2: 为类内定义的方法创建声明
+      for (CXXMethodDecl *Method : RD->methods()) {
+        if (Method->getBody()) {
+          GetOrCreateFunctionDecl(Method);
+        }
+      }
     } else if (auto *RD = llvm::dyn_cast<RecordDecl>(D)) {
       getTypes().GetRecordType(RD);
     } else if (auto *ED = llvm::dyn_cast<EnumDecl>(D)) {
@@ -100,6 +107,13 @@ void CodeGenModule::EmitTranslationUnit(TranslationUnitDecl *TU) {
     if (auto *FD = llvm::dyn_cast<FunctionDecl>(D)) {
       if (FD->getBody()) {
         EmitFunction(FD);
+      }
+    } else if (auto *RD = llvm::dyn_cast<CXXRecordDecl>(D)) {
+      // P2: 生成类内定义的方法体
+      for (CXXMethodDecl *MD : RD->methods()) {
+        if (MD->getBody()) {
+          EmitFunction(MD);
+        }
       }
     }
   }

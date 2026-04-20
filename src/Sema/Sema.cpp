@@ -746,6 +746,11 @@ void Sema::ActOnCXXRecordDecl(CXXRecordDecl *RD) {
 void Sema::ActOnCXXMethodDecl(CXXMethodDecl *MD) {
   if (!MD) return;
   registerDecl(MD);
+  
+  // P2: Add method to parent class
+  if (auto *Parent = MD->getParent()) {
+    Parent->addMethod(MD);
+  }
 }
 
 void Sema::ActOnFieldDecl(FieldDecl *FD) {
