@@ -111,7 +111,7 @@ NamedDecl *Sema::LookupName(llvm::StringRef Name) const {
 
 /// InstantiateClassTemplate - Instantiate a class template with given arguments.
 QualType Sema::InstantiateClassTemplate(llvm::StringRef TemplateName,
-                                        TemplateSpecializationType *TST) {
+                                        const TemplateSpecializationType *TST) {
   llvm::errs() << "DEBUG InstantiateClassTemplate: TemplateName = '" << TemplateName.str() << "'\n";
   // Step 1: Look up the template declaration
   NamedDecl *LookupResult = LookupName(TemplateName);
@@ -327,10 +327,24 @@ void Sema::ActOnFinishDecl(Decl *D) {
 
 DeclResult Sema::ActOnVarDecl(SourceLocation Loc, llvm::StringRef Name,
                                QualType T, Expr *Init) {
-  if (!RequireCompleteType(T, Loc))
+  // Check if the type is a TemplateSpecializationType that needs instantiation
+  QualType ActualType = T;
+  if (auto *TST = llvm::dyn_cast<TemplateSpecializationType>(T.getTypePtr())) {
+    // Try to instantiate the class template
+    QualType InstantiatedType = InstantiateClassTemplate(TST->getTemplateName(), TST);
+    if (!InstantiatedType.isNull()) {
+      ActualType = InstantiatedType;
+    } else {
+      // Instantiation failed, error already reported
+      return DeclResult::getInvalid();
+    }
+  }
+  
+  // Check type completeness
+  if (!RequireCompleteType(ActualType, Loc))
     return DeclResult::getInvalid();
 
-  auto *VD = Context.create<VarDecl>(Loc, Name, T, Init);
+  auto *VD = Context.create<VarDecl>(Loc, Name, ActualType, Init);
 
   // Check initializer if present
   if (Init) {

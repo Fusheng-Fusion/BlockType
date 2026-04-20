@@ -313,7 +313,7 @@ public:
   /// Instantiate a class template with given template arguments.
   /// Returns the specialized type, or null if instantiation fails.
   QualType InstantiateClassTemplate(llvm::StringRef TemplateName,
-                                    class TemplateSpecializationType *TST);
+                                    const class TemplateSpecializationType *TST);
 
   // P7.4.3: Lookup a namespace by name (supports "std", "std::pair", etc.)
   class NamespaceDecl *LookupNamespace(llvm::StringRef NamespaceName) const;

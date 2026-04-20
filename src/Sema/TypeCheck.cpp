@@ -676,43 +676,4 @@ QualType TypeCheck::getIntegerCommonType(QualType T1, QualType T2) const {
   return T2;
 }
 
-//===----------------------------------------------------------------------===//
-// Type completeness
-//===----------------------------------------------------------------------===//
-
-bool TypeCheck::RequireCompleteType(QualType Ty, SourceLocation Loc) {
-  if (Ty.isNull()) {
-    Diags.report(Loc, DiagID::err_incomplete_type);
-    return false;
-  }
-  
-  const Type *TyPtr = Ty.getTypePtr();
-  
-  // Check if it's a TemplateSpecializationType
-  if (auto *TST = llvm::dyn_cast<TemplateSpecializationType>(TyPtr)) {
-    // Need to instantiate the template
-    // TODO: Call Sema to instantiate the class template
-    // For now, report an error
-    Diags.report(Loc, DiagID::err_incomplete_type);
-    return false;
-  }
-  
-  // For other types, check if they are complete
-  if (auto *RT = llvm::dyn_cast<RecordType>(TyPtr)) {
-    auto *RD = RT->getDecl();
-    if (!RD || !RD->isCompleteDefinition()) {
-      Diags.report(Loc, DiagID::err_incomplete_type);
-      return false;
-    }
-  }
-  
-  // Array type: check element type
-  if (auto *AT = llvm::dyn_cast<ArrayType>(TyPtr)) {
-    return RequireCompleteType(AT->getElementType(), Loc);
-  }
-  
-  // Other types are considered complete
-  return true;
-}
-
 } // namespace blocktype

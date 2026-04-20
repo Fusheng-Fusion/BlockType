@@ -52,14 +52,6 @@ public:
                                 llvm::ArrayRef<Expr *> Args,
                                 SourceLocation Loc);
 
-  //===------------------------------------------------------------------===//
-  // Type completeness
-  //===------------------------------------------------------------------===//
-
-  /// Ensure a type is complete. For TemplateSpecializationType, this triggers
-  /// class template instantiation. Returns true if the type is complete.
-  bool RequireCompleteType(QualType Ty, SourceLocation Loc);
-
   /// Check reference binding: T& ref = expr.
   bool CheckReferenceBinding(QualType RefType, Expr *Init,
                               SourceLocation Loc);
