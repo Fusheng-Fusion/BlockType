@@ -112,7 +112,6 @@ NamedDecl *Sema::LookupName(llvm::StringRef Name) const {
 /// InstantiateClassTemplate - Instantiate a class template with given arguments.
 QualType Sema::InstantiateClassTemplate(llvm::StringRef TemplateName,
                                         const TemplateSpecializationType *TST) {
-  llvm::errs() << "DEBUG InstantiateClassTemplate: TemplateName = '" << TemplateName.str() << "'\n";
   // Step 1: Look up the template declaration
   NamedDecl *LookupResult = LookupName(TemplateName);
   if (!LookupResult) {
@@ -122,7 +121,6 @@ QualType Sema::InstantiateClassTemplate(llvm::StringRef TemplateName,
   
   // Step 2: Check if it's a ClassTemplateDecl
   auto *ClassTemplate = llvm::dyn_cast<ClassTemplateDecl>(LookupResult);
-  llvm::errs() << "DEBUG InstantiateClassTemplate: IsClassTemplateDecl = " << (ClassTemplate ? "yes" : "no") << "\n";
   if (!ClassTemplate) {
     // Not a class template, can't instantiate
     return QualType();
@@ -165,13 +163,10 @@ QualType Sema::InstantiateClassTemplate(llvm::StringRef TemplateName,
   
   // Step 7: Clone the CXXRecordDecl with substituted types
   auto *OriginalRecord = llvm::dyn_cast<CXXRecordDecl>(TemplatedDecl);
-  llvm::errs() << "DEBUG InstantiateClassTemplate: OriginalRecord = " << (OriginalRecord ? "found" : "null") << "\n";
   if (!OriginalRecord) {
     Diags.report(SourceLocation(), DiagID::err_expected);
     return QualType();
   }
-  
-  llvm::errs() << "DEBUG InstantiateClassTemplate: OriginalRecord has " << OriginalRecord->fields().size() << " fields\n";
   
   // Create a new CXXRecordDecl for the specialization
   auto *SpecializedRecord = Context.create<CXXRecordDecl>(

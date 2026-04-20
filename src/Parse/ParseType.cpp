@@ -80,12 +80,8 @@ QualType Parser::parseTypeSpecifier() {
     if (Result.isNull()) {
       // Try to parse a named type
       if (Tok.is(TokenKind::identifier)) {
-        llvm::errs() << "DEBUG parseTypeSpecifier: Before parseNestedNameSpecifier, token = '" 
-                     << Tok.getText().str() << "'\n";
         // Check for nested-name-specifier (A::B::C)
         llvm::StringRef Qualifier = parseNestedNameSpecifier();
-        llvm::errs() << "DEBUG parseTypeSpecifier: After parseNestedNameSpecifier, token = '" 
-                     << Tok.getText().str() << "', kind = " << static_cast<int>(Tok.getKind()) << "\n";
 
         // Parse the final type name
         if (!Tok.is(TokenKind::identifier)) {
@@ -101,32 +97,19 @@ QualType Parser::parseTypeSpecifier() {
         // Use three-layer disambiguation (similar to expression context)
         // to avoid misparsing comparisons as template specializations.
         if (Tok.is(TokenKind::less)) {
-          llvm::errs() << "DEBUG parseTypeSpecifier: Found '<' after '" << TypeName.str() << "'\n";
           bool ShouldParseAsTemplate = false;
 
           // Layer 1: Check if next token is a type keyword (int, float, etc.)
           Token Lookahead = PP.peekToken(0);
-          llvm::errs() << "DEBUG parseTypeSpecifier: Layer 1 - Next token kind = " << static_cast<int>(Lookahead.getKind()) << "\n";
           if (isTypeKeyword(Lookahead.getKind())) {
             ShouldParseAsTemplate = true;
-            llvm::errs() << "DEBUG parseTypeSpecifier: Layer 1 matched (type keyword)\n";
           }
 
           // Layer 2: Check if the identifier is a known template in symbol table
           if (!ShouldParseAsTemplate) {
             NamedDecl *LookupResult = Actions.LookupName(TypeName);
-            llvm::errs() << "DEBUG parseTypeSpecifier: Layer 2 - LookupName('" << TypeName.str() 
-                         << "') returned " << (LookupResult ? LookupResult->getName().str() : "null") << "\n";
             if (LookupResult) {
-              llvm::errs() << "DEBUG parseTypeSpecifier: Layer 2 - Decl kind = " 
-                           << static_cast<int>(LookupResult->getKind()) << "\n";
               ShouldParseAsTemplate = llvm::isa<TemplateDecl>(LookupResult);
-              llvm::errs() << "DEBUG parseTypeSpecifier: Layer 2 - IsTemplateDecl = " << ShouldParseAsTemplate << "\n";
-              
-              // Also check if it's a ClassTemplateDecl specifically
-              if (auto *CTD = llvm::dyn_cast<ClassTemplateDecl>(LookupResult)) {
-                llvm::errs() << "DEBUG parseTypeSpecifier: Layer 2 - Found ClassTemplateDecl!\n";
-              }
             }
           }
 
@@ -169,11 +152,9 @@ QualType Parser::parseTypeSpecifier() {
           }
 
           if (ShouldParseAsTemplate) {
-            llvm::errs() << "DEBUG parseTypeSpecifier: Parsing '" << TypeName.str() << "' as template\n";
             // Parse template arguments
             Result = parseTemplateSpecializationType(TypeName);
           } else {
-            llvm::errs() << "DEBUG parseTypeSpecifier: NOT parsing '" << TypeName.str() << "' as template\n";
             // Not a template specialization - create unresolved type from the identifier
             // The '<' will be handled by the caller (e.g., as a comparison operator)
             UnresolvedType *Unresolved = Context.getUnresolvedType(TypeName);
@@ -462,7 +443,6 @@ QualType Parser::parseDeclarator(QualType Base) {
 /// template-arg ::= type
 ///
 QualType Parser::parseTemplateSpecializationType(llvm::StringRef TemplateName) {
-  llvm::errs() << "DEBUG parseTemplateSpecializationType: TemplateName = '" << TemplateName.str() << "'\n";
   assert(Tok.is(TokenKind::less) && "Expected '<'");
   consumeToken(); // consume '<'
   
