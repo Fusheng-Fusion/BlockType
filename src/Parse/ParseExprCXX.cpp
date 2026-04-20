@@ -247,7 +247,13 @@ Expr *Parser::parseLambdaExpression() {
   }
 
   SourceLocation LBraceLoc = Tok.getLocation();
+  
+  // P2: Enter lambda scope (future: will be associated with closure class)
+  // For now, just ensure proper scoping for lambda body
+  Actions.PushScope(ScopeFlags::BlockScope);
   Stmt *Body = parseCompoundStatement();
+  Actions.PopScope();
+  
   if (Body == nullptr) {
     Body = Actions.ActOnNullStmt(Tok.getLocation()).get();
   }
