@@ -1179,6 +1179,31 @@ Expr *Parser::tryParseTemplateOrComparison(SourceLocation Loc, llvm::StringRef N
 
 Expr *Parser::parseParenExpression() {
   SourceLocation LParenLoc = Tok.getLocation();
+  
+  // P7.1.6: Check for C-style cast: (type)expr
+  // Lookahead to see if this is a type
+  Token Next = PP.peekToken(0);
+  
+  // Try to parse a type-specifier
+  if (Next.is(TokenKind::kw_int) || Next.is(TokenKind::kw_float) || 
+      Next.is(TokenKind::kw_double) || Next.is(TokenKind::kw_char) ||
+      Next.is(TokenKind::kw_void) || Next.is(TokenKind::kw_bool) ||
+      Next.is(TokenKind::kw_long) || Next.is(TokenKind::kw_short) ||
+      Next.is(TokenKind::kw_signed) || Next.is(TokenKind::kw_unsigned)) {
+    // This is likely a C-style cast
+    return parseCStyleCastExpr();
+  }
+  
+  // For identifiers, we need more careful lookahead
+  if (Next.is(TokenKind::identifier)) {
+    Token NextNext = PP.peekToken(1);
+    // If next-next token is ')' or a qualifier, it might be a type
+    if (NextNext.is(TokenKind::r_paren) || NextNext.is(TokenKind::kw_const) || 
+        NextNext.is(TokenKind::kw_volatile) || NextNext.is(TokenKind::star)) {
+      return parseCStyleCastExpr();
+    }
+  }
+  
   consumeToken();
 
   Expr *Inner = parseExpression();
