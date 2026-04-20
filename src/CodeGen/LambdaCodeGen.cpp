@@ -24,11 +24,9 @@ llvm::Value *CodeGenFunction::EmitLambdaExpr(LambdaExpr *LE) {
   }
   
   // P7.1.5: Register captured variables mapping for this lambda
-  // We'll store it in a static map keyed by ClosureClass
   const auto &CapturedMap = LE->getCapturedVarsMap();
-  for (const auto &Pair : CapturedMap) {
-    // Store in CGM for later retrieval by operator()
-    // For now, we'll use a simpler approach: register when emitting operator()
+  if (!CapturedMap.empty()) {
+    CGM.registerLambdaCapturedVars(ClosureClass, CapturedMap);
   }
   
   // Get the closure type

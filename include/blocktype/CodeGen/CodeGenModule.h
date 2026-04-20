@@ -105,6 +105,9 @@ class CodeGenModule {
   /// 字符串字面量池（StringRef → GlobalVariable*），用于合并相同的字符串字面量。
   /// Clang 也有类似的 StringLiteralPool 机制。
   llvm::DenseMap<llvm::StringRef, llvm::GlobalVariable *> StringLiteralPool;
+  
+  // P7.1.5: Lambda captured variables registry (ClosureClass → CapturedVarsMap)
+  llvm::DenseMap<const CXXRecordDecl *, llvm::DenseMap<const class VarDecl *, unsigned>> LambdaCapturedVars;
 
   /// P7.3.1: Default contract checking mode (configurable via -fcontract-mode).
   ContractMode DefaultContractMode = ContractMode::Enforce;
@@ -220,6 +223,18 @@ public:
   /// 获取字符串字面量池（用于 CodeGenConstant 合并相同字符串）。
   llvm::DenseMap<llvm::StringRef, llvm::GlobalVariable *> &getStringLiteralPool() {
     return StringLiteralPool;
+  }
+  
+  // P7.1.5: Lambda captured variables registry
+  void registerLambdaCapturedVars(const CXXRecordDecl *ClosureClass,
+                                  const llvm::DenseMap<const class VarDecl *, unsigned> &CapturedMap) {
+    LambdaCapturedVars[ClosureClass] = CapturedMap;
+  }
+  
+  const llvm::DenseMap<const class VarDecl *, unsigned> *
+  getLambdaCapturedVars(const CXXRecordDecl *ClosureClass) const {
+    auto It = LambdaCapturedVars.find(ClosureClass);
+    return It != LambdaCapturedVars.end() ? &It->second : nullptr;
   }
 
   //===------------------------------------------------------------------===//
