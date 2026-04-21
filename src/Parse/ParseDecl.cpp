@@ -1936,6 +1936,7 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
 
   bool IsInline = DS.IsInline;
   bool IsConstexpr = DS.IsConstexpr;
+  bool IsConsteval = DS.IsConsteval;
 
   // P7.1.1: Extract explicit object parameter if present.
   if (!Params.empty() && Params.front()->isExplicitObjectParam()) {
@@ -1943,9 +1944,10 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
   }
 
   // Phase 1: Create FunctionDecl without body
-  auto Result = Actions.ActOnFunctionDecl(NameLoc, Name, T, Params, nullptr);
+  auto Result = Actions.ActOnFunctionDeclFull(NameLoc, Name, T, Params, nullptr,
+                                               IsInline, IsConstexpr, IsConsteval);
   if (!Result) {
-    LLVM_DEBUG(llvm::dbgs() << "buildFunctionDecl: ActOnFunctionDecl failed\n");
+    LLVM_DEBUG(llvm::dbgs() << "buildFunctionDecl: ActOnFunctionDeclFull failed\n");
     return nullptr;
   }
   

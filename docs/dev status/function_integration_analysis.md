@@ -225,9 +225,9 @@ if (AttrName == "assume") {
 6. ✅ `ActOnVarTemplatePartialSpecialization` - 已添加验证调用
 7. ✅ `ActOnAssumeAttr` - 已添加 [[assume]] 属性解析（C++23）
 
-### P3（后续规划）
-7. ⚠️ `ActOnDeclarator` - 架构选择，保留
-8. ⚠️ `ActOnFunctionDeclFull` - 需确认用途
+### P3（已完成 ✅）
+7. ✅ `ActOnDeclarator` - 架构选择，保留作为辅助函数（功能已被具体函数覆盖）
+8. ✅ `ActOnFunctionDeclFull` - 已集成，传入 inline/constexpr/consteval 标志
 
 ---
 
