@@ -45,9 +45,19 @@ Stmt *Parser::parseDeclarationStatement() {
     Token NextTok = peekToken();
     if (NextTok.is(TokenKind::l_square)) {
       // This is a structured binding
+      SourceLocation AutoLoc = Tok.getLocation();  // Save auto location BEFORE consuming
       consumeToken(); // consume 'auto'
-      SourceLocation AutoLoc = Tok.getLocation();
       bool IsReference = false;
+      
+      // Check for reference qualifier: auto& [x, y] = expr
+      if (Tok.is(TokenKind::amp)) {
+        IsReference = false;  // auto& [x, y] = expr  (lvalue reference)
+        consumeToken();
+      } else if (Tok.is(TokenKind::ampamp)) {
+        IsReference = true;   // auto&& [x, y] = expr (rvalue reference)
+        consumeToken();
+      }
+      
       // Expect semicolon at end of declaration statement
       Stmt *SBDecl = parseStructuredBindingDeclaration(AutoLoc, IsReference, /*ExpectSemicolon=*/true);
       popContext();
@@ -173,21 +183,85 @@ Decl *Parser::parseDeclaration(
         return Actions.ActOnTypeAliasDecl(UsingLoc, FirstName, TargetType).get();
       } else if (Tok.is(TokenKind::coloncolon)) {
         // This is a using declaration (using A::B)
-        // Put back the tokens and parse as using declaration
-        // For simplicity, just create a UsingDecl
-        // Parse the rest of the qualified name
+        // Parse the complete qualified name
+        llvm::SmallString<64> QualifiedName = FirstName;
+        
         while (Tok.is(TokenKind::coloncolon)) {
+          QualifiedName += "::";
           consumeToken(); // consume '::'
-          if (Tok.is(TokenKind::identifier)) {
-            consumeToken(); // consume identifier
+          
+          // Check for 'template' keyword (for template members)
+          if (Tok.is(TokenKind::kw_template)) {
+            consumeToken(); // consume 'template'
           }
+          
+          // Check for 'operator' keyword (for operator overloads)
+          if (Tok.is(TokenKind::kw_operator)) {
+            // Parse operator name
+            consumeToken();
+            // Could be: operator+, operator new, operator(), etc.
+            // For simplicity, just consume tokens until we hit ';' or '::'
+            while (!Tok.is(TokenKind::semicolon) && 
+                   !Tok.is(TokenKind::coloncolon) &&
+                   !Tok.is(TokenKind::eof)) {
+              QualifiedName += Tok.getText();
+              consumeToken();
+            }
+            break;
+          }
+          
+          // Parse identifier or special names
+          if (Tok.is(TokenKind::identifier)) {
+            llvm::StringRef Name = Tok.getText();
+            QualifiedName += Name;
+            consumeToken(); // consume identifier
+            
+            // Check for template arguments
+            if (Tok.is(TokenKind::less)) {
+              // Template specialization: A::B<int>
+              QualifiedName += "<";
+              consumeToken(); // consume '<'
+              
+              // Skip template arguments (simplified)
+              unsigned AngleDepth = 1;
+              while (!Tok.is(TokenKind::eof) && AngleDepth > 0) {
+                if (Tok.is(TokenKind::less)) {
+                  ++AngleDepth;
+                } else if (Tok.is(TokenKind::greater)) {
+                  --AngleDepth;
+                }
+                QualifiedName += Tok.getText();
+                consumeToken();
+              }
+            }
+          } else if (Tok.is(TokenKind::tilde)) {
+            // Destructor: using A::~B
+            QualifiedName += "~";
+            consumeToken();
+            if (Tok.is(TokenKind::identifier)) {
+              QualifiedName += Tok.getText();
+              consumeToken();
+            }
+          } else {
+            // Unexpected token in qualified name
+            emitError(DiagID::err_expected_identifier);
+            break;
+          }
+        }
+        
+        // Check for ellipsis (pack expansion): using A::B...
+        bool HasEllipsis = false;
+        if (Tok.is(TokenKind::ellipsis)) {
+          HasEllipsis = true;
+          consumeToken();
         }
         
         if (!tryConsumeToken(TokenKind::semicolon)) {
           emitError(DiagID::err_expected_semi);
         }
         
-        return Actions.ActOnUsingDecl(UsingLoc, "", FirstName, true).get();
+        // Create UsingDecl with complete qualified name
+        return Actions.ActOnUsingDecl(UsingLoc, "", QualifiedName, HasEllipsis).get();
       } else {
         // Unknown using declaration
         emitError(DiagID::err_expected);
@@ -1926,10 +2000,12 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
 
   // Find the function chunk to get parameters
   llvm::SmallVector<ParmVarDecl *, 8> Params;
+  QualType TrailingReturnType;
   for (const auto &C : D.chunks()) {
     if (C.getKind() == DeclaratorChunk::Function) {
       const auto &FI = C.getFunctionInfo();
       Params.assign(FI.Params.begin(), FI.Params.end());
+      TrailingReturnType = FI.TrailingReturnType;  // Extract trailing return type
       break;
     }
   }
@@ -1941,6 +2017,13 @@ FunctionDecl *Parser::buildFunctionDecl(Declarator &D) {
   // P7.1.1: Extract explicit object parameter if present.
   if (!Params.empty() && Params.front()->isExplicitObjectParam()) {
     Params.erase(Params.begin());
+  }
+
+  // Apply trailing return type if present (C++11 feature: auto f() -> int)
+  if (!TrailingReturnType.isNull()) {
+    // Replace the return type with trailing return type
+    // This handles: auto func() -> int { return 42; }
+    T = TrailingReturnType;
   }
 
   // Phase 1: Create FunctionDecl without body

@@ -187,41 +187,62 @@ bool Parser::skipUntilNextDeclaration() {
   //  1. ';' at the top level (statement/declaration end)
   //  2. '}' at the top level (block end)
   //  3. A token that starts a new declaration
+  //
+  // IMPROVED: More conservative recovery to avoid skipping too much code
 
-  while (!Tok.is(TokenKind::eof)) {
+  unsigned SkipCount = 0;
+  const unsigned MaxSkipTokens = 50;  // Safety limit to avoid skipping entire files
+  
+  while (!Tok.is(TokenKind::eof) && SkipCount < MaxSkipTokens) {
+    ++SkipCount;
+    
     // If we see a declaration-starting keyword at the top level, stop.
     if (isDeclarationStart())
       return true;
 
-    // If we see ';' at the top level, consume it and stop at the next token
-    // which (hopefully) starts a new declaration.
+    // If we see ';' at the top level, consume it and stop immediately
+    // This is more conservative than before - we stop right after the semicolon
     if (Tok.is(TokenKind::semicolon)) {
       consumeToken();
-      // After consuming ';', check if the next token starts a declaration
-      if (isDeclarationStart() || Tok.is(TokenKind::eof))
-        return true;
-      // Otherwise keep skipping
-      continue;
+      // Check if next token starts a declaration - if so, we're done
+      // If not, still stop here - let the next iteration handle it
+      return !Tok.is(TokenKind::eof);
     }
 
-    // If we see '}' at the top level, consume it and stop
+    // If we see '}' at the top level, stop (don't consume it)
+    // This allows the caller to handle the block end appropriately
     if (Tok.is(TokenKind::r_brace)) {
-      consumeToken();  // Consume '}' to ensure progress
-      return true;
+      return true;  // Don't consume - let caller decide
     }
 
     // If we see '{', skip the entire balanced block
     if (Tok.is(TokenKind::l_brace)) {
       consumeToken();
       skipUntilBalanced({TokenKind::r_brace});
-      if (Tok.is(TokenKind::r_brace))
+      if (Tok.is(TokenKind::r_brace)) {
         consumeToken();
-      // After the block, check for declaration start or ';'
+      }
+      // After the block, check for declaration start
+      if (isDeclarationStart() || Tok.is(TokenKind::eof))
+        return true;
+      // Otherwise continue, but reset skip count
+      SkipCount = 0;
       continue;
     }
 
     // Skip this token
     consumeToken();
+  }
+
+  // If we hit the skip limit, try to find a safe stopping point
+  if (SkipCount >= MaxSkipTokens) {
+    // Look for the next semicolon or closing brace
+    while (!Tok.is(TokenKind::eof) && 
+           !Tok.is(TokenKind::semicolon) && 
+           !Tok.is(TokenKind::r_brace)) {
+      consumeToken();
+    }
+    return !Tok.is(TokenKind::eof);
   }
 
   return false;

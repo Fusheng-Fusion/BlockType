@@ -667,8 +667,17 @@ Expr *Parser::parsePrimaryExpression() {
     return parseIdentifier();
 
   // Parenthesized expression
-  case TokenKind::l_paren:
+  case TokenKind::l_paren: {
+    // Check for fold expression: (... op pack) or (pack op ...)
+    // Fold expressions start with '(' followed by '...' or an expression then '...'
+    Token Next = PP.peekToken(0);
+    if (Next.is(TokenKind::ellipsis)) {
+      // Unary left fold: (... op pack)
+      return parseFoldExpression();
+    }
+    // Otherwise, parse as regular parenthesized expression
     return parseParenExpression();
+  }
   
   // Lambda expression
   case TokenKind::l_square:
@@ -681,6 +690,10 @@ Expr *Parser::parsePrimaryExpression() {
   // throw
   case TokenKind::kw_throw:
     return parseCXXThrowExpr();
+
+  // co_await (C++20 coroutine)
+  case TokenKind::kw_co_await:
+    return parseCoawaitExpression();
 
   // requires (C++20)
   case TokenKind::kw_requires:

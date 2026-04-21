@@ -52,6 +52,8 @@ public:
     Expr *NoexceptExpr = nullptr;
     bool HasNoexceptSpec = false;
     bool NoexceptValue = true;
+    QualType TrailingReturnType;  // C++11 trailing return type (auto f() -> int)
+    SourceLocation TrailingReturnLoc;  // Location of '->'
   };
 
 private:

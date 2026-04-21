@@ -12,9 +12,9 @@
 | 模块 | 总函数数 | 已集成 | 游离 | 集成率 |
 |------|---------|--------|------|--------|
 | Sema | 128 | 126 | 2 | 98.4% |
-| Parser | 98 | 93 | 5 | 94.9% |
+| Parser | 98 | 96 | 2 | 97.9% |
 
-**进度**: ✅ P1-P3 优先级函数已全部集成（12个函数）
+**进度**: ✅ P1-P2 优先级函数已全部集成（16个函数）
 
 ---
 
@@ -123,23 +123,26 @@
 #### 2. parseCoawaitExpression
 - **文件**: src/Parse/ParseExpr.cpp
 - **功能**: 解析 co_await 表达式
-- **状态**: ❌ 未集成
-- **影响**: C++20 coroutine 不支持
-- **优先级**: P2（高级功能）
+- **状态**: ✅ 已集成 (2026-04-21)
+- **集成位置**: ParseExpr.cpp:694-695
+- **提交**: 当前提交
+- **备注**: 在 parsePrimaryExpression 中处理 C++20 协程
 
 #### 3. parseFoldExpression
 - **文件**: src/Parse/ParseExpr.cpp
 - **功能**: 解析折叠表达式
-- **状态**: ❌ 未集成
-- **影响**: C++17 fold expression 不支持
-- **优先级**: P2（模板元编程功能）
+- **状态**: ✅ 已集成 (2026-04-21)
+- **集成位置**: ParseExpr.cpp:670-677
+- **提交**: 当前提交
+- **备注**: 在 parsePrimaryExpression 中检测折叠表达式模式
 
 #### 4. parseMemberPointerType
 - **文件**: src/Parse/ParseType.cpp
 - **功能**: 解析成员指针类型
-- **状态**: ❌ 未集成
-- **影响**: `int Class::*ptr` 语法不支持
-- **优先级**: P2（高级类型系统）
+- **状态**: ✅ 已集成 (2026-04-21)
+- **集成位置**: ParseType.cpp:372-383
+- **提交**: 当前提交
+- **备注**: 在 parseDeclarator 中检测 `Class::*` 模式
 
 #### 5. parsePackIndexingExpr
 - **文件**: src/Parse/ParseExpr.cpp
@@ -149,11 +152,12 @@
 - **优先级**: P3（未来标准）
 
 #### 6. parseTrailingReturnType
-- **文件**: src/Parse/ParseDecl.cpp
+- **文件**: src/Parse/ParseType.cpp
 - **功能**: 解析尾置返回类型
-- **状态**: ❌ 未集成
-- **影响**: `auto func() -> int` 语法不支持
-- **优先级**: P1（C++11 常用功能）
+- **状态**: ✅ 已集成 (2026-04-21)
+- **集成位置**: ParseType.cpp:968-980, ParseDecl.cpp:1928-1936
+- **提交**: 当前提交
+- **备注**: 扩展 FunctionInfo 结构，支持 `auto func() -> int` 语法
 
 ---
 
@@ -211,17 +215,12 @@ if (!D) {
 
 ---
 
-### 🔴 待处理（剩余2个函数）
+### 🔴 待处理（剩余1个函数）
 
-**P1（本周完成）**:
-1. **parseTrailingReturnType** - 尾置返回类型（需要重大重构）
-
-**P2（本月完成）**:
-2. **parseFoldExpression** - 折叠表达式
-3. **其他边缘功能**（co_await, member pointer等）
+**P1-P2**: ✅ 全部完成
 
 **P3（后续规划）**:
-6. **C++26 新特性**（pack indexing）
+1. **parsePackIndexingExpr** - C++26 包索引表达式
 
 ---
 
@@ -245,15 +244,15 @@ if (!D) {
 
 ### 🔜 待处理工作
 
-**Step 1: 处理剩余 P1 函数**
-- ActOnCXXNamedCastExpr（命名类型转换）
-- ActOnMemberExpr（成员访问）
-- parseTrailingReturnType（尾置返回类型）
+**Step 1: ✅ 已完成 - P1 函数**
+- ✅ ActOnCXXNamedCastExpr（命名类型转换）
+- ✅ ActOnMemberExpr（成员访问）
+- ✅ parseTrailingReturnType（尾置返回类型）
 
-**Step 2: 处理 P2 边缘功能**
-- parseFoldExpression（C++17 折叠表达式）
-- parseCoawaitExpression（C++20 协程）
-- parseMemberPointerType（成员指针类型）
+**Step 2: ✅ 已完成 - P2 边缘功能**
+- ✅ parseMemberPointerType（成员指针类型）
+- ✅ parseCoawaitExpression（C++20 协程）
+- ✅ parseFoldExpression（C++17 折叠表达式）
 
 **Step 3: 未来标准支持**
 - parsePackIndexingExpr（C++26 包索引）

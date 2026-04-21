@@ -394,6 +394,20 @@ QualType Parser::parseDeclarator(QualType Base) {
       PointerType *PT = Context.getPointerType(Base.getTypePtr());
       Base = QualType(PT, Quals);
       
+    } else if (Tok.is(TokenKind::identifier)) {
+      // Check for member pointer: identifier '::' '*'
+      Token NextTok = peekToken();
+      if (NextTok.is(TokenKind::coloncolon)) {
+        // This is a member pointer type: int Class::*ptr
+        Base = parseMemberPointerType(Base);
+        if (Base.isNull()) {
+          return Base;
+        }
+      } else {
+        // Not a member pointer, stop parsing pointer operators
+        break;
+      }
+      
     } else if (Tok.is(TokenKind::amp)) {
       consumeToken();
       
@@ -963,6 +977,20 @@ DeclaratorChunk::FunctionInfo Parser::parseFunctionDeclaratorInfo() {
     FI.HasRefQualifier = true;
     FI.IsRValueRef = true;
     consumeToken();
+  }
+
+  // Parse trailing return type (-> type) - C++11 feature
+  if (Tok.is(TokenKind::arrow)) {
+    SourceLocation ArrowLoc = Tok.getLocation();
+    consumeToken();  // consume '->'
+    
+    FI.TrailingReturnLoc = ArrowLoc;
+    FI.TrailingReturnType = parseTrailingReturnType();
+    
+    // If trailing return type is parsed successfully, store it
+    if (FI.TrailingReturnType.isNull()) {
+      emitError(DiagID::err_expected_type);
+    }
   }
 
   return FI;
