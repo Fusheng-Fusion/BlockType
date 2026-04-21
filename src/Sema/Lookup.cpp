@@ -272,7 +272,6 @@ LookupResult Sema::LookupUnqualifiedName(llvm::StringRef Name, Scope *S,
       } else if (auto *CTD = Symbols.lookupTemplate(Name)) {
         // Class template names are valid type names (e.g., vector in vector<int>)
         if (llvm::isa<ClassTemplateDecl>(CTD)) {
-          llvm::errs() << "DEBUG LookupNameForCXX: Found ClassTemplateDecl '" << Name.str() << "'\n";
           Result.addDecl(CTD);
           Result.setTypeName(true);
         }

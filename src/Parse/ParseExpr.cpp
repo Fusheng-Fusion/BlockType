@@ -222,13 +222,10 @@ bool Parser::isMemberAccessible(ValueDecl *Member, CXXRecordDecl *AccessingClass
 //===----------------------------------------------------------------------===//
 
 Expr *Parser::parseExpression() {
-  llvm::errs() << "DEBUG [ParseExpr L221]: parseExpression called\n";
   pushContext(ParsingContext::Expression);
 
   LLVM_DEBUG(llvm::dbgs() << "parseRHS: failed\n");
   Expr *LHS = parseUnaryExpression();
-  llvm::errs() << "DEBUG [ParseExpr L225]: After parseUnaryExpression, LHS = " 
-               << (LHS ? std::to_string(static_cast<int>(LHS->getKind())) : "NULL") << "\n";
   if (!LHS) {
     popContext();
     return nullptr;

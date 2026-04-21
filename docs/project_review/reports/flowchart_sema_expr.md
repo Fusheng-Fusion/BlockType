@@ -242,12 +242,12 @@ graph TB
      - `src/Parse/ParseExpr.cpp`: 传入名称参数
    - **影响**: 函数模板调用现在可以正常工作
 
-### 🟠 P1问题
+### ✅ P1问题（已修复）
 
-2. **ActOnDeclRefExpr包含DEBUG输出**
-   ```cpp
-   llvm::errs() << "DEBUG: DeclRefExpr created\n";  // ← 应该删除
-   ```
+2. **ActOnDeclRefExpr包含DEBUG输出** - **已修复**
+   - 已删除所有 `llvm::errs() << "DEBUG` 输出
+   - 清理文件：`src/Sema/Sema.cpp`, `src/Parse/ParseExpr.cpp`, `src/Sema/SemaTemplate.cpp`, `src/Sema/SymbolTable.cpp`, `src/Sema/Lookup.cpp`
+   - 保留 `LLVM_DEBUG()` 宏用于调试构建
 
 3. **ActOnCXXThrowExpr语义未实现**
    - 只创建了AST节点，没有异常类型匹配

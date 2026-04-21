@@ -579,11 +579,6 @@ DeclResult Sema::ActOnAttributeDeclWithNamespace(SourceLocation Loc,
 
 DeclResult Sema::ActOnVarDeclFull(SourceLocation Loc, llvm::StringRef Name,
                                   QualType T, Expr *Init, bool IsStatic) {
-  llvm::errs() << "DEBUG [Sema L580]: ActOnVarDeclFull for '" << Name.str() 
-               << "', T class = " << (T.getTypePtr() ? std::to_string(static_cast<int>(T->getTypeClass())) : "null")
-               << ", Init = " << (Init ? std::to_string(static_cast<int>(Init->getKind())) : "null")
-               << "\n";
-  
   // Check if type needs template instantiation
   QualType ActualType = T;
   if (T.getTypePtr() && T->getTypeClass() == TypeClass::TemplateSpecialization) {
@@ -1400,14 +1395,7 @@ DeclResult Sema::ActOnClassTemplateDeclFactory(SourceLocation Loc, llvm::StringR
 
 DeclResult Sema::ActOnFunctionTemplateDeclFactory(SourceLocation Loc, llvm::StringRef Name,
                                                   Decl *TemplatedDecl) {
-  llvm::errs() << "DEBUG [Sema L1396]: ActOnFunctionTemplateDeclFactory called, TemplatedDecl kind = " 
-               << static_cast<int>(TemplatedDecl->getKind()) << "\n";
-  
   auto *FTD = Context.create<FunctionTemplateDecl>(Loc, Name, TemplatedDecl);
-  
-  llvm::errs() << "DEBUG [Sema L1400]: After creation, FTD->getTemplatedDecl() kind = " 
-               << static_cast<int>(FTD->getTemplatedDecl()->getKind()) << "\n";
-  
   return DeclResult(FTD);
 }
 
@@ -1556,10 +1544,6 @@ ExprResult Sema::ActOnCXXNullPtrLiteral(SourceLocation Loc) {
 
 ExprResult Sema::ActOnDeclRefExpr(SourceLocation Loc, ValueDecl *D,
                                    llvm::StringRef Name) {
-  llvm::errs() << "DEBUG [Sema L1557]: ActOnDeclRefExpr called, D = " 
-               << (D ? std::to_string(static_cast<int>(D->getKind())) : "NULL")
-               << ", Name = '" << Name.str() << "'\n";
-  
   auto *DRE = Context.create<DeclRefExpr>(Loc, D, Name);
   // Mark the declaration as used (for warn_unused_variable/function diagnostics)
   if (D)
@@ -2088,9 +2072,6 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
   // Resolve the callee
   FunctionDecl *FD = nullptr;
 
-  llvm::errs() << "DEBUG [Sema L2082]: ActOnCallExpr, Fn type = " 
-               << (Fn ? std::to_string(static_cast<int>(Fn->getKind())) : "NULL") << "\n";
-
   if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(Fn)) {
     Decl *D = DRE->getDecl();
     llvm::StringRef Name = DRE->getName();  // Get name from DeclRefExpr
@@ -2099,14 +2080,9 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
       // D is nullptr - this happens for FunctionTemplateDecl
       // Try to lookup template by name
       if (!Name.empty()) {
-        llvm::errs() << "DEBUG [Sema L2096]: D is nullptr, looking up template '" << Name.str() << "'\n";
         if (auto *FTD = Symbols.lookupTemplate(Name)) {
-          llvm::errs() << "DEBUG [Sema L2098]: Found template '" << Name.str() << "'\n";
           if (auto *FuncFTD = llvm::dyn_cast_or_null<FunctionTemplateDecl>(FTD)) {
-            llvm::errs() << "DEBUG [Sema L2100]: Calling DeduceAndInstantiateFunctionTemplate\n";
             FD = DeduceAndInstantiateFunctionTemplate(FuncFTD, Args, LParenLoc);
-            llvm::errs() << "DEBUG [Sema L2102]: DeduceAndInstantiateFunctionTemplate returned " 
-                         << (FD ? "valid FD" : "NULL") << "\n";
           }
         }
       }
@@ -2127,12 +2103,8 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
     // Also check if the DeclRefExpr refers to a TemplateDecl by name
     if (!FD && !Name.empty()) {
       if (auto *FTD = Symbols.lookupTemplate(Name)) {
-        llvm::errs() << "DEBUG [Sema L2116]: Found template '" << Name.str() << "', calling DeduceAndInstantiateFunctionTemplate\n";
         if (auto *FuncFTD = llvm::dyn_cast_or_null<FunctionTemplateDecl>(FTD)) {
-          llvm::errs() << "DEBUG [Sema L2118]: dyn_cast succeeded, FuncFTD is valid\n";
           FD = DeduceAndInstantiateFunctionTemplate(FuncFTD, Args, LParenLoc);
-          llvm::errs() << "DEBUG [Sema L2120]: DeduceAndInstantiateFunctionTemplate returned " 
-                       << (FD ? "valid FD" : "NULL") << "\n";
         }
       }
     }
@@ -3125,13 +3097,8 @@ FunctionDecl *Sema::InstantiateFunctionTemplate(
   
   // Step 2: Get the templated function declaration
   Decl *RawTemplated = FuncTemplate->getTemplatedDecl();
-  llvm::errs() << "DEBUG [Sema L3100]: InstantiateFunctionTemplate, RawTemplated kind = " 
-               << static_cast<int>(RawTemplated->getKind()) << "\n";
   
   auto *TemplatedFunc = llvm::dyn_cast_or_null<FunctionDecl>(RawTemplated);
-  
-  llvm::errs() << "DEBUG [Sema L3104]: After dyn_cast, TemplatedFunc = " 
-               << (TemplatedFunc ? "valid" : "NULL") << "\n";
   
   if (TemplatedFunc == nullptr) {
     Diags.report(Loc, DiagID::err_template_recursion);
