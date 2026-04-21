@@ -178,7 +178,7 @@ TranslationUnitDecl *CompilerInstance::parseTranslationUnit() {
 
   CurrentTU = ParserPtr->parseTranslationUnit();
 
-  if (ParserPtr->hasErrors()) {
+  if (ParserPtr->hasErrors() || Diags->hasErrorOccurred()) {
     setError();
     return nullptr;
   }
@@ -493,7 +493,7 @@ bool CompilerInstance::compileAllFiles() {
     }
 
     TranslationUnitDecl *TU = ParserPtr->parseTranslationUnit();
-    if (!TU || ParserPtr->hasErrors()) {
+    if (!TU || ParserPtr->hasErrors() || Diags->hasErrorOccurred()) {
       errs() << "Error: Parsing failed for '" << File << "'\n";
       setError();
       AllSucceeded = false;
