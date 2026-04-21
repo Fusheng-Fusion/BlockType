@@ -11,10 +11,10 @@
 
 | 模块 | 总函数数 | 已集成 | 游离 | 集成率 |
 |------|---------|--------|------|--------|
-| Sema | 128 | 124 | 4 | 96.9% |
+| Sema | 128 | 125 | 3 | 97.7% |
 | Parser | 98 | 93 | 5 | 94.9% |
 
-**进度**: ✅ P1-P3 优先级函数已全部集成（10个函数）
+**进度**: ✅ P1-P3 优先级函数已全部集成（11个函数）
 
 ---
 
@@ -32,9 +32,10 @@
 #### 2. ActOnCXXNamedCastExpr
 - **文件**: src/Sema/Sema.cpp
 - **功能**: 处理命名类型转换（static_cast, dynamic_cast等）
-- **状态**: ❌ 未集成
-- **影响**: C-style cast 可能工作，但命名 cast 不工作
-- **优先级**: P1（重要功能缺失）
+- **状态**: ✅ 已集成 (2026-04-21)
+- **集成位置**: ParseExprCXX.cpp:691, 734, 778, 821
+- **提交**: 之前提交
+- **备注**: 通过 ActOnCXXNamedCastExprWithType 集成
 
 #### 3. ActOnClassTemplatePartialSpecialization
 - **文件**: src/Sema/SemaTemplate.cpp
