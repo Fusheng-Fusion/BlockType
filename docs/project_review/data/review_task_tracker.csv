@@ -1,0 +1,17 @@
+TaskID,TaskName,Phase,Status,Dependency,StartTime,EndTime,OutputFile,Notes
+1.1,梳理主调用链,Phase1,DONE,-,2026-04-19 15:30,2026-04-19 15:45,docs/project_review/reports/review_task_1.1_report.md,找到main()入口
+1.2,细化Parser流程,Phase1,DONE,1.1,2026-04-19 16:00,2026-04-19 16:30,docs/project_review/reports/review_task_1.2_report.md,追踪parseDeclaration分支
+1.3,细化Sema流程,Phase1,DONE,1.2,2026-04-19 16:35,2026-04-19 17:00,docs/project_review/reports/review_task_1.3_report.md,追踪ActOn函数
+1.4,绘制完整流程地图,Phase1,DONE,1.3,2026-04-19 17:05,2026-04-19 17:30,docs/project_review/reports/review_task_1.4_report.md,Mermaid格式
+2.1,定义功能域,Phase2,DONE,1.4,2026-04-19 17:35,2026-04-19 17:50,docs/project_review/reports/review_task_2.1_report.md,识别主要功能域
+2.2,收集相关函数(2.2.1-2.2.12),Phase2,IN_PROGRESS,2.1,2026-04-19 17:55,,,按功能域分组，共12个子任务
+2.3,映射到流程图,Phase2,TODO,2.2,,,,标注函数位置
+2.4,重复检测,Phase2,TODO,2.2,,,,对比相似函数
+3.1,流程断裂分析,Phase3,TODO,"1.4,2.3",,,,,如ActOnCallExpr early return
+3.2,调用缺失分析,Phase3,TODO,2.2,,,,如parseTrailingReturnType
+3.3,错位功能分析,Phase3,TODO,2.3,,,,函数在错误模块
+4.1,问题分类,Phase4,TODO,Phase3,,,,分为A/B/C/D四类
+4.2,设计修复方案,Phase4,TODO,4.1,,,docs/project_review/reports/review_fix_plans.md,详细修复步骤
+4.3,优先级排序,Phase4,TODO,4.2,,,,优先级矩阵
+5.1,修复P0问题,Phase5,TODO,4.3,,,,按优先级逐个修复
+F.1,生成最终报告,Final,TODO,All,,,docs/project_review/reports/PROJECT_REVIEW_FINAL_REPORT.md,完整审查报告

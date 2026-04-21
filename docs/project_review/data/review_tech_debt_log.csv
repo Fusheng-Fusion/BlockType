@@ -1,0 +1,2 @@
+DebtID,Title,Type,Severity,Status,Location,FoundTime,FixedTime,Description,ExpectedBehavior,CurrentBehavior,BlockerReason,NextAction,EstimatedHours,Priority,CompletionPercent,Notes
+001,,,,RECORDED,,,,,,,,,,,,,
