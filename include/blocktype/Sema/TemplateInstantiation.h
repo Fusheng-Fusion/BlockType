@@ -100,6 +100,39 @@ public:
   FunctionDecl *InstantiateFunctionTemplate(
       FunctionTemplateDecl *FuncTemplate,
       llvm::ArrayRef<TemplateArgument> TemplateArgs);
+
+  /// Instantiate a class template with given template arguments.
+  ///
+  /// \param ClassTemplate The class template to instantiate.
+  /// \param TemplateArgs The template arguments.
+  /// \returns The instantiated CXXRecordDecl, or nullptr on failure.
+  CXXRecordDecl *InstantiateClassTemplate(
+      ClassTemplateDecl *ClassTemplate,
+      llvm::ArrayRef<TemplateArgument> TemplateArgs);
+
+  /// Instantiate a fold expression with pack arguments.
+  ///
+  /// \param FoldExpr The fold expression pattern to instantiate.
+  /// \param PackArgs The pack arguments to expand.
+  /// \returns The instantiated expression, or nullptr on failure.
+  Expr *InstantiateFoldExpr(CXXFoldExpr *FoldExpr,
+                            llvm::ArrayRef<TemplateArgument> PackArgs);
+
+  /// Instantiate a pack indexing expression.
+  ///
+  /// \param PIE The pack indexing expression to instantiate.
+  /// \param PackArgs The pack arguments containing the elements.
+  /// \returns The instantiated expression (the Nth element), or nullptr.
+  Expr *InstantiatePackIndexingExpr(PackIndexingExpr *PIE,
+                                    llvm::ArrayRef<TemplateArgument> PackArgs);
+
+  /// Expand a pack pattern with given arguments.
+  ///
+  /// \param Pattern The pattern expression to expand.
+  /// \param PackArgs The pack arguments.
+  /// \returns The expanded expressions.
+  llvm::SmallVector<Expr *, 4>
+  ExpandPack(Expr *Pattern, llvm::ArrayRef<TemplateArgument> PackArgs);
 };
 
 } // namespace blocktype

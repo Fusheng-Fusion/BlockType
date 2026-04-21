@@ -325,6 +325,11 @@ private:
   /// Produces a runtime reflection info value (opaque pointer to metadata).
   llvm::Value *EmitReflexprExpr(ReflexprExpr *RE);
 
+  /// Generate code for a pack indexing expression (P2662R3).
+  /// If the pack has been substituted, returns the Nth element.
+  /// Otherwise, emits the pack and index expressions for later instantiation.
+  llvm::Value *EmitPackIndexingExpr(PackIndexingExpr *PIE);
+
   //===------------------------------------------------------------------===//
   // 二元运算辅助
   //===------------------------------------------------------------------===//

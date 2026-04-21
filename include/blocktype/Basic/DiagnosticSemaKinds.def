@@ -387,4 +387,24 @@ DIAG(warn_structured_binding_reference, Warning, \
   "structured binding to reference may have unexpected lifetime", \
   "结构化绑定到引用可能有意外的生命周期")
 
+//===----------------------------------------------------------------------===//
+// P7.4.4: Pack indexing diagnostics (P2662R3)
+//===----------------------------------------------------------------------===//
+
+DIAG(err_pack_index_out_of_bounds, Error, \
+  "pack index %0 is out of bounds (pack size is %1)", \
+  "包索引 %0 超出边界（包大小为 %1）")
+
+DIAG(err_pack_index_empty_pack, Error, \
+  "cannot index an empty parameter pack", \
+  "无法索引空参数包")
+
+DIAG(err_pack_index_non_constant, Error, \
+  "pack index must be a constant expression", \
+  "包索引必须是常量表达式")
+
+DIAG(warn_pack_index_runtime, Warning, \
+  "runtime pack indexing may generate less efficient code", \
+  "运行时包索引可能生成效率较低的代码")
+
 #undef DIAG

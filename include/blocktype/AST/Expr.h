@@ -1398,17 +1398,59 @@ public:
   }
 };
 
-/// PackIndexingExpr - C++26 pack indexing expression.
+/// PackIndexingExpr - C++26 pack indexing expression (P2662R3).
+///
+/// Represents `T...[N]` where T is a parameter pack and N is an index.
+/// After template instantiation, this contains the substituted expressions.
+///
+/// **Example**:
+/// ```cpp
+/// template <typename... Ts>
+/// using First = Ts...[0];  // PackIndexingExpr with Index = 0
+///
+/// template <typename... Ts>
+/// auto get_second() -> Ts...[1];  // Returns second type in pack
+/// ```
 class PackIndexingExpr : public Expr {
   Expr *Pack;           // The pack expression
   Expr *Index;          // The index expression (constant or runtime)
+  
+  /// Source locations for better diagnostics
+  SourceLocation EllipsisLoc;   // Location of '...'
+  SourceLocation LBracketLoc;   // Location of '['
+  SourceLocation RBracketLoc;   // Location of ']'
+  
+  /// Substituted expressions after pack expansion.
+  /// Populated during template instantiation.
+  /// Empty if not yet instantiated.
+  llvm::SmallVector<Expr *, 4> SubstitutedExprs;
 
 public:
-  PackIndexingExpr(SourceLocation Loc, Expr *Pack, Expr *Index)
-      : Expr(Loc), Pack(Pack), Index(Index) {}
+  PackIndexingExpr(SourceLocation Loc, Expr *Pack, Expr *Index,
+                   SourceLocation EllipsisLoc = SourceLocation(),
+                   SourceLocation LBracketLoc = SourceLocation(),
+                   SourceLocation RBracketLoc = SourceLocation())
+      : Expr(Loc), Pack(Pack), Index(Index),
+        EllipsisLoc(EllipsisLoc), LBracketLoc(LBracketLoc), RBracketLoc(RBracketLoc) {}
 
   Expr *getPack() const { return Pack; }
   Expr *getIndex() const { return Index; }
+  
+  /// Get source locations
+  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+  SourceLocation getLBracketLoc() const { return LBracketLoc; }
+  SourceLocation getRBracketLoc() const { return RBracketLoc; }
+  
+  /// Get the substituted expressions after instantiation.
+  llvm::ArrayRef<Expr *> getSubstitutedExprs() const { return SubstitutedExprs; }
+  
+  /// Set the substituted expressions (called during instantiation).
+  void setSubstitutedExprs(llvm::ArrayRef<Expr *> Exprs) {
+    SubstitutedExprs.assign(Exprs.begin(), Exprs.end());
+  }
+  
+  /// Check if pack indexing has been substituted.
+  bool isSubstituted() const { return !SubstitutedExprs.empty(); }
 
   NodeKind getKind() const override { return NodeKind::PackIndexingExprKind; }
 
@@ -1416,6 +1458,9 @@ public:
 
   /// A pack indexing expression is type-dependent if the pack or index is type-dependent
   bool isTypeDependent() const override {
+    // If already substituted, not dependent
+    if (isSubstituted())
+      return false;
     return Pack->isTypeDependent() || Index->isTypeDependent();
   }
 

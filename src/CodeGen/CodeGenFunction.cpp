@@ -316,6 +316,10 @@ llvm::Value *CodeGenFunction::EmitExpr(Expr *Expression) {
   case ASTNode::NodeKind::ReflexprExprKind:
     return EmitReflexprExpr(llvm::cast<ReflexprExpr>(Expression));
 
+  // P7.4.4: Pack indexing expression (C++26 P2662R3)
+  case ASTNode::NodeKind::PackIndexingExprKind:
+    return EmitPackIndexingExpr(llvm::cast<PackIndexingExpr>(Expression));
+
   // 类型转换
   case ASTNode::NodeKind::CXXStaticCastExprKind:
   case ASTNode::NodeKind::CXXDynamicCastExprKind:

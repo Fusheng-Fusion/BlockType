@@ -18,7 +18,7 @@ add_executable(blocktype-sema-test
   TemplateDeductionTest.cpp
   ConceptTest.cpp
   SFINAETest.cpp
-  # VariadicTemplateTest.cpp  # TODO: Fix after implementing variadic template features
+  VariadicTemplateTest.cpp
 )
 
 target_include_directories(blocktype-sema-test PUBLIC

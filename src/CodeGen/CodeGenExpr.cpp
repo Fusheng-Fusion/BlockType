@@ -2267,3 +2267,110 @@ llvm::Value *CodeGenFunction::EmitReflexprExpr(ReflexprExpr *RE) {
 
   return nullptr;
 }
+
+//===----------------------------------------------------------------------===//
+// P7.4.4: Pack indexing expression (C++26 P2662R3)
+//===----------------------------------------------------------------------===//
+
+llvm::Value *CodeGenFunction::EmitPackIndexingExpr(PackIndexingExpr *PIE) {
+  if (!PIE)
+    return nullptr;
+
+  // If the pack has been substituted during template instantiation,
+  // we can directly emit the selected element.
+  if (PIE->isSubstituted()) {
+    auto Substituted = PIE->getSubstitutedExprs();
+    
+    // Evaluate the index expression to get the index value
+    Expr *IndexExpr = PIE->getIndex();
+    if (!IndexExpr)
+      return nullptr;
+    
+    llvm::Value *IndexVal = EmitExpr(IndexExpr);
+    if (!IndexVal)
+      return nullptr;
+    
+    // The index must be a compile-time constant for now
+    // (runtime pack indexing would require more complex code generation)
+    if (auto *ConstInt = llvm::dyn_cast<llvm::ConstantInt>(IndexVal)) {
+      uint64_t Idx = ConstInt->getZExtValue();
+      
+      if (Idx < Substituted.size()) {
+        // Emit the Nth substituted expression
+        return EmitExpr(Substituted[Idx]);
+      }
+      
+      // Index out of bounds - this should have been caught by Sema
+      return nullptr;
+    }
+    
+    // Runtime index: generate a switch statement
+    // This handles the case where the index is not a compile-time constant
+    if (!Substituted.empty()) {
+      // Create basic blocks for switch
+      llvm::LLVMContext &Ctx = Builder.getContext();
+      llvm::Function *F = Builder.GetInsertBlock()->getParent();
+      
+      // Create merge block where all cases converge
+      llvm::BasicBlock *MergeBB = llvm::BasicBlock::Create(Ctx, "pack.merge", F);
+      llvm::BasicBlock *DefaultBB = llvm::BasicBlock::Create(Ctx, "pack.default", F);
+      
+      // Create PHI node in merge block
+      Builder.SetInsertPoint(MergeBB);
+      llvm::PHINode *PHI = Builder.CreatePHI(IndexVal->getType(), Substituted.size(), "pack.result");
+      
+      // Create switch instruction
+      Builder.SetInsertPoint(Builder.GetInsertBlock());  // Back to current block
+      llvm::SwitchInst *Switch = Builder.CreateSwitch(IndexVal, DefaultBB, Substituted.size());
+      
+      // Generate code for each case
+      for (size_t I = 0; I < Substituted.size(); ++I) {
+        llvm::BasicBlock *CaseBB = llvm::BasicBlock::Create(Ctx, "pack.case", F);
+        
+        // Add case to switch
+        llvm::ConstantInt *CaseVal = llvm::ConstantInt::get(
+            llvm::Type::getInt64Ty(Ctx), I);
+        Switch->addCase(CaseVal, CaseBB);
+        
+        // Emit case code
+        Builder.SetInsertPoint(CaseBB);
+        llvm::Value *CaseResult = EmitExpr(Substituted[I]);
+        if (CaseResult) {
+          PHI->addIncoming(CaseResult, CaseBB);
+        }
+        Builder.CreateBr(MergeBB);
+      }
+      
+      // Handle default case (out of bounds)
+      Builder.SetInsertPoint(DefaultBB);
+      // Emit null or undef value for out-of-bounds
+      llvm::Value *DefaultVal = llvm::UndefValue::get(IndexVal->getType());
+      PHI->addIncoming(DefaultVal, DefaultBB);
+      Builder.CreateBr(MergeBB);
+      
+      // Continue in merge block
+      Builder.SetInsertPoint(MergeBB);
+      return PHI;
+    }
+    
+    return nullptr;
+  }
+  
+  // If not substituted yet (still dependent), emit the pack and index
+  // This is used during template definition, not instantiation
+  // The actual value will be determined during instantiation
+  
+  Expr *Pack = PIE->getPack();
+  Expr *Index = PIE->getIndex();
+  
+  if (!Pack || !Index)
+    return nullptr;
+  
+  // Emit both for side effects (though they shouldn't have any at this stage)
+  EmitExpr(Pack);
+  llvm::Value *IndexVal = EmitExpr(Index);
+  
+  // Return a placeholder null value
+  // The real value will be filled in during instantiation
+  return IndexVal;
+}

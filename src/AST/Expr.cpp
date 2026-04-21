@@ -563,7 +563,11 @@ void CXXFoldExpr::dump(raw_ostream &OS, unsigned Indent) const {
 
 void PackIndexingExpr::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
-  OS << "PackIndexingExpr\n";
+  OS << "PackIndexingExpr";
+  if (isSubstituted()) {
+    OS << " [substituted: " << SubstitutedExprs.size() << " elements]";
+  }
+  OS << "\n";
 
   if (Pack != nullptr) {
     printIndent(OS, Indent + 1);
@@ -574,6 +578,16 @@ void PackIndexingExpr::dump(raw_ostream &OS, unsigned Indent) const {
     printIndent(OS, Indent + 1);
     OS << "Index:\n";
     Index->dump(OS, Indent + 2);
+  }
+  if (isSubstituted()) {
+    printIndent(OS, Indent + 1);
+    OS << "SubstitutedExprs:\n";
+    for (size_t I = 0; I < SubstitutedExprs.size(); ++I) {
+      printIndent(OS, Indent + 2);
+      OS << "[" << I << "]:\n";
+      if (SubstitutedExprs[I])
+        SubstitutedExprs[I]->dump(OS, Indent + 3);
+    }
   }
 }
 
