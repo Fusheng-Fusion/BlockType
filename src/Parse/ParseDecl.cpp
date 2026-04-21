@@ -22,6 +22,9 @@
 #include "blocktype/Basic/Diagnostics.h"
 #include "blocktype/Lex/Token.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "parse-decl"
 
 namespace blocktype {
 
@@ -290,8 +293,8 @@ Decl *Parser::parseDeclaration(
   // Parse declaration specifiers
   DeclSpec DS;
   parseDeclSpecifierSeq(DS);
-  llvm::errs() << "DEBUG: parseDeclaration - DS.hasTypeSpecifier() = " 
-               << (DS.hasTypeSpecifier() ? "true" : "false") << "\n";
+  LLVM_DEBUG(llvm::dbgs() << "parseDeclaration - DS.hasTypeSpecifier() = " 
+                          << (DS.hasTypeSpecifier() ? "true" : "false") << "\n");
   if (!DS.hasTypeSpecifier()) {
     emitError(DiagID::err_expected_type);
     return nullptr;
@@ -300,8 +303,8 @@ Decl *Parser::parseDeclaration(
   // Parse declarator (name + pointer/reference/array/function chunks)
   Declarator D(DS, DeclaratorContext::FileContext);
   parseDeclarator(D);
-  llvm::errs() << "DEBUG: parseDeclaration - D.hasName() = " 
-               << (D.hasName() ? "true" : "false") << "\n";
+  LLVM_DEBUG(llvm::dbgs() << "parseDeclaration - D.hasName() = " 
+                          << (D.hasName() ? "true" : "false") << "\n");
 
   if (!D.hasName()) {
     emitError(DiagID::err_expected_identifier);
@@ -321,13 +324,13 @@ Decl *Parser::parseDeclaration(
   }
 
   // Determine if this is a function or variable declarator and build AST
-  llvm::errs() << "DEBUG: parseDeclaration - D.isFunctionDeclarator() = " 
-               << (D.isFunctionDeclarator() ? "true" : "false") << "\n";
+  LLVM_DEBUG(llvm::dbgs() << "parseDeclaration - D.isFunctionDeclarator() = " 
+                          << (D.isFunctionDeclarator() ? "true" : "false") << "\n");
   if (D.isFunctionDeclarator()) {
-    llvm::errs() << "DEBUG: parseDeclaration - Calling buildFunctionDecl\n";
+    LLVM_DEBUG(llvm::dbgs() << "parseDeclaration - Calling buildFunctionDecl\n");
     return buildFunctionDecl(D);
   }
-  llvm::errs() << "DEBUG: parseDeclaration - Calling buildVarDecl\n";
+  LLVM_DEBUG(llvm::dbgs() << "parseDeclaration - Calling buildVarDecl\n");
   return buildVarDecl(D);
 }
 

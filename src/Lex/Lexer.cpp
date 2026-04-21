@@ -15,8 +15,11 @@
 #include "blocktype/Basic/Diagnostics.h"
 #include "blocktype/Basic/UTF8Validator.h"
 #include "blocktype/Unicode/UnicodeData.h"
+#include "llvm/Support/Debug.h"
 #include <cctype>
 #include <unordered_map>
+
+#define DEBUG_TYPE "lexer"
 
 namespace blocktype {
 
@@ -1318,18 +1321,20 @@ TokenKind Lexer::getIdentifierKind(StringRef Identifier) {
   // Check English keywords first
   const auto& EnglishKeywords = getEnglishKeywords();
   
-  // DEBUG: Print keyword map size and check for 'int'
-  static bool Debugged = false;
-  if (!Debugged) {
-    llvm::errs() << "DEBUG: EnglishKeywords size: " << EnglishKeywords.size() << "\n";
-    auto It = EnglishKeywords.find("int");
-    if (It != EnglishKeywords.end()) {
-      llvm::errs() << "DEBUG: 'int' found in EnglishKeywords, kind: " << static_cast<int>(It->second) << "\n";
-    } else {
-      llvm::errs() << "DEBUG: 'int' NOT found in EnglishKeywords!\n";
+  // Debug: Print keyword map size and check for 'int'
+  LLVM_DEBUG({
+    static bool Debugged = false;
+    if (!Debugged) {
+      llvm::dbgs() << "EnglishKeywords size: " << EnglishKeywords.size() << "\n";
+      auto It = EnglishKeywords.find("int");
+      if (It != EnglishKeywords.end()) {
+        llvm::dbgs() << "'int' found in EnglishKeywords, kind: " << static_cast<int>(It->second) << "\n";
+      } else {
+        llvm::dbgs() << "'int' NOT found in EnglishKeywords!\n";
+      }
+      Debugged = true;
     }
-    Debugged = true;
-  }
+  });
   
   auto EnIt = EnglishKeywords.find(Identifier.str());
   if (EnIt != EnglishKeywords.end()) {

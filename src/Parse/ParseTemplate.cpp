@@ -22,6 +22,9 @@
 #include "blocktype/Basic/Diagnostics.h"
 #include "blocktype/Lex/Token.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "parse-template"
 
 namespace blocktype {
 
@@ -189,8 +192,8 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
   // This allows member functions to reference the template by name
   ClassTemplateDecl *PreRegisteredCTD = nullptr;
   if ((Tok.is(TokenKind::kw_class) || Tok.is(TokenKind::kw_struct)) && NextTok.is(TokenKind::identifier)) {
-    llvm::errs() << "DEBUG: Pre-registering class template '" << NextTok.getText().str() << "'\n";
-    llvm::errs() << "DEBUG: Params size = " << Params.size() << "\n";
+    LLVM_DEBUG(llvm::dbgs() << "Pre-registering class template '" << NextTok.getText().str() << "'\n";
+               llvm::dbgs() << "Params size = " << Params.size() << "\n");
     llvm::StringRef ClassName = NextTok.getText();
     SourceLocation ClassLoc = NextTok.getLocation();
     
@@ -208,9 +211,9 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
     
     auto Result = Actions.ActOnClassTemplateDecl(CTD);
     if (Result.isUsable()) {
-      llvm::errs() << "DEBUG: Successfully registered class template '" << ClassName.str() << "'\n";
+      LLVM_DEBUG(llvm::dbgs() << "Successfully registered class template '" << ClassName.str() << "'\n");
     } else {
-      llvm::errs() << "DEBUG: Failed to register class template '" << ClassName.str() << "'\n";
+      LLVM_DEBUG(llvm::dbgs() << "Failed to register class template '" << ClassName.str() << "'\n");
     }
   }
 
