@@ -56,11 +56,20 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
       return nullptr;
     }
 
-    // Create a TemplateDecl for the instantiation
-    // Note: In a real compiler, this would be marked as an explicit instantiation
-    TemplateDecl *Template = llvm::cast<TemplateDecl>(
+    // Process explicit instantiation via Sema
+    DeclResult Result = Actions.ActOnExplicitInstantiation(TemplateLoc, InstantiatedDecl);
+    if (Result.isInvalid()) {
+      return nullptr;
+    }
+    
+    // Return as TemplateDecl if applicable
+    if (auto *TD = llvm::dyn_cast_or_null<TemplateDecl>(Result.get())) {
+      return TD;
+    }
+    
+    // For non-template declarations, wrap in TemplateDecl
+    return llvm::cast<TemplateDecl>(
         Actions.ActOnTemplateDeclFactory(TemplateLoc, "", InstantiatedDecl).get());
-    return Template;
   }
 
   consumeToken(); // consume '<'
@@ -72,6 +81,12 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
   if (Tok.is(TokenKind::greater)) {
     SourceLocation RAngleLoc = Tok.getLocation();
     consumeToken(); // consume '>'
+
+    // Validate explicit specialization
+    SourceLocation LAngleLoc;  // We consumed '<' earlier, use invalid location
+    if (Actions.ActOnExplicitSpecialization(TemplateLoc, LAngleLoc, RAngleLoc).isInvalid()) {
+      return nullptr;  // Validation failed
+    }
 
     // Parse the specialized declaration, collecting template arguments
     llvm::SmallVector<TemplateArgument, 4> SpecTemplateArgs;

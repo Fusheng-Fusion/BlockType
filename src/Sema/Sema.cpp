@@ -1485,20 +1485,6 @@ DeclResult Sema::ActOnAccessSpecDeclFactory(SourceLocation Loc,
 //===----------------------------------------------------------------------===//
 // Expression handling
 //===----------------------------------------------------------------------===//
-
-ExprResult Sema::ActOnExpr(Expr *E) {
-  if (!E)
-    return ExprResult::getInvalid();
-
-  // All expressions should now have their types set by ActOn* factory methods.
-  // This method serves as a compatibility/verification passthrough.
-  // Legacy BinaryOperator/UnaryOperator type-fixup removed — ActOnBinaryOperator
-  // and ActOnUnaryOperator handle type computation directly.
-
-  return ExprResult(E);
-}
-
-//===----------------------------------------------------------------------===//
 // Literal expressions (Phase 2A)
 //===----------------------------------------------------------------------===//
 
@@ -2562,12 +2548,6 @@ StmtResult Sema::ActOnCompoundStmt(llvm::ArrayRef<Stmt *> Stmts,
                                     SourceLocation RBraceLoc) {
   auto *CS = Context.create<CompoundStmt>(LBraceLoc, Stmts);
   return StmtResult(CS);
-}
-
-StmtResult Sema::ActOnDeclStmt(Decl *D) {
-  Decl *Decls[] = {D};
-  auto *DS = Context.create<DeclStmt>(D->getLocation(), Decls);
-  return StmtResult(DS);
 }
 
 StmtResult Sema::ActOnNullStmt(SourceLocation Loc) {
