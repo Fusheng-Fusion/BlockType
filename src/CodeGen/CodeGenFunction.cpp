@@ -298,6 +298,15 @@ llvm::Value *CodeGenFunction::EmitExpr(Expr *Expression) {
   // C++ 特有
   case ASTNode::NodeKind::CXXThisExprKind:
     return EmitCXXThisExpr(llvm::cast<CXXThisExpr>(Expression));
+  case ASTNode::NodeKind::TypeRefExprKind: {
+    // TypeRefExpr represents a type in expression context.
+    // In most contexts, this should not generate runtime code.
+    // However, for pack indexing, we return null to indicate
+    // that this is a type (not a value).
+    // The actual handling depends on the context (e.g., decltype, sizeof).
+    // For now, return nullptr as types don't have runtime values.
+    return nullptr;
+  }
   case ASTNode::NodeKind::CXXConstructExprKind:
   case ASTNode::NodeKind::CXXTemporaryObjectExprKind:
     return EmitCXXConstructExpr(llvm::cast<CXXConstructExpr>(Expression));

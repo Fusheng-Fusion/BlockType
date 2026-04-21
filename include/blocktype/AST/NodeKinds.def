@@ -38,6 +38,7 @@ EXPR(CXXNullPtrLiteral, Expr)
 
 // References
 EXPR(DeclRefExpr, Expr)
+EXPR(TypeRefExpr, Expr)  // Type reference in expression context (for type template arguments)
 EXPR(TemplateSpecializationExpr, Expr)
 EXPR(MemberExpr, Expr)
 

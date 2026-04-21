@@ -170,12 +170,14 @@ Expr *TemplateInstantiator::InstantiatePackIndexingExpr(
                                                      Context.getIntType());
       SubstitutedExprs.push_back(IntLit);
     } else if (Elem.isType()) {
-      // Type template arguments are primarily used in type contexts (e.g., using T = Ts...[0])
-      // In expression context, we create a placeholder for now.
-      // A full implementation would need a TypeExpr or similar AST node.
-      // For now, we skip type arguments in expression context.
-      // TODO: Add TypeExpr support for type template arguments in expression context
-      continue;
+      // Type template arguments in expression context.
+      // Create a TypeRefExpr to represent the type in the expression context.
+      // This is used for pack indexing where the pack contains type arguments.
+      QualType TypeArg = Elem.getAsType();
+      if (!TypeArg.isNull()) {
+        auto *TypeRef = Context.create<TypeRefExpr>(SourceLocation(1), TypeArg);
+        SubstitutedExprs.push_back(TypeRef);
+      }
     } else if (Elem.isExpression()) {
       // Use the expression directly
       if (Expr *ExprVal = Elem.getAsExpr()) {

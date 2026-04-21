@@ -395,6 +395,40 @@ public:
   }
 };
 
+/// TypeRefExpr - Type reference in expression context.
+///
+/// Represents a type used as an expression, primarily for type template arguments
+/// in pack indexing. For example, in `Ts...[N]` where `Ts` is a type parameter pack,
+/// each element is a TypeRefExpr.
+///
+/// This is needed because PackIndexingExpr stores Expr*, but type template arguments
+/// are QualType. TypeRefExpr bridges this gap.
+///
+/// **Usage**: Created during template instantiation when a type template argument
+/// needs to be stored in an expression context (e.g., PackIndexingExpr::SubstitutedExprs).
+class TypeRefExpr : public Expr {
+  QualType ReferencedType;  // The type being referenced
+
+public:
+  TypeRefExpr(SourceLocation Loc, QualType T)
+      : Expr(Loc, T, ExprValueKind::VK_PRValue), ReferencedType(T) {}
+
+  QualType getReferencedType() const { return ReferencedType; }
+
+  NodeKind getKind() const override { return NodeKind::TypeRefExprKind; }
+
+  void dump(raw_ostream &OS, unsigned Indent = 0) const override;
+
+  /// A type reference is type-dependent if the referenced type is dependent
+  bool isTypeDependent() const override {
+    return ReferencedType.isNull() || ReferencedType->isDependentType();
+  }
+
+  static bool classof(const ASTNode *N) {
+    return N->getKind() == NodeKind::TypeRefExprKind;
+  }
+};
+
 /// MemberExpr - Member access expression (x.member or p->member).
 class MemberExpr : public Expr {
   Expr *Base;

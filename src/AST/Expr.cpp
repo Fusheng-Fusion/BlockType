@@ -722,6 +722,17 @@ void TemplateSpecializationExpr::dump(raw_ostream &OS, unsigned Indent) const {
   }
 }
 
+void TypeRefExpr::dump(raw_ostream &OS, unsigned Indent) const {
+  printIndent(OS, Indent);
+  OS << "TypeRefExpr: ";
+  if (ReferencedType.isNull()) {
+    OS << "<null type>\n";
+  } else {
+    ReferencedType.dump(OS);
+    OS << "\n";
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // Expr base class
 //===----------------------------------------------------------------------===//
