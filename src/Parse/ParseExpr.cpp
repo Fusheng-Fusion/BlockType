@@ -537,13 +537,10 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       SourceLocation MemberLoc = Tok.getLocation();
       consumeToken();
 
-      // Look up member in the base type
-      // 从 Base 表达式获取类型，用于成员查找
-      QualType BaseType = Base ? Base->getType() : QualType();
-      ValueDecl *MemberDecl = lookupMemberInType(MemberName, BaseType, MemberLoc);
-
-      // Create MemberExpr via Sema (direct form, Parser already looked up member)
-      Base = Actions.ActOnMemberExprDirect(OpLoc, Base, MemberDecl, false).get();
+      // Create MemberExpr via Sema (with automatic member lookup and validation)
+      auto Result = Actions.ActOnMemberExpr(Base, MemberName, MemberLoc, false);
+      if (Result.isUsable())
+        Base = Result.get();
       break;
     }
 
@@ -563,13 +560,11 @@ Expr *Parser::parsePostfixExpression(Expr *Base) {
       SourceLocation MemberLoc = Tok.getLocation();
       consumeToken();
 
-      // Look up member in the base type
-      // 从 Base 表达式获取类型，用于成员查找（箭头操作符需要指针类型）
-      QualType BaseType = Base ? Base->getType() : QualType();
-      ValueDecl *MemberDecl = lookupMemberInType(MemberName, BaseType, MemberLoc);
-
-      // Create MemberExpr with IsArrow = true via Sema
-      Base = Actions.ActOnMemberExprDirect(OpLoc, Base, MemberDecl, true).get();
+      // Create MemberExpr via Sema (with automatic member lookup and validation)
+      // IsArrow = true for pointer member access
+      auto Result = Actions.ActOnMemberExpr(Base, MemberName, MemberLoc, true);
+      if (Result.isUsable())
+        Base = Result.get();
       break;
     }
 

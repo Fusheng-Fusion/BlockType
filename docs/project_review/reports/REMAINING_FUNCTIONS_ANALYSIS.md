@@ -11,7 +11,7 @@
 | 函数名 | 状态 | 优先级 | 集成难度 | 影响范围 |
 |--------|------|--------|---------|---------|
 | ActOnCXXNamedCastExpr | ✅ 已集成 | - | - | - |
-| ActOnMemberExpr | ⚠️ 有替代 | P2 | 中 | 成员访问验证 |
+| ActOnMemberExpr | ✅ 已集成 | P1 | 中 | 成员访问验证 |
 | parseTrailingReturnType | ❌ 未集成 | P1 | 高 | C++11 尾置返回类型 |
 | parseFoldExpression | ❌ 未集成 | P2 | 中 | C++17 折叠表达式 |
 
@@ -39,62 +39,41 @@ L821:  reinterpret_cast → ActOnCXXNamedCastExprWithType(..., "reinterpret_cast
 
 ---
 
-## 2. ActOnMemberExpr - ⚠️ 有替代方案
+## 2. ActOnMemberExpr - ✅ 已集成
 
 ### 实现位置
 - `src/Sema/Sema.cpp:2138` - `ActOnMemberExpr`（完整版本）
-- `src/Sema/Sema.cpp:1693` - `ActOnMemberExprDirect`（简化版本）
+- `src/Sema/Sema.cpp:1693` - `ActOnMemberExprDirect`（简化版本，已废弃）
 
-### 功能对比
+### 重构内容
 
-| 特性 | ActOnMemberExpr | ActOnMemberExprDirect |
-|------|----------------|----------------------|
-| 成员查找 | ✅ 自动查找成员声明 | ❌ 需要传入 MemberDecl |
-| 类型验证 | ✅ 检查基类类型 | ❌ 无验证 |
-| 箭头运算符 | ✅ 自动解引用指针 | ❌ 需要手动处理 |
-| 错误诊断 | ✅ 详细的错误信息 | ❌ 无诊断 |
-| 复杂度 | 高（40+ 行） | 低（3 行） |
+**修改前**:
+- Parser 在 `ParseExpr.cpp:542-567` 手动实现成员查找
+- 调用 `ActOnMemberExprDirect` 创建 AST 节点
+- 重复了 Sema 的验证逻辑
 
-### 当前使用情况
+**修改后**:
+- Parser 直接调用 `ActOnMemberExpr`
+- Sema 自动完成成员查找、类型验证、访问控制检查
+- 消除了重复代码
 
+### 集成位置
 ```cpp
-// ParseExpr.cpp:546 - 点运算符
-Base = Actions.ActOnMemberExprDirect(OpLoc, Base, MemberDecl, false).get();
+// ParseExpr.cpp:545 - 点运算符
+auto Result = Actions.ActOnMemberExpr(Base, MemberName, MemberLoc, false);
 
-// ParseExpr.cpp:572 - 箭头运算符
-Base = Actions.ActOnMemberExprDirect(OpLoc, Base, MemberDecl, true).get();
+// ParseExpr.cpp:571 - 箭头运算符
+auto Result = Actions.ActOnMemberExpr(Base, MemberName, MemberLoc, true);
 ```
 
-### 问题分析
+### 增强内容
 
-**当前实现**:
-- Parser 在 L542-567 手动实现了成员查找逻辑
-- 然后调用 `ActOnMemberExprDirect` 创建 AST 节点
-- **重复了 Sema 的验证逻辑**
-
-**建议方案**:
-
-**方案 1: 使用完整版本（推荐）**
-```cpp
-// 修改 ParseExpr.cpp:546
-Base = Actions.ActOnMemberExpr(Base, MemberName, MemberLoc, false).get();
-```
-
-**优点**:
-- 消除重复代码
-- 统一验证逻辑
-- 更好的错误诊断
-
-**缺点**:
-- 需要重构 Parser 的成员查找逻辑
-- 可能影响性能（两次查找）
-
-**方案 2: 保持现状**
-- Parser 层直接构建更高效
-- 保留 `ActOnMemberExpr` 作为备用接口
+**基类查找支持**:
+- 增强了 `ActOnMemberExpr` 以支持基类成员查找
+- 搜索顺序：当前类 → 基类（递归）
 
 ### 结论
-⚠️ **架构选择** - 建议保持现状，标记为"有替代方案"。
+✅ **已完成集成** - 统一了成员访问验证逻辑，消除了重复代码。
 
 ---
 
@@ -254,9 +233,11 @@ bool Parser::isFoldExpression() {
 
 ## 📋 修复优先级建议
 
+### ✅ 已完成
+1. ✅ **ActOnCXXNamedCastExpr** - 已集成（通过 ActOnCXXNamedCastExprWithType）
+2. ✅ **ActOnMemberExpr** - 已集成（重构 Parser，统一验证逻辑）
+
 ### P1 - 本周完成
-1. ✅ **ActOnCXXNamedCastExpr** - 更新文档状态
-2. ⚠️ **ActOnMemberExpr** - 决定是否重构（建议保持现状）
 3. ❌ **parseTrailingReturnType** - 需要重大重构，制定专门计划
 
 ### P2 - 本月完成

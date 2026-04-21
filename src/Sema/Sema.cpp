@@ -2172,13 +2172,35 @@ ExprResult Sema::ActOnMemberExpr(Expr *Base, llvm::StringRef Member,
   if (!RD)
     return ExprResult::getInvalid();
 
-  // Find the named member
+  // Find the named member (search current class and base classes)
   ValueDecl *MemberDecl = nullptr;
+  
+  // 1. Search in current class
   for (auto *D : RD->members()) {
     if (auto *ND = llvm::dyn_cast<NamedDecl>(D)) {
       if (ND->getName() == Member) {
         MemberDecl = llvm::dyn_cast<ValueDecl>(D);
         break;
+      }
+    }
+  }
+  
+  // 2. Search in base classes (if not found in current class)
+  if (!MemberDecl) {
+    for (const auto &Base : RD->bases()) {
+      QualType BaseType = Base.getType();
+      if (auto *BaseRT = llvm::dyn_cast_or_null<RecordType>(BaseType.getTypePtr())) {
+        if (auto *BaseRD = llvm::dyn_cast<CXXRecordDecl>(BaseRT->getDecl())) {
+          for (auto *D : BaseRD->members()) {
+            if (auto *ND = llvm::dyn_cast<NamedDecl>(D)) {
+              if (ND->getName() == Member) {
+                MemberDecl = llvm::dyn_cast<ValueDecl>(D);
+                break;
+              }
+            }
+          }
+          if (MemberDecl) break;
+        }
       }
     }
   }

@@ -11,10 +11,10 @@
 
 | 模块 | 总函数数 | 已集成 | 游离 | 集成率 |
 |------|---------|--------|------|--------|
-| Sema | 128 | 125 | 3 | 97.7% |
+| Sema | 128 | 126 | 2 | 98.4% |
 | Parser | 98 | 93 | 5 | 94.9% |
 
-**进度**: ✅ P1-P3 优先级函数已全部集成（11个函数）
+**进度**: ✅ P1-P3 优先级函数已全部集成（12个函数）
 
 ---
 
@@ -89,9 +89,10 @@
 #### 10. ActOnMemberExpr
 - **文件**: src/Sema/Sema.cpp
 - **功能**: 处理成员访问表达式
-- **状态**: ❌ 未集成
-- **影响**: 成员访问可能在 Parser 层直接构建
-- **优先级**: P1（如果确实未工作，严重影响）
+- **状态**: ✅ 已集成 (2026-04-21)
+- **集成位置**: ParseExpr.cpp:545, 571
+- **提交**: ad11c25
+- **备注**: 已重构 Parser，移除重复的成员查找逻辑
 
 #### 11. ActOnTypeAliasTemplateDecl
 - **文件**: src/Sema/SemaTemplate.cpp
@@ -190,10 +191,12 @@ if (!D) {
 
 ### ✅ 已完成（2026-04-21）
 
-**P1 优先级（3个函数）**:
+**P1 优先级（4个函数）**:
 1. ✅ ActOnExplicitSpecialization - 模板显式特化验证
 2. ✅ ActOnTypeAliasTemplateDecl - 别名模板验证
 3. ✅ ActOnExplicitInstantiation - 显式实例化处理
+4. ✅ ActOnMemberExpr - 成员访问表达式验证
+5. ✅ ActOnCXXNamedCastExpr - 命名类型转换
 
 **P2 优先级（5个函数）**:
 4. ✅ ActOnClassTemplatePartialSpecialization - 类模板偏特化验证
@@ -208,16 +211,14 @@ if (!D) {
 
 ---
 
-### 🔴 待处理（剩余4个函数）
+### 🔴 待处理（剩余2个函数）
 
 **P1（本周完成）**:
-1. **ActOnCXXNamedCastExpr** - 命名类型转换
-2. **ActOnMemberExpr** - 确认成员访问是否工作
-3. **parseTrailingReturnType** - 尾置返回类型
+1. **parseTrailingReturnType** - 尾置返回类型（需要重大重构）
 
 **P2（本月完成）**:
-4. **parseFoldExpression** - 折叠表达式
-5. **其他边缘功能**（co_await, member pointer等）
+2. **parseFoldExpression** - 折叠表达式
+3. **其他边缘功能**（co_await, member pointer等）
 
 **P3（后续规划）**:
 6. **C++26 新特性**（pack indexing）
