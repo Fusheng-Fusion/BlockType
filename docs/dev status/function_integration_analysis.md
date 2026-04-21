@@ -213,9 +213,10 @@ if (AttrName == "assume") {
 
 ## 📊 集成优先级
 
-### P1（本周完成）
-1. ✅ `ActOnExplicitSpecialization` - 添加验证步骤
-2. ✅ `ActOnTypeAliasTemplateDecl` - 添加别名模板解析
+### P1（已完成）
+1. ✅ `ActOnExplicitSpecialization` - 已添加验证步骤
+2. ✅ `ActOnTypeAliasTemplateDecl` - 已添加验证和注册
+3. ✅ `ActOnExplicitInstantiation` - 已集成显式实例化处理
 
 ### P2（本月完成）
 3. ✅ `ActOnExplicitInstantiation` - 添加显式实例化处理
