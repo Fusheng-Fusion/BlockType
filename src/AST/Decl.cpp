@@ -644,6 +644,13 @@ void TemplateTemplateParmDecl::dump(raw_ostream &OS, unsigned Indent) const {
 // ModuleDecl
 //===----------------------------------------------------------------------===//
 
+bool ModuleDecl::imports(llvm::StringRef ModuleName) const {
+  for (ImportDecl *Import : ImportDecls) {
+    if (Import->getModuleName() == ModuleName) return true;
+  }
+  return false;
+}
+
 void ModuleDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << "ModuleDecl ";

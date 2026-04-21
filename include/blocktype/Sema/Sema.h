@@ -39,6 +39,13 @@
 
 namespace blocktype {
 
+/// ModuleFragmentKind - 模块片段类型
+enum class ModuleFragmentKind {
+  None,    ///< 不在模块片段中
+  Global,  ///< 全局模块片段
+  Private  ///< 私有模块片段
+};
+
 /// ExprResult - Wrapper for expression semantic analysis results.
 /// Contains either a valid Expr* or an error marker.
 class ExprResult {
@@ -195,6 +202,12 @@ class Sema {
 
   /// Module manager - manages C++20 modules
   std::unique_ptr<ModuleManager> ModMgr;
+
+  /// Flag indicating if we're in global module fragment
+  bool InGlobalModuleFragment = false;
+
+  /// Flag indicating if we're in private module fragment
+  bool InPrivateModuleFragment = false;
 
   /// Scope stack - tracks the current lexical scope chain.
   Scope *CurrentScope = nullptr;
@@ -520,6 +533,119 @@ public:
                              bool IsExported, llvm::StringRef Partition,
                              llvm::StringRef Header, bool IsHeader);
   DeclResult ActOnExportDecl(SourceLocation Loc, Decl *Exported);
+
+  //===------------------------------------------------------------------===//
+  // Module Visibility
+  //===------------------------------------------------------------------===//
+
+  /// 检查符号是否在当前模块可见
+  bool isSymbolVisible(NamedDecl *D, ModuleDecl *CurrentMod);
+
+  /// 检查传递导出
+  bool checkTransitiveExport(ModuleDecl *CurrentMod, ModuleDecl *OwnerMod);
+
+  /// 在导入模块中查找符号
+  NamedDecl *lookupInImportedModules(llvm::StringRef Name, ModuleDecl *CurrentMod);
+
+  /// 检查声明是否在模块接口中导出
+  bool isDeclExported(NamedDecl *D) const;
+
+  /// 获取声明的有效模块
+  ModuleDecl *getEffectiveModule(NamedDecl *D) const;
+
+  /// 检查是否可以访问声明
+  bool canAccessDecl(NamedDecl *D, Scope *S);
+
+  //===------------------------------------------------------------------===//
+  // Cross-Module Type Checking
+  //===------------------------------------------------------------------===//
+
+  /// 检查跨模块类型是否一致
+  bool checkCrossModuleType(const Type *T1, const Type *T2,
+                            ModuleDecl *M1, ModuleDecl *M2);
+
+  /// 检查记录类型的结构等价性
+  bool checkRecordEquivalence(RecordDecl *RD1, RecordDecl *RD2,
+                              ModuleDecl *M1, ModuleDecl *M2);
+
+  /// 检查枚举类型的等价性
+  bool checkEnumEquivalence(EnumDecl *ED1, EnumDecl *ED2,
+                            ModuleDecl *M1, ModuleDecl *M2);
+
+  /// 解析跨模块符号引用
+  NamedDecl *resolveCrossModuleSymbol(llvm::StringRef Name,
+                                      ModuleDecl *SourceMod,
+                                      ModuleDecl *TargetMod);
+
+  /// 验证导入模块的类型一致性
+  bool validateImportedModuleTypes(ModuleDecl *ImportingMod,
+                                   ModuleDecl *ImportedMod);
+
+  /// 验证类型的完整性
+  bool validateTypeIntegrity(const Type *T, ModuleDecl *Mod);
+
+  //===------------------------------------------------------------------===//
+  // Module Partition Support
+  //===------------------------------------------------------------------===//
+
+  /// 处理分区导入
+  DeclResult ActOnPartitionImport(SourceLocation Loc, llvm::StringRef PartitionName);
+
+  /// 合并分区符号到主模块
+  bool mergePartitionSymbols(ModuleDecl *MainModule, ModuleInfo *Partition);
+
+  /// 注册模块分区
+  void registerModulePartition(ModuleDecl *PartitionDecl);
+
+  /// 检查分区是否有效
+  bool validatePartition(ModuleDecl *PartitionDecl);
+
+  /// 获取模块的所有分区
+  llvm::SmallVector<ModuleDecl *, 8> getModulePartitions(ModuleDecl *Module);
+
+  /// 检查分区接口单元是否完整
+  bool checkPartitionInterfaceComplete(ModuleDecl *PartitionDecl);
+
+  //===------------------------------------------------------------------===//
+  // Module Fragment Support
+  //===------------------------------------------------------------------===//
+
+  /// 进入全局模块片段
+  void enterGlobalModuleFragment();
+
+  /// 退出全局模块片段
+  void exitGlobalModuleFragment();
+
+  /// 添加声明到全局模块片段
+  void addToGlobalModuleFragment(Decl *D);
+
+  /// 检查是否在全局模块片段中
+  bool isInGlobalModuleFragment() const;
+
+  /// 进入私有模块片段
+  void enterPrivateModuleFragment();
+
+  /// 退出私有模块片段
+  void exitPrivateModuleFragment();
+
+  /// 添加声明到私有模块片段
+  void addToPrivateModuleFragment(Decl *D);
+
+  /// 检查是否在私有模块片段中
+  bool isInPrivateModuleFragment() const;
+
+  /// 验证全局模块片段
+  bool validateGlobalModuleFragment(ModuleDecl *MD);
+
+  /// 验证私有模块片段
+  bool validatePrivateModuleFragment(ModuleDecl *MD);
+
+  /// 检查声明是否在模块片段中
+  bool isDeclInModuleFragment(Decl *D) const;
+
+  /// 获取声明所在的模块片段类型
+  ModuleFragmentKind getModuleFragmentKind(Decl *D) const;
+
   DeclResult ActOnEnumDecl(SourceLocation Loc, llvm::StringRef Name);
   DeclResult ActOnTypedefDecl(SourceLocation Loc, llvm::StringRef Name,
                               QualType T);

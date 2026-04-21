@@ -153,27 +153,84 @@ ModuleManager::getModuleDependencies(llvm::StringRef Name) {
     return Result;
   }
 
+  ModuleInfo *Info = It->second.get();
+
   // 递归收集依赖
-  llvm::StringMap<bool> Visited;
-  llvm::SmallVector<ModuleInfo *, 16> Stack;
-  Stack.push_back(It->second.get());
+  llvm::SmallVector<llvm::StringRef, 16> WorkList;
+  llvm::SmallVector<llvm::StringRef, 16> Visited;
 
-  while (!Stack.empty()) {
-    ModuleInfo *Current = Stack.pop_back_val();
-    for (llvm::StringRef Import : Current->Imports) {
-      if (Visited[Import])
-        continue;
-      Visited[Import] = true;
+  WorkList.append(Info->Imports.begin(), Info->Imports.end());
 
-      auto DepIt = LoadedModules.find(Import);
-      if (DepIt != LoadedModules.end()) {
-        Result.push_back(DepIt->second.get());
-        Stack.push_back(DepIt->second.get());
+  while (!WorkList.empty()) {
+    llvm::StringRef DepName = WorkList.pop_back_val();
+
+    // 检查是否已访问
+    if (std::find(Visited.begin(), Visited.end(), DepName) != Visited.end()) {
+      continue;
+    }
+    Visited.push_back(DepName);
+
+    // 获取依赖模块信息
+    auto DepIt = LoadedModules.find(DepName);
+    if (DepIt != LoadedModules.end()) {
+      Result.push_back(DepIt->second.get());
+
+      // 添加依赖的依赖
+      for (llvm::StringRef TransitiveDep : DepIt->second->Imports) {
+        if (std::find(Visited.begin(), Visited.end(), TransitiveDep) ==
+            Visited.end()) {
+          WorkList.push_back(TransitiveDep);
+        }
       }
     }
   }
 
   return Result;
+}
+
+ModuleInfo *ModuleManager::getModuleInfo(llvm::StringRef Name) const {
+  auto It = LoadedModules.find(Name);
+  return It != LoadedModules.end() ? It->second.get() : nullptr;
+}
+
+void ModuleManager::registerModuleInfo(ModuleInfo *Info) {
+  if (!Info || Info->Name.empty()) {
+    return;
+  }
+
+  // 检查是否已存在
+  if (LoadedModules.find(Info->Name) != LoadedModules.end()) {
+    return;
+  }
+
+  // 添加到缓存
+  LoadedModules[Info->Name] = std::unique_ptr<ModuleInfo>(Info);
+}
+
+ModuleInfo *ModuleManager::loadModulePartition(ModuleDecl *MainModule,
+                                               llvm::StringRef PartitionName) {
+  if (!MainModule) {
+    return nullptr;
+  }
+
+  // 构建分区名
+  std::string FullPartitionName =
+      MainModule->getModuleName().str() + ":" + PartitionName.str();
+
+  // 检查是否已加载
+  auto It = LoadedModules.find(FullPartitionName);
+  if (It != LoadedModules.end()) {
+    return It->second.get();
+  }
+
+  // 查找分区 BMI 文件
+  std::string BMIPath = findModuleBMI(FullPartitionName);
+  if (BMIPath.empty()) {
+    return nullptr;
+  }
+
+  // 加载分区
+  return loadModule(FullPartitionName);
 }
 
 //===--------------------------------------------------------------------===//

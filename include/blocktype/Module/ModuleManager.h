@@ -130,6 +130,15 @@ public:
   /// 获取模块依赖（递归）
   llvm::SmallVector<ModuleInfo *, 8> getModuleDependencies(llvm::StringRef Name);
 
+  /// 获取模块信息
+  ModuleInfo *getModuleInfo(llvm::StringRef Name) const;
+
+  /// 注册模块信息
+  void registerModuleInfo(ModuleInfo *Info);
+
+  /// 加载模块分区
+  ModuleInfo *loadModulePartition(ModuleDecl *MainModule, llvm::StringRef PartitionName);
+
   //===------------------------------------------------------------------===//
   // 搜索路径管理
   //===------------------------------------------------------------------===//

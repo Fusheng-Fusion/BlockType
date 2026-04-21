@@ -4,6 +4,10 @@ add_library(blocktype-sema
   ConstraintSatisfaction.cpp
   Conversion.cpp
   Lookup.cpp
+  ModuleFragment.cpp
+  ModulePartition.cpp
+  ModuleTypeCheck.cpp
+  ModuleVisibility.cpp
   Overload.cpp
   Scope.cpp
   Sema.cpp

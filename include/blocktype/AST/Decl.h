@@ -34,6 +34,7 @@ class AccessSpecDecl; // Forward declaration
 class ClassTemplateSpecializationDecl; // Forward declaration
 class ClassTemplatePartialSpecializationDecl; // Forward declaration
 class VarTemplateSpecializationDecl; // Forward declaration
+class ImportDecl; // Forward declaration for ModuleDecl
 
 //===----------------------------------------------------------------------===//
 // AccessSpecifier - Access control enumeration
@@ -1290,6 +1291,10 @@ class ModuleDecl : public NamedDecl {
   llvm::StringRef FullModuleName; // Full dotted module name (e.g., "std.core")
   llvm::StringRef PartitionName;
   llvm::SmallVector<llvm::StringRef, 4> Attributes; // Module attributes
+  llvm::SmallVector<ModuleDecl *, 4> Partitions; // Module partitions
+  llvm::SmallVector<ImportDecl *, 4> ImportDecls; // Import declarations
+  llvm::SmallVector<Decl *, 16> GlobalFragmentDecls; // Global module fragment declarations
+  llvm::SmallVector<Decl *, 16> PrivateFragmentDecls; // Private module fragment declarations
   bool IsExported;
   bool IsModulePartition;
   bool IsGlobalModuleFragment;  // module; (global module fragment)
@@ -1318,6 +1323,41 @@ public:
 
   void setFullModuleName(llvm::StringRef Name) { FullModuleName = Name; }
   void addAttribute(llvm::StringRef Attr) { Attributes.push_back(Attr); }
+
+  // Partition management
+  void addPartition(ModuleDecl *Partition) { Partitions.push_back(Partition); }
+  bool hasPartition(llvm::StringRef Name) const {
+    for (ModuleDecl *P : Partitions) {
+      if (P->getPartitionName() == Name) return true;
+    }
+    return false;
+  }
+  ModuleDecl *getPartition(llvm::StringRef Name) const {
+    for (ModuleDecl *P : Partitions) {
+      if (P->getPartitionName() == Name) return P;
+    }
+    return nullptr;
+  }
+  llvm::ArrayRef<ModuleDecl *> getPartitions() const { return Partitions; }
+
+  // Import management
+  void addImport(ImportDecl *Import) { ImportDecls.push_back(Import); }
+  void getImports(llvm::SmallVectorImpl<ImportDecl *> &Imports) const {
+    Imports.append(ImportDecls.begin(), ImportDecls.end());
+  }
+  bool imports(llvm::StringRef ModuleName) const; // Implemented in Decl.cpp
+
+  // Global fragment management
+  void addToGlobalFragment(Decl *D) { GlobalFragmentDecls.push_back(D); }
+  void getGlobalFragmentDecls(llvm::SmallVectorImpl<Decl *> &Decls) const {
+    Decls.append(GlobalFragmentDecls.begin(), GlobalFragmentDecls.end());
+  }
+
+  // Private fragment management
+  void addToPrivateFragment(Decl *D) { PrivateFragmentDecls.push_back(D); }
+  void getPrivateFragmentDecls(llvm::SmallVectorImpl<Decl *> &Decls) const {
+    Decls.append(PrivateFragmentDecls.begin(), PrivateFragmentDecls.end());
+  }
 
   NodeKind getKind() const override { return NodeKind::ModuleDeclKind; }
 
@@ -1356,6 +1396,7 @@ public:
   bool isHeaderImport() const { return IsHeaderImport; }
 
   void setHeaderName(llvm::StringRef Name) { HeaderName = Name; }
+  void setIsPartitionImport(bool IsPartition) { /* TODO: add member variable */ }
 
   NodeKind getKind() const override { return NodeKind::ImportDeclKind; }
 
