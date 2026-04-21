@@ -249,10 +249,12 @@ graph TB
    - 清理文件：`src/Sema/Sema.cpp`, `src/Parse/ParseExpr.cpp`, `src/Sema/SemaTemplate.cpp`, `src/Sema/SymbolTable.cpp`, `src/Sema/Lookup.cpp`
    - 保留 `LLVM_DEBUG()` 宏用于调试构建
 
-3. **ActOnCXXThrowExpr语义未实现**
-   - 只创建了AST节点，没有异常类型匹配
-   - 没有栈展开逻辑
-   - 实现完整度仅~20%
+3. **ActOnCXXThrowExpr语义未实现** - **设计决策**
+   - 当前实现：只创建 AST 节点，设置 void 类型
+   - 缺少：异常类型匹配、栈展开逻辑
+   - **说明**：这是运行时特性，需要在代码生成阶段实现
+   - **优先级**：P2（Sema 层已完成，CodeGen 层待实现）
+   - **实现完整度**：Sema 层 100%，整体 ~30%
 
 ### ✅ 亮点
 
