@@ -572,6 +572,11 @@ public:
   bool checkEnumEquivalence(EnumDecl *ED1, EnumDecl *ED2,
                             ModuleDecl *M1, ModuleDecl *M2);
 
+  /// 检查模板参数的等价性
+  bool checkTemplateArgumentEquivalence(const TemplateArgument &Arg1,
+                                        const TemplateArgument &Arg2,
+                                        ModuleDecl *M1, ModuleDecl *M2);
+
   /// 解析跨模块符号引用
   NamedDecl *resolveCrossModuleSymbol(llvm::StringRef Name,
                                       ModuleDecl *SourceMod,

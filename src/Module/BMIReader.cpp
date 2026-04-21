@@ -111,6 +111,14 @@ bool BMIReader::readModuleMetadata(ModuleInfo &Info, const BMIHeader &H) {
 }
 
 bool BMIReader::readDependencies(ModuleInfo &Info, const BMIHeader &H) {
+  // 检查导入记录数量是否合理
+  size_t RequiredSize = sizeof(BMIHeader) + H.NumImports * sizeof(BMIImport);
+  if (RequiredSize > Buffer->getBufferSize()) {
+    Diags.report(SourceLocation{}, DiagID::err_not_implemented,
+                 "invalid number of imports in BMI file");
+    return false;
+  }
+
   // 读取导入记录
   const char *Ptr = Buffer->getBufferStart() + sizeof(BMIHeader);
 
@@ -130,6 +138,15 @@ bool BMIReader::readDependencies(ModuleInfo &Info, const BMIHeader &H) {
 }
 
 bool BMIReader::readExportedSymbols(ModuleInfo &Info, const BMIHeader &H) {
+  // 检查导出符号记录数量是否合理
+  size_t RequiredSize = sizeof(BMIHeader) + H.NumImports * sizeof(BMIImport) +
+                        H.NumExports * sizeof(BMISymbol);
+  if (RequiredSize > Buffer->getBufferSize()) {
+    Diags.report(SourceLocation{}, DiagID::err_not_implemented,
+                 "invalid number of exports in BMI file");
+    return false;
+  }
+
   // 读取导出符号记录
   const char *Ptr = Buffer->getBufferStart() + sizeof(BMIHeader) +
                     H.NumImports * sizeof(BMIImport);
@@ -149,7 +166,17 @@ bool BMIReader::readExportedSymbols(ModuleInfo &Info, const BMIHeader &H) {
 }
 
 llvm::StringRef BMIReader::readString(uint32_t Offset, uint32_t Length) {
+  // 边界检查
   if (Offset + Length > Buffer->getBufferSize()) {
+    Diags.report(SourceLocation{}, DiagID::err_not_implemented,
+                 "invalid string offset/length in BMI file");
+    return "";
+  }
+
+  // 检查偏移是否对齐
+  if (Offset > Buffer->getBufferSize()) {
+    Diags.report(SourceLocation{}, DiagID::err_not_implemented,
+                 "string offset out of bounds in BMI file");
     return "";
   }
 

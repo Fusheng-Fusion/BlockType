@@ -188,11 +188,54 @@ bool Sema::checkCrossModuleType(const Type *T1, const Type *T2,
     // TODO: 实现表达式类型比较
     return false;
 
-  case TypeClass::TemplateTypeParm:
-  case TypeClass::TemplateSpecialization:
-    // 模板类型：比较模板参数
-    // TODO: 实现模板类型比较
-    return false;
+  case TypeClass::TemplateTypeParm: {
+    // 模板类型参数:比较索引和深度
+    const TemplateTypeParmType *TTP1 = dyn_cast<TemplateTypeParmType>(T1);
+    const TemplateTypeParmType *TTP2 = dyn_cast<TemplateTypeParmType>(T2);
+    if (!TTP1 || !TTP2) return false;
+
+    // 索引和深度必须相同
+    if (TTP1->getIndex() != TTP2->getIndex() ||
+        TTP1->getDepth() != TTP2->getDepth()) {
+      return false;
+    }
+
+    // 参数包属性必须相同
+    if (TTP1->isParameterPack() != TTP2->isParameterPack()) {
+      return false;
+    }
+
+    return true;
+  }
+
+  case TypeClass::TemplateSpecialization: {
+    // 模板特化类型:比较模板名和模板参数
+    const TemplateSpecializationType *TST1 = dyn_cast<TemplateSpecializationType>(T1);
+    const TemplateSpecializationType *TST2 = dyn_cast<TemplateSpecializationType>(T2);
+    if (!TST1 || !TST2) return false;
+
+    // 模板名必须相同
+    if (TST1->getTemplateName() != TST2->getTemplateName()) {
+      return false;
+    }
+
+    // 模板参数数量必须相同
+    llvm::ArrayRef<TemplateArgument> Args1 = TST1->getTemplateArgs();
+    llvm::ArrayRef<TemplateArgument> Args2 = TST2->getTemplateArgs();
+
+    if (Args1.size() != Args2.size()) {
+      return false;
+    }
+
+    // 逐个比较模板参数
+    for (size_t I = 0; I < Args1.size(); ++I) {
+      if (!checkTemplateArgumentEquivalence(Args1[I], Args2[I], M1, M2)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
 
   default:
     // 未知类型，保守处理
@@ -302,7 +345,16 @@ bool Sema::checkEnumEquivalence(EnumDecl *ED1, EnumDecl *ED2,
     }
 
     // 枚举值必须相同
-    // TODO: 实现常量表达式比较
+    // 如果两个枚举值都已求值,比较其值
+    if (E1->hasVal() && E2->hasVal()) {
+      if (E1->getVal() != E2->getVal()) {
+        return false;
+      }
+    }
+    // 如果其中一个未求值,保守处理,认为不同
+    else if (E1->hasVal() != E2->hasVal()) {
+      return false;
+    }
   }
 
   return true;
@@ -439,6 +491,84 @@ bool Sema::validateTypeIntegrity(const Type *T, ModuleDecl *Mod) {
     // 其他类型：保守处理
     return true;
   }
+}
+
+/// 检查模板参数的等价性
+bool Sema::checkTemplateArgumentEquivalence(const TemplateArgument &Arg1,
+                                            const TemplateArgument &Arg2,
+                                            ModuleDecl *M1, ModuleDecl *M2) {
+  // 参数类型必须相同
+  if (Arg1.getKind() != Arg2.getKind()) {
+    return false;
+  }
+
+  switch (Arg1.getKind()) {
+  case TemplateArgumentKind::Null:
+    // 两个都是 null,认为等价
+    return true;
+
+  case TemplateArgumentKind::Type: {
+    // 类型参数:比较类型
+    return checkCrossModuleType(Arg1.getAsType().getTypePtr(),
+                                Arg2.getAsType().getTypePtr(), M1, M2);
+  }
+
+  case TemplateArgumentKind::Integral: {
+    // 整型参数:比较值
+    return Arg1.getAsIntegral() == Arg2.getAsIntegral();
+  }
+
+  case TemplateArgumentKind::Declaration: {
+    // 声明参数:比较声明
+    ValueDecl *D1 = Arg1.getAsDecl();
+    ValueDecl *D2 = Arg2.getAsDecl();
+    if (!D1 || !D2) return D1 == D2;
+    return D1->getName() == D2->getName();
+  }
+
+  case TemplateArgumentKind::NullPtr:
+    // 两个都是 nullptr
+    return true;
+
+  case TemplateArgumentKind::Template: {
+    // 模板参数:比较模板名
+    TemplateDecl *TD1 = Arg1.getAsTemplate();
+    TemplateDecl *TD2 = Arg2.getAsTemplate();
+    if (!TD1 || !TD2) return TD1 == TD2;
+    return TD1->getName() == TD2->getName();
+  }
+
+  case TemplateArgumentKind::TemplateExpansion:
+    // 模板展开参数:比较模板
+    // TODO: 实现模板展开比较
+    return false;
+
+  case TemplateArgumentKind::Expression: {
+    // 表达式参数:需要求值后比较
+    // TODO: 实现表达式求值和比较
+    return false;
+  }
+
+  case TemplateArgumentKind::Pack: {
+    // 参数包:逐个比较
+    llvm::ArrayRef<TemplateArgument> Pack1 = Arg1.getAsPack();
+    llvm::ArrayRef<TemplateArgument> Pack2 = Arg2.getAsPack();
+
+    if (Pack1.size() != Pack2.size()) {
+      return false;
+    }
+
+    for (size_t I = 0; I < Pack1.size(); ++I) {
+      if (!checkTemplateArgumentEquivalence(Pack1[I], Pack2[I], M1, M2)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+  }
+
+  return false;
 }
 
 } // namespace blocktype
