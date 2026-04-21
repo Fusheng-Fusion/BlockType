@@ -343,8 +343,15 @@ TemplateDecl *Parser::parseTemplateDeclaration() {
         Actions.ActOnVarTemplateDeclFactory(TemplateLoc, VD->getName(), TemplatedDecl).get());
   } else if (auto *TAD = llvm::dyn_cast<TypeAliasDecl>(TemplatedDecl)) {
     // Type alias template
-    Template = llvm::cast<TypeAliasTemplateDecl>(
+    auto *TATD = llvm::cast<TypeAliasTemplateDecl>(
         Actions.ActOnTypeAliasTemplateDeclFactory(TemplateLoc, TAD->getName(), TemplatedDecl).get());
+    
+    // Validate and register the type alias template
+    if (Actions.ActOnTypeAliasTemplateDecl(TATD).isInvalid()) {
+      return nullptr;  // Validation failed
+    }
+    
+    Template = TATD;
   } else {
     // Fallback for other types
     Template = llvm::cast<TemplateDecl>(
