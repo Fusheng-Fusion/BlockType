@@ -245,7 +245,8 @@ std::unique_ptr<llvm::Module> CompilerInstance::generateLLVMIR(StringRef ModuleN
   // Emit translation unit
   CGM.EmitTranslationUnit(CurrentTU);
 
-  return std::unique_ptr<llvm::Module>(CGM.getModule());
+  // Transfer ownership of the Module from CGM to the caller
+  return CGM.releaseModule();
 }
 
 bool CompilerInstance::runOptimizationPasses(llvm::Module &Module) {

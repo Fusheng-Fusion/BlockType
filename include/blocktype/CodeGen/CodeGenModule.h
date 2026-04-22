@@ -264,6 +264,10 @@ public:
   //===------------------------------------------------------------------===//
 
   llvm::Module *getModule() const { return TheModule.get(); }
+  
+  /// Release ownership of the Module and return it as a unique_ptr.
+  /// This transfers ownership to the caller.
+  std::unique_ptr<llvm::Module> releaseModule() { return std::move(TheModule); }
   CodeGenTypes &getTypes() const { return *Types; }
   CodeGenConstant &getConstants() const { return *Constants; }
   CGCXX &getCXX() const { return *CXX; }
