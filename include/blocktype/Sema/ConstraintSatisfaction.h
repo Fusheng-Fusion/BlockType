@@ -41,6 +41,11 @@ class Sema;
 class ConstraintSatisfaction {
   Sema &SemaRef;
 
+  /// Current template instantiation context for expression substitution.
+  /// Set during CheckConceptSatisfaction when template parameters are available.
+  TemplateInstantiation CurrentSubstInst;
+  bool HasSubstContext = false;
+
 public:
   explicit ConstraintSatisfaction(Sema &S) : SemaRef(S) {}
 

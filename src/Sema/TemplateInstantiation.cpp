@@ -7,6 +7,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/Sema/TemplateInstantiation.h"
+#include "blocktype/AST/ASTContext.h"
+#include "blocktype/AST/StmtCloner.h"
+#include "blocktype/AST/TemplateParameterList.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace blocktype {
@@ -91,15 +94,79 @@ FunctionDecl *TemplateInstantiation::substituteFunctionSignature(
     }
   }
   
-  // TODO: Create new FunctionDecl with substituted types
-  // This requires:
-  // 1. Substitute return type
-  // 2. Substitute parameter types
-  // 3. Copy function body (if any)
-  // 4. Set appropriate flags
+  // Step 1: Substitute return type
+  QualType OriginalReturnType;
+  QualType OriginalFuncType = Original->getType();
+  if (OriginalFuncType.getTypePtr() && OriginalFuncType->isFunctionType()) {
+    auto *FT = static_cast<const FunctionType *>(OriginalFuncType.getTypePtr());
+    OriginalReturnType = QualType(FT->getReturnType(), Qualifier::None);
+  } else {
+    OriginalReturnType = Original->getType(); // Fallback
+  }
+  QualType SubstReturnType = MutableInst.substituteType(OriginalReturnType);
   
-  // For now, return the original (placeholder)
-  return Original;
+  // Step 2: Substitute parameter types and create new ParmVarDecls
+  llvm::SmallVector<ParmVarDecl *, 4> ClonedParams;
+  for (auto *OrigParam : Original->getParams()) {
+    QualType SubstParamType = MutableInst.substituteType(OrigParam->getType());
+    
+    // Create new ParmVarDecl with substituted type
+    // Note: We cannot use ASTContext::create here since we don't have
+    // access to it in TemplateInstantiation. Instead, we clone the
+    // ParmVarDecl directly.
+    ParmVarDecl *ClonedParam = new ParmVarDecl(
+        OrigParam->getLocation(),
+        OrigParam->getName(),
+        SubstParamType,
+        OrigParam->getFunctionScopeIndex(),
+        OrigParam->getDefaultArg());
+    
+    ClonedParams.push_back(ClonedParam);
+  }
+  
+  // Step 4: Create new FunctionDecl with substituted types
+  FunctionDecl *NewFD = new FunctionDecl(
+      Original->getLocation(),
+      Original->getName(),
+      SubstReturnType,
+      ClonedParams,
+      nullptr,                    // Body — set later
+      Original->isInline(),
+      Original->isConstexpr(),
+      Original->isConsteval(),
+      Original->hasNoexceptSpec(),
+      Original->getNoexceptValue(),
+      Original->getNoexceptExpr(),
+      Original->getAttrs());
+  
+  // Copy storage class (static)
+  NewFD->setStorageClass(Original->getStorageClass());
+  
+  // Step 5: Copy function body (if any) using StmtCloner
+  if (Stmt *OriginalBody = Original->getBody()) {
+    StmtCloner Cloner(MutableInst);
+    // Register mapping from original params to cloned params
+    auto OrigParams = Original->getParams();
+    for (unsigned I = 0; I < OrigParams.size() && I < ClonedParams.size(); ++I) {
+      Cloner.registerDeclMapping(OrigParams[I], ClonedParams[I]);
+    }
+    Stmt *ClonedBody = Cloner.Clone(OriginalBody);
+    NewFD->setBody(ClonedBody);
+  }
+  
+  // Step 6: Copy explicit object parameter (deducing this)
+  if (Original->hasExplicitObjectParam()) {
+    // Find the corresponding cloned param for the explicit object param
+    ParmVarDecl *OrigObjParam = Original->getExplicitObjectParam();
+    for (unsigned I = 0; I < Original->getNumParams() && I < ClonedParams.size(); ++I) {
+      if (Original->getParamDecl(I) == OrigObjParam) {
+        NewFD->setExplicitObjectParam(ClonedParams[I]);
+        break;
+      }
+    }
+  }
+  
+  return NewFD;
 }
 
 bool TemplateInstantiation::hasUnsubstitutedParams(QualType T) const {

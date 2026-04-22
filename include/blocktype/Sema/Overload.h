@@ -40,6 +40,10 @@ class OverloadCandidate {
   /// Computed conversion rank for each argument.
   llvm::SmallVector<ConversionRank, 4> ArgRanks;
 
+  /// Full implicit conversion sequences for each argument.
+  /// Used for fine-grained comparison when ranks are equal.
+  llvm::SmallVector<ImplicitConversionSequence, 4> ConversionSequences;
+
   /// Whether this candidate is viable (all conversions possible).
   bool Viable = false;
 

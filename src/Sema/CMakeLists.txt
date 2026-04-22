@@ -12,7 +12,10 @@ add_library(blocktype-sema
   Scope.cpp
   Sema.cpp
   SemaCXX.cpp
+  SemaDecl.cpp
+  SemaExpr.cpp
   SemaReflection.cpp
+  SemaStmt.cpp
   SemaTemplate.cpp
   SymbolTable.cpp
   TemplateDeduction.cpp

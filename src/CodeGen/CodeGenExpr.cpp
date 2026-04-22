@@ -225,6 +225,14 @@ llvm::Value *CodeGenFunction::EmitAssignment(BinaryOperator *BinaryOp) {
     }
   }
 
+  // 通用左值处理：解引用 (*p = val)、逗号表达式 ((a, b) = val)、
+  // 条件表达式 ((cond ? a : b) = val) 等，统一使用 EmitLValue() 获取地址
+  llvm::Value *Address = EmitLValue(LeftHandExpr);
+  if (Address) {
+    Builder.CreateStore(RightValue, Address);
+    return RightValue;
+  }
+
   return RightValue;
 }
 
@@ -1498,6 +1506,51 @@ llvm::Value *CodeGenFunction::EmitLValue(Expr *Expression) {
   if (auto *UnaryOp = llvm::dyn_cast<UnaryOperator>(Expression)) {
     if (UnaryOp->getOpcode() == UnaryOpKind::Deref) {
       return EmitExpr(UnaryOp->getSubExpr());
+    }
+  }
+
+  // 条件表达式 (cond ? a : b) 作为左值 — C++ 允许此模式
+  // 例如: (cond ? x : y) = 42;
+  if (auto *CondOp = llvm::dyn_cast<ConditionalOperator>(Expression)) {
+    llvm::Value *Cond = EmitExpr(CondOp->getCond());
+    if (!Cond) return nullptr;
+    Cond = EmitConversionToBool(Cond, CondOp->getCond()->getType());
+
+    llvm::BasicBlock *ThenBB = createBasicBlock("condlv.then");
+    llvm::BasicBlock *ElseBB = createBasicBlock("condlv.else");
+    llvm::BasicBlock *MergeBB = createBasicBlock("condlv.end");
+
+    Builder.CreateCondBr(Cond, ThenBB, ElseBB);
+
+    // Then branch: get address of true expr
+    EmitBlock(ThenBB);
+    llvm::Value *TrueAddr = EmitLValue(CondOp->getTrueExpr());
+    if (TrueAddr && haveInsertPoint()) Builder.CreateBr(MergeBB);
+    ThenBB = getCurrentBlock();
+
+    // Else branch: get address of false expr
+    EmitBlock(ElseBB);
+    llvm::Value *FalseAddr = EmitLValue(CondOp->getFalseExpr());
+    if (FalseAddr && haveInsertPoint()) Builder.CreateBr(MergeBB);
+    ElseBB = getCurrentBlock();
+
+    // Merge: phi for the address
+    EmitBlock(MergeBB);
+    if (!TrueAddr || !FalseAddr) return nullptr;
+
+    llvm::Type *AddrTy = llvm::PointerType::get(CGM.getLLVMContext(), 0);
+    llvm::PHINode *AddrPhi = Builder.CreatePHI(AddrTy, 2, "condlv.addr");
+    AddrPhi->addIncoming(TrueAddr, ThenBB);
+    AddrPhi->addIncoming(FalseAddr, ElseBB);
+    return AddrPhi;
+  }
+
+  // 逗号表达式 (a, b) 作为左值 — 返回 b 的地址
+  // 例如: (a, x) = 42;  // assigns to x
+  if (auto *BinOp = llvm::dyn_cast<BinaryOperator>(Expression)) {
+    if (BinOp->getOpcode() == BinaryOpKind::Comma) {
+      EmitExpr(BinOp->getLHS()); // Evaluate for side effects
+      return EmitLValue(BinOp->getRHS());
     }
   }
 

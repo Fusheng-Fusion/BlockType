@@ -7,6 +7,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "blocktype/Sema/TypeDeduction.h"
+#include "blocktype/Sema/TemplateDeduction.h"
+#include "blocktype/Sema/Sema.h"
 #include "blocktype/AST/ASTContext.h"
 
 namespace blocktype {
@@ -187,7 +189,34 @@ bool TypeDeduction::deduceTemplateArguments(
     TemplateDecl *Template,
     llvm::ArrayRef<Expr *> Args,
     llvm::SmallVectorImpl<TemplateArgument> &DeducedArgs) {
-  // TODO: Implement template argument deduction
+  if (!Template || !SemaRef) {
+    return false;
+  }
+
+  // Delegate to TemplateDeduction::DeduceFunctionTemplateArguments
+  // if the template is a FunctionTemplateDecl.
+  if (auto *FTD = llvm::dyn_cast<FunctionTemplateDecl>(Template)) {
+    TemplateDeductionInfo Info;
+    TemplateDeductionResult Result =
+        SemaRef->getTemplateDeduction().DeduceFunctionTemplateArguments(
+            FTD, Args, Info);
+
+    if (Result == TemplateDeductionResult::Success) {
+      // Extract deduced arguments from Info
+      auto Params = FTD->getTemplateParameterList();
+      if (Params) {
+        auto Deduced = Info.getDeducedArgs(Params->size());
+        for (auto &Arg : Deduced) {
+          DeducedArgs.push_back(Arg);
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // For non-function templates (class templates, etc.), we cannot
+  // deduce from call arguments. Return false.
   return false;
 }
 

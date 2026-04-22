@@ -78,12 +78,14 @@ bool OverloadCandidate::checkViability(llvm::ArrayRef<Expr *> Args) {
 
   // Check each argument's conversion
   ArgRanks.clear();
+  ConversionSequences.clear();
   bool AllConversionsValid = true;
 
   for (unsigned I = 0; I < NumArgs; ++I) {
     QualType ArgType = Args[I]->getType();
     if (ArgType.isNull()) {
       ArgRanks.push_back(ConversionRank::BadConversion);
+      ConversionSequences.push_back(ImplicitConversionSequence::getBad());
       AllConversionsValid = false;
       continue;
     }
@@ -96,13 +98,16 @@ bool OverloadCandidate::checkViability(llvm::ArrayRef<Expr *> Args) {
 
       if (ICS.isBad()) {
         ArgRanks.push_back(ConversionRank::BadConversion);
+        ConversionSequences.push_back(ICS);
         AllConversionsValid = false;
       } else {
         ArgRanks.push_back(ICS.getRank());
+        ConversionSequences.push_back(ICS);
       }
     } else {
       // Variadic argument: always matches via ellipsis
       ArgRanks.push_back(ConversionRank::Ellipsis);
+      ConversionSequences.push_back(ImplicitConversionSequence::getEllipsis());
     }
   }
 
@@ -151,6 +156,17 @@ int OverloadCandidate::compare(const OverloadCandidate &Other) const {
     } else if (static_cast<unsigned>(ThisRank) >
                static_cast<unsigned>(OtherRank)) {
       OtherBetter = true;
+    } else if (ThisRank == OtherRank &&
+               I < ConversionSequences.size() &&
+               I < Other.ConversionSequences.size()) {
+      // Same rank: use fine-grained ICS comparison for disambiguation
+      // Per [over.ics.rank]: compare sub-steps of conversion sequences
+      int ICSCompare = ConversionSequences[I].compare(Other.ConversionSequences[I]);
+      if (ICSCompare < 0) {
+        ThisBetter = true;
+      } else if (ICSCompare > 0) {
+        OtherBetter = true;
+      }
     }
   }
 
@@ -178,8 +194,17 @@ int OverloadCandidate::compare(const OverloadCandidate &Other) const {
   if (NumParams > OtherNumParams)
     return 1;
 
-  // Tie-breaker: more constrained function template is preferred
-  // per C++ [over.match.best]/c.1.1 and [temp.constr.order].
+  // Tie-breaker: non-template is better than template
+  // Per C++ [over.match.best]/2a: a non-template function is preferred
+  // over a function template specialization.
+  if (!Template && Other.Template)
+    return -1;
+  if (Template && !Other.Template)
+    return 1;
+
+  // Tie-breaker: more specialized template is preferred
+  // Per C++ [over.match.best]/2b and [temp.func.order]: partial ordering
+  // of function templates — a more specialized template is preferred.
   if (Template && Other.Template && Template != Other.Template) {
     // Both are function templates with different constraints.
     // We need a ConstraintSatisfaction to compare — but we don't have

@@ -182,20 +182,18 @@ public:
   //===------------------------------------------------------------------===//
 
   /// 统一的属性查询接口 - 从 Decl 中提取所有属性
-  [[nodiscard]] AttributeQuery QueryAttributes(const Decl *Decl);
+  /// 内部使用 forEachAttribute 辅助函数，消除重复代码
+  [[nodiscard]] AttributeQuery QueryAttributes(const Decl *D);
   
   /// 检查 Decl 是否有特定名称的属性
-  [[nodiscard]] bool HasAttribute(const Decl *Decl, llvm::StringRef AttrName);
+  [[nodiscard]] bool HasAttribute(const Decl *D, llvm::StringRef AttrName);
   
   /// 获取属性的参数表达式（如果有）
-  [[nodiscard]] Expr *GetAttributeArgument(const Decl *Decl, llvm::StringRef AttrName);
+  [[nodiscard]] Expr *GetAttributeArgument(const Decl *D, llvm::StringRef AttrName);
 
-  /// 收集全局声明上的属性（从 AST 或 Decl 属性）。
-  GlobalDeclAttributes GetGlobalDeclAttributes(const Decl *D);
-
-  /// 将属性应用到 llvm::GlobalValue。
+  /// 将属性应用到 llvm::GlobalValue（基于 AttributeQuery）。
   void ApplyGlobalValueAttributes(llvm::GlobalValue *GV,
-                                  const GlobalDeclAttributes &Attrs);
+                                  const AttributeQuery &Attrs);
 
   //===------------------------------------------------------------------===//
   // Linkage / Visibility
@@ -206,9 +204,6 @@ public:
 
   /// 计算全局变量的正确 Linkage。
   llvm::GlobalValue::LinkageTypes GetVariableLinkage(const VarDecl *VD);
-
-  /// 计算全局符号的 Visibility。
-  llvm::GlobalValue::VisibilityTypes GetVisibility(const GlobalDeclAttributes &Attrs);
   
   /// 基于 AttributeQuery 计算 Visibility（支持 visibility 参数解析）
   [[nodiscard]] llvm::GlobalValue::VisibilityTypes GetVisibilityFromQuery(const AttributeQuery &Query);

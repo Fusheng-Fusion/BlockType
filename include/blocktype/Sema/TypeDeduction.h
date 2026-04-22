@@ -22,6 +22,7 @@
 namespace blocktype {
 
 class DiagnosticsEngine;
+class Sema;
 
 /// TypeDeduction - Handles auto and decltype type deduction.
 ///
@@ -32,10 +33,14 @@ class DiagnosticsEngine;
 class TypeDeduction {
   ASTContext &Context;
   DiagnosticsEngine *Diags = nullptr;
+  Sema *SemaRef = nullptr;
 
 public:
   explicit TypeDeduction(ASTContext &C, DiagnosticsEngine *D = nullptr)
       : Context(C), Diags(D) {}
+
+  /// Set the Sema reference for template argument deduction.
+  void setSema(Sema &S) { SemaRef = &S; }
 
   //===------------------------------------------------------------------===//
   // auto deduction
