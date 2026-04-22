@@ -274,13 +274,14 @@ bool CompilerInstance::generateObjectFile(llvm::Module &Module, StringRef Output
   
   // Fallback: emit LLVM IR to file
   std::error_code EC;
-  llvm::raw_fd_ostream Out(OutputPath, EC);
+  llvm::raw_fd_ostream Out(OutputPath, EC, llvm::sys::fs::OF_None);
   if (EC) {
-    errs() << "Error: Cannot open output file '" << OutputPath << "'\n";
+    errs() << "Error: Cannot open output file '" << OutputPath << "': " << EC.message() << "\n";
     return false;
   }
   
   Module.print(Out, nullptr);
+  Out.flush();
   return true;
 }
 
