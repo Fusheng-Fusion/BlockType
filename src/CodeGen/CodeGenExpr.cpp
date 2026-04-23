@@ -2216,6 +2216,10 @@ void CodeGenFunction::EmitContractCheck(ContractAttr *CA) {
   if (!CA)
     return;
 
+  // P7.3.2.3: If contracts are disabled entirely, emit nothing.
+  if (!CGM.areContractsEnabled())
+    return;
+
   // Resolve effective mode: use global default if contract mode is Default.
   ContractMode EffectiveMode = CA->getContractMode();
   if (EffectiveMode == ContractMode::Default)
@@ -2419,7 +2423,10 @@ llvm::Value *CodeGenFunction::EmitPackIndexingExpr(PackIndexingExpr *PIE) {
       return nullptr;
     }
     
-    // Runtime index: generate a switch statement
+    // Non-constant index: this should have been caught by Sema during
+    // template instantiation. If we reach here, it means the index
+    // could not be evaluated to a compile-time constant.
+    // Return nullptr — Sema should have already emitted the diagnostic.
     // This handles the case where the index is not a compile-time constant
     if (!Substituted.empty()) {
       // Create basic blocks for switch

@@ -149,6 +149,27 @@ static cl::opt<std::string> TargetTriple(
   cl::cat(BlockTypeCategory)
 );
 
+// P7.3.2.3: Contract mode options
+static cl::opt<std::string> ContractModeOption(
+  "fcontract-mode",
+  cl::desc("Contract checking mode (off|default|enforce|observe|quick_enforce)"),
+  cl::value_desc("mode"),
+  cl::init("enforce"),
+  cl::cat(BlockTypeCategory)
+);
+
+static cl::opt<bool> ContractsEnabled(
+  "fcontracts",
+  cl::desc("Enable contract checking"),
+  cl::cat(BlockTypeCategory)
+);
+
+static cl::opt<bool> ContractsDisabled(
+  "fno-contracts",
+  cl::desc("Disable contract checking"),
+  cl::cat(BlockTypeCategory)
+);
+
 // 创建 AI 编排器
 std::unique_ptr<AIOrchestrator> createAIOrchestrator(const CompilerInvocation &CI) {
   AIConfig Config;
@@ -254,7 +275,31 @@ std::shared_ptr<CompilerInvocation> createCompilerInvocation() {
   for (const auto &Lib : Libraries) {
     CI->FrontendOpts.Libraries.push_back(Lib);
   }
-  
+
+  // P7.3.2.3: Contract mode
+  if (ContractsDisabled) {
+    CI->FrontendOpts.ContractsEnabled = false;
+    CI->FrontendOpts.DefaultContractMode = ContractMode::Off;
+  } else {
+    CI->FrontendOpts.ContractsEnabled = ContractsEnabled || ContractModeOption != "off";
+    // Parse contract mode string
+    if (ContractModeOption == "off") {
+      CI->FrontendOpts.DefaultContractMode = ContractMode::Off;
+    } else if (ContractModeOption == "default") {
+      CI->FrontendOpts.DefaultContractMode = ContractMode::Default;
+    } else if (ContractModeOption == "enforce") {
+      CI->FrontendOpts.DefaultContractMode = ContractMode::Enforce;
+    } else if (ContractModeOption == "observe") {
+      CI->FrontendOpts.DefaultContractMode = ContractMode::Observe;
+    } else if (ContractModeOption == "quick_enforce") {
+      CI->FrontendOpts.DefaultContractMode = ContractMode::Quick_Enforce;
+    } else {
+      errs() << "Warning: Unknown contract mode '" << ContractModeOption
+             << "', using 'enforce'\n";
+      CI->FrontendOpts.DefaultContractMode = ContractMode::Enforce;
+    }
+  }
+
   // Set default target triple
   CI->setDefaultTargetTriple();
   

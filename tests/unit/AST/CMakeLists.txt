@@ -12,6 +12,7 @@ target_link_libraries(ast-tests
     blocktype-ast
     blocktype-sema
     blocktype-basic
+    blocktypeFrontend
     GTest::gtest_main
 )
 

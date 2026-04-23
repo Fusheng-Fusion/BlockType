@@ -47,6 +47,12 @@ void test_placeholder_no_symbol() {
     // 上面的代码应该报错，因为_不在符号表中
 }
 
+// P7.4.2 边界测试：非auto类型的_（无初始化器时应报错）
+// int _;  // Error: placeholder variable '_' must have an auto type or be initialized
+
+// P7.4.2 边界测试：extern _（应警告）
+// extern auto _;  // Warning: placeholder variable '_' declared with external linkage
+
 int main() {
     test_placeholder_basic();
     test_placeholder_structured_binding();

@@ -224,9 +224,7 @@ public:
         Body(Body), IsInline(IsInline), IsConstexpr(IsConstexpr),
         IsConsteval(IsConsteval),
         HasNoexceptSpec(HasNoexceptSpec), NoexceptValue(NoexceptValue),
-        NoexceptExpr(NoexceptExpr), Attrs(Attrs) {
-    setOwningDecl(this);
-  }
+        NoexceptExpr(NoexceptExpr), Attrs(Attrs) {}
 
   llvm::ArrayRef<ParmVarDecl *> getParams() const { return Params; }
   unsigned getNumParams() const { return Params.size(); }
@@ -294,10 +292,6 @@ public:
 
   NodeKind getKind() const override { return NodeKind::FunctionDeclKind; }
 
-  /// Access the DeclContext interface.
-  DeclContext *getDeclContext() { return this; }
-  const DeclContext *getDeclContext() const { return this; }
-
   void dump(raw_ostream &OS, unsigned Indent = 0) const override;
 
   static bool classof(const ASTNode *N) {
@@ -356,6 +350,7 @@ class BindingDecl : public ValueDecl {
 
   // P7.4.3 C++26 扩展
   bool IsPackExpansion = false;  // 是否为包展开 (P1061R10)
+  bool IsPlaceholder = false;    // P7.4.2: 占位符变量 "_" (P2169R4)
 
 public:
   BindingDecl(SourceLocation Loc, llvm::StringRef Name,
@@ -369,6 +364,10 @@ public:
   // C++26: 包展开
   bool isPackExpansion() const { return IsPackExpansion; }
   void setPackExpansion(bool V) { IsPackExpansion = V; }
+
+  // P7.4.2: Placeholder variable
+  bool isPlaceholder() const { return IsPlaceholder; }
+  void setPlaceholder(bool V) { IsPlaceholder = V; }
 
   NodeKind getKind() const override { return NodeKind::BindingDeclKind; }
 
@@ -669,9 +668,6 @@ private:
   bool HasCopyConstructor;
   bool HasMoveConstructor;
   bool HasDestructor;
-  // E7.5.2.4: Trivially relocatable (P2786R13) — user-declared special members
-  bool HasUserDeclaredMoveConstructor = false;
-  bool HasUserDeclaredDestructor = false;
   unsigned CurrentAccess; // Current access specifier (0=private, 1=protected, 2=public)
   
   // P7.1.5: Lambda support
@@ -682,9 +678,7 @@ public:
       : RecordDecl(Loc, Name, TK), DeclContext(DeclContextKind::CXXRecord),
         HasDefaultConstructor(false), HasCopyConstructor(false),
         HasMoveConstructor(false), HasDestructor(false),
-        CurrentAccess(TK == TK_class ? 0 : 2) {
-    setOwningDecl(this);
-  }
+        CurrentAccess(TK == TK_class ? 0 : 2) {}
 
   // Base classes
   llvm::ArrayRef<BaseSpecifier> bases() const { return Bases; }
@@ -716,17 +710,6 @@ public:
   bool hasCopyConstructor() const { return HasCopyConstructor; }
   bool hasMoveConstructor() const { return HasMoveConstructor; }
   bool hasDestructor() const { return HasDestructor; }
-
-  // E7.5.2.4: Trivially relocatable (P2786R13)
-  bool hasUserDeclaredMoveConstructor() const { return HasUserDeclaredMoveConstructor; }
-  void setUserDeclaredMoveConstructor(bool V) { HasUserDeclaredMoveConstructor = V; }
-  bool hasUserDeclaredDestructor() const { return HasUserDeclaredDestructor; }
-  void setUserDeclaredDestructor(bool V) { HasUserDeclaredDestructor = V; }
-
-  /// isTriviallyRelocatable - A type is trivially relocatable if it has no
-  /// user-declared move constructor and no user-declared destructor, and all
-  /// base classes and non-static data members are also trivially relocatable.
-  bool isTriviallyRelocatable() const;
 
   // Access control
   unsigned getCurrentAccess() const { return CurrentAccess; }
@@ -990,9 +973,7 @@ class NamespaceDecl : public NamedDecl, public DeclContext {
 public:
   NamespaceDecl(SourceLocation Loc, llvm::StringRef Name, bool IsInline = false)
       : NamedDecl(Loc, Name), DeclContext(DeclContextKind::Namespace),
-        IsInline(IsInline) {
-    setOwningDecl(this);
-  }
+        IsInline(IsInline) {}
 
   void addDecl(Decl *D) { DeclContext::addDecl(D); }
   void addDecl(NamedDecl *D) { DeclContext::addDecl(D); }
@@ -1311,9 +1292,9 @@ class TemplateTemplateParmDecl : public TemplateDecl {
   unsigned Depth;
   unsigned Index;
   bool IsParameterPack;
-  bool IsConceptParam = false; // E7.5.2.5: concept template template parameter (P2841R7)
   TemplateDecl *DefaultArg;
   Expr *Constraint = nullptr; // C++20 requires-clause constraint
+  bool IsConceptParam_ = false; // E7.5.2.5: P2841R7 concept param
 
 public:
   TemplateTemplateParmDecl(SourceLocation Loc, llvm::StringRef Name,
@@ -1333,9 +1314,9 @@ public:
   void setConstraint(Expr *C) { Constraint = C; }
   bool hasConstraint() const { return Constraint != nullptr; }
 
-  // E7.5.2.5: Concept template template parameter (P2841R7)
-  bool isConceptParam() const { return IsConceptParam; }
-  void setConceptParam(bool V) { IsConceptParam = V; }
+  // E7.5.2.5: P2841R7 concept param
+  bool isConceptParam() const { return IsConceptParam_; }
+  void setConceptParam(bool V) { IsConceptParam_ = V; }
 
   NodeKind getKind() const override { return NodeKind::TemplateTemplateParmDeclKind; }
 
@@ -1601,7 +1582,7 @@ class FriendDecl : public Decl {
   NamedDecl *FriendDecl_; // The friend declaration (function or class)
   QualType FriendType;    // If friend is a type (friend class X;)
   bool IsFriendType;      // true if friend is a type
-  bool IsPackExpansion = false; // P2893R3: true for pack friend (friend Ts...;)
+  bool IsPackExpansion_ = false; // P2893R3: variadic friend
 
 public:
   FriendDecl(SourceLocation Loc, NamedDecl *FD, QualType FT = QualType(),
@@ -1612,9 +1593,9 @@ public:
   QualType getFriendType() const { return FriendType; }
   bool isFriendType() const { return IsFriendType; }
 
-  // P2893R3: Pack expansion support
-  bool isPackExpansion() const { return IsPackExpansion; }
-  void setPackExpansion(bool V = true) { IsPackExpansion = V; }
+  // P2893R3: Pack expansion friend
+  bool isPackExpansion() const { return IsPackExpansion_; }
+  void setPackExpansion(bool V) { IsPackExpansion_ = V; }
 
   NodeKind getKind() const override { return NodeKind::FriendDeclKind; }
 

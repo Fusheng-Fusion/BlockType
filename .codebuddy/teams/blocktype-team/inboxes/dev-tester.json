@@ -1,20 +1,29 @@
 [
   {
-    "id": "msg-1776916056452-8cpv0l",
+    "id": "msg-1776963432688-b5s9r8",
     "from": "team-lead",
     "to": "dev-tester",
     "type": "message",
-    "content": "收到。按串行模式，当前 reviewer 正在审查 wave6 修复。你暂时待命，等 reviewer 审查完成后会给你分配修复任务。",
-    "timestamp": "2026-04-23T03:47:36.452Z",
+    "content": "## 任务：Task 8.1.2 — ABI 支持\n\n项目根目录：/Users/yuan/Documents/BlockType\n详细计划文件：docs/plan/task_8_development_plan.md\n\n### 目标\n实现完整的 ABI 分类逻辑，替代现有简化实现。\n\n### 背景\nTask 8.1.1 已完成：TargetInfo 已重构为抽象基类，包含 X86_64TargetInfo 和 AArch64TargetInfo 子类，工厂方法 Create() 已实现。现在需要在此基础上实现 ABI 分类器。\n\n### 现有代码概况\n- `CodeGenTypes.h` 中已有 `ABIArgKind`（Direct/SRet/InReg）、`ABIArgInfo`、`FunctionABITy`\n- `CodeGenTypes.cpp` 中 `needsSRet()` 仅判断 record+大小阈值，`shouldUseInReg()` 返回 false\n- `TargetInfo.h` 已有 X86_64TargetInfo 和 AArch64TargetInfo 子类\n\n### 文件变更\n| 文件 | 操作 | 说明 |\n|------|------|------|\n| `include/blocktype/CodeGen/ABIInfo.h` | 新建 | ABI 分类器接口 |\n| `src/CodeGen/ABIInfo.cpp` | 新建 | X86_64ABIInfo + AArch64ABIInfo |\n| `include/blocktype/CodeGen/CodeGenTypes.h` | 修改 | 扩展 ABIArgKind（加 Expand/Coerce） |\n| `src/CodeGen/CodeGenTypes.cpp` | 修改 | 使用 ABIInfo 替代简化逻辑 |\n| `src/CodeGen/CMakeLists.txt` | 修改 | 添加 ABIInfo.cpp |\n| `tests/unit/CodeGen/ABIInfoTest.cpp` | 新建 | ABI 分类器测试 |\n\n### 开发步骤\n\n1. **创建 ABIInfo 基类**（1.5h）\n   ```cpp\n   class ABIInfo {\n   public:\n     virtual ~ABIInfo() = default;\n     virtual ABIArgInfo classifyReturnType(QualType RetTy) const = 0;\n     virtual ABIArgInfo classifyArgumentType(QualType ParamTy) const = 0;\n   };\n   ```\n\n2. **实现 X86_64ABIInfo**（5h）— 最复杂\n   - System V AMD64 ABI 分类算法：INTEGER / SSE / SSEUP / X87 / X87UP / MEMORY\n   - 结构体递归分类：遍历字段，合并分类结果（merge algorithm）\n   - 返回值：≤16 字节且非 MEMORY → 寄存器返回，否则 sret\n   - `__int128` 通过两个寄存器传递\n   - **重要**：先实现简化版（仅处理 INTEGER/SSE/MEMORY 三类），确保基本功能工作，再逐步完善\n\n3. **实现 AArch64ABIInfo**（4h）\n   - AAPCS64 分类：INTEGER / VECTOR / FP / MEMORY\n   - HFA/HVA 检测（Homogeneous Floating-point/Vector Aggregate）\n   - 结构体 ≤16 字节按字段分类，>16 字节 MEMORY\n\n4. **扩展 ABIArgKind**（1h）\n   - 增加 `Expand`（结构体按字段展开传递）和 `Coerce`（类型强制转换）\n\n5. **集成到 CodeGenTypes**（2h）\n   - `GetFunctionABI()` 使用 `ABIInfo` 替代简化逻辑\n   - `needsSRet()` / `shouldUseInReg()` 委托给 ABIInfo\n\n6. **编写测试**（2.5h）\n   - X86_64 分类测试：基本类型、结构体（INTEGER/SSE/MEMORY）、__int128\n   - AArch64 分类测试：基本类型、HFA/HVA、大结构体\n   - 集成测试：CodeGenTypes 使用 ABIInfo\n\n### 要求\n- 先阅读现有 CodeGenTypes.h/.cpp 了解当前 ABIArgInfo 和简化逻辑\n- 先阅读 Task 8.1.1 新增的 TargetInfo.h 了解平台信息接口\n- 确保编译通过\n- 确保所有现有测试通过（回归测试）\n- 编写新测试覆盖新功能\n- 完成后汇报结果",
+    "timestamp": "2026-04-23T16:57:12.688Z",
     "read": true
   },
   {
-    "id": "msg-1776916445197-afmr40",
+    "id": "msg-1776964997824-tu1gsv",
     "from": "team-lead",
     "to": "dev-tester",
     "type": "message",
-    "content": "Wave6 审查完成，请立即开始 Wave7 修复，按以下优先级：\n\n## 第一优先级（2个P1）\n\n**W6-P1-1: SubstituteAndEvaluate 类型替换结果被丢弃**（0.5天）\n- 文件：`src/Sema/ConstraintSatisfaction.cpp`\n- 问题：`SubstituteAndEvaluate` 中类型替换结果被 `(void)` 丢弃，未应用到表达式\n- 修复：参考同文件 `EvaluateCompoundRequirement` 中正确的 `E->setType(SubstType)` 写法，在 `SubstituteAndEvaluate` 中同样应用替换结果\n\n**W6-P1-2: InstantiateClassTemplate 两个不一致实现**（2天）\n- 文件：`src/Sema/TemplateInstantiator.cpp` 和 `src/Sema/Sema.cpp`\n- 问题：TemplateInstantiator 版本用 `addFieldWithParent`（正确设 Parent）但未注册符号表；Sema 版本用 `addField`（不设 Parent）但注册了符号表\n- 修复：统一为 TemplateInstantiator 版本（使用 addFieldWithParent），Sema 版本委托调用 TemplateInstantiator\n\n修复后运行构建和测试，确保 765/766 通过率不降。完成后汇报给我。",
-    "timestamp": "2026-04-23T03:54:05.197Z",
+    "content": "## 任务：Task 7.3.2 — Contract 语义\n\n项目根目录：/Users/yuan/Documents/BlockType\n\n### 目标\n实现 Contract 的完整语义：继承、虚函数交互、检查模式切换。\n\n### 背景\nTask 7.3.1 已完成：\n- ContractAttr AST 节点（Pre/Post/Assert）\n- ContractMode 枚举（Off/Default/Enforce/Observe/Quick_Enforce）\n- Sema: CheckContractCondition、CheckContractPlacement\n- CodeGen: EmitContractCheck、EmitContractViolation\n- 诊断消息\n\n### 开发要点\n\n**E7.3.2.1 — Contract 继承**\n- 派生类函数继承基类函数的 pre/post contract\n- 规则（P2900R14）：\n  - 派生类的 precondition 不能比基类更严格（可放宽，即 pre 可省略或添加更宽松条件）\n  - 派生类的 postcondition 不能比基类更宽松（可加强，即 post 可省略或添加更严格条件）\n- 实现：在 Sema 中，当派生类声明覆盖虚函数时，收集基类的 contract 并与派生类的合并\n- 需要递归遍历基类链\n\n**E7.3.2.2 — Contract 与虚函数的交互**\n- 虚函数调用时，检查的 contract 应该是动态类型的 contract（而非静态类型）\n- 实现：在 vtable 中存储 contract 检查信息，或者在虚函数调用点使用动态类型的 contract\n- 简化方案：在 CodeGen 中，虚函数的 contract 检查在函数入口处执行（已实现），派生类覆盖函数继承基类 contract 后自然正确\n\n**E7.3.2.3 — Contract 检查模式切换**\n- 通过编译选项 `-fcontract-mode=off|default|enforce|observe|quick-enforce` 切换\n- CompilerInvocation 中已有 ContractMode 相关选项\n- 需要确保 EmitContractCheck 正确使用全局模式（已部分实现）\n- 需要添加命令行选项解析\n\n### 验收标准\n- [ ] 派生类能继承基类的 Contract\n- [ ] 虚函数能正确处理 Contract\n- [ ] 能通过编译选项切换检查模式\n- [ ] 测试：至少 3 个测试用例\n\n### 文件变更（预估）\n| 文件 | 操作 | 说明 |\n|------|------|------|\n| `include/blocktype/Sema/SemaCXX.h` | 修改 | 添加 Contract 继承检查方法 |\n| `src/Sema/SemaCXX.cpp` | 修改 | 实现 Contract 继承逻辑 |\n| `src/Sema/Sema.cpp` | 修改 | 在函数声明完成时触发继承检查 |\n| `src/Frontend/CompilerInvocation.cpp` | 修改 | 解析 -fcontract-mode 选项 |\n| `include/blocktype/Frontend/CompilerInvocation.h` | 修改 | 添加 ContractMode 选项字段 |\n| `src/CodeGen/CodeGenFunction.cpp` | 修改 | 虚函数调用时 contract 处理 |\n| `tests/cpp26/contracts_inheritance.cpp` | 新建 | 继承测试 |\n| `tests/cpp26/contracts_virtual.cpp` | 新建 | 虚函数测试 |\n| `tests/cpp26/contracts_mode.cpp` | 新建 | 模式切换测试 |\n\n### 要求\n- 先阅读现有 ContractAttr、SemaCXX、CodeGenFunction 中 contract 相关代码\n- 确保编译通过\n- 确保所有现有测试通过（910/910 回归）\n- 编写新测试覆盖新功能\n- 完成后汇报结果",
+    "timestamp": "2026-04-23T17:23:17.824Z",
+    "read": true
+  },
+  {
+    "id": "msg-1776969336312-1g74ze",
+    "from": "team-lead",
+    "to": "dev-tester",
+    "type": "message",
+    "content": "## 审查修复任务（2 项）\n\nreviewer 审查了 Task 8.1.2 和 7.3.2，有 2 项需要修复：\n\n### 修复 1（高优先级）：InheritBaseContracts 方法签名匹配\n\n**文件：** `src/Sema/SemaCXX.cpp:464`\n\n**问题：** `InheritBaseContracts` 中仅用方法名匹配虚函数，不检查参数类型。重载虚函数可能误匹配。\n\n**当前代码：**\n```cpp\nif (Method->getName() == DerivedMD->getName() && Method->isVirtual())\n```\n\n**修复：** 增加参数类型/签名比较。最简单的方式是比较参数数量和类型：\n```cpp\nif (Method->getName() == DerivedMD->getName() && Method->isVirtual()) {\n  // Check parameter signature matches\n  if (Method->getNumParams() != DerivedMD->getNumParams())\n    continue;\n  bool ParamsMatch = true;\n  for (unsigned I = 0; I < Method->getNumParams(); ++I) {\n    // Compare parameter type names as simplified signature check\n    if (Method->getParamType(I) != DerivedMD->getParamType(I)) {\n      ParamsMatch = false;\n      break;\n    }\n  }\n  if (!ParamsMatch) continue;\n  // ... rest of matching logic\n}\n```\n\n注意：需要检查 Method/FunctionDecl 是否有 `getNumParams()` 和 `getParamType()` 方法。如果没有，可以用参数数量 + 类型名比较作为替代。\n\n### 修复 2（中优先级）：classifyBasedOnClasses 死代码陷阱\n\n**文件：** `src/CodeGen/ABIInfo.cpp:210-215`\n\n**问题：** `classifyBasedOnClasses` 中 Memory 和 Size>16 分支返回 `getDirect()` 而非 `getSRet()`，是死代码陷阱。\n\n**修复：** 改为返回 `getSRet(nullptr)` 或添加断言：\n```cpp\nif (Lo == ABIClass::Memory || Hi == ABIClass::Memory)\n  return ABIArgInfo::getSRet(nullptr);\nif (Size > 16)\n  return ABIArgInfo::getSRet(nullptr);\n```\n\n### 要求\n- 修复后确保编译通过\n- 确保所有测试通过\n- 完成后汇报",
+    "timestamp": "2026-04-23T18:35:36.312Z",
     "read": true
   }
 ]

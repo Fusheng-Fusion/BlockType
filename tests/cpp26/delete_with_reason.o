@@ -1,0 +1,9 @@
+; ModuleID = 'tests/cpp26/delete_with_reason.cpp'
+source_filename = "tests/cpp26/delete_with_reason.cpp"
+target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128"
+target triple = "arm64-apple-darwin25.4.0"
+
+!llvm.dbg.cu = !{!0}
+
+!0 = distinct !DICompileUnit(language: DW_LANG_C_plus_plus, file: !1, producer: "BlockType Compiler", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug)
+!1 = !DIFile(filename: "input.cpp", directory: ".")

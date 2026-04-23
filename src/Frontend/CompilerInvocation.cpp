@@ -163,8 +163,166 @@ void CompilerInvocation::parseFromCommandLine() {
 }
 
 bool CompilerInvocation::parseCommandLine(int Argc, const char *const *Argv) {
-  // TODO: Implement direct command-line parsing
-  // This will replace the global cl::opt variables
-  errs() << "Warning: parseCommandLine() not yet fully implemented\n";
-  return false;
+  // Simple command-line parser for BlockType compiler options.
+  // This replaces the global cl::opt variables approach.
+
+  for (int i = 1; i < Argc; ++i) {
+    llvm::StringRef Arg(Argv[i]);
+
+    // P7.3.2.3: -fcontract-mode=<mode>
+    if (Arg.startswith("-fcontract-mode=")) {
+      llvm::StringRef ModeStr = Arg.substr(16);
+      if (ModeStr == "off") {
+        FrontendOpts.DefaultContractMode = ContractMode::Off;
+      } else if (ModeStr == "default") {
+        FrontendOpts.DefaultContractMode = ContractMode::Default;
+      } else if (ModeStr == "enforce") {
+        FrontendOpts.DefaultContractMode = ContractMode::Enforce;
+      } else if (ModeStr == "observe") {
+        FrontendOpts.DefaultContractMode = ContractMode::Observe;
+      } else if (ModeStr == "quick-enforce") {
+        FrontendOpts.DefaultContractMode = ContractMode::Quick_Enforce;
+      } else {
+        errs() << "Error: Invalid contract mode '" << ModeStr
+               << "'; expected off|default|enforce|observe|quick-enforce\n";
+        return false;
+      }
+      FrontendOpts.ContractsEnabled = true;
+      continue;
+    }
+
+    // P7.3.2.3: -fcontracts / -fno-contracts
+    if (Arg == "-fcontracts") {
+      FrontendOpts.ContractsEnabled = true;
+      continue;
+    }
+    if (Arg == "-fno-contracts") {
+      FrontendOpts.ContractsEnabled = false;
+      FrontendOpts.DefaultContractMode = ContractMode::Off;
+      continue;
+    }
+
+    // Input files (positional arguments not starting with -)
+    if (!Arg.startswith("-")) {
+      FrontendOpts.InputFiles.push_back(Arg.str());
+      continue;
+    }
+
+    // Standard options
+    if (Arg == "--help" || Arg == "-h") {
+      FrontendOpts.ShowHelp = true;
+      continue;
+    }
+    if (Arg == "--version" || Arg == "-v") {
+      FrontendOpts.ShowVersion = true;
+      continue;
+    }
+    if (Arg == "-dump-ast") {
+      FrontendOpts.DumpAST = true;
+      continue;
+    }
+    if (Arg == "-verbose") {
+      FrontendOpts.Verbose = true;
+      continue;
+    }
+    if (Arg == "-emit-llvm") {
+      CodeGenOpts.EmitLLVM = true;
+      continue;
+    }
+    if (Arg == "-S" || Arg == "-emit-assembly") {
+      CodeGenOpts.EmitAssembly = true;
+      continue;
+    }
+    if (Arg == "-c") {
+      CodeGenOpts.EmitObject = true;
+      continue;
+    }
+    if (Arg == "-fsyntax-only") {
+      CodeGenOpts.SyntaxOnly = true;
+      continue;
+    }
+    if (Arg.startswith("-o")) {
+      if (Arg.size() > 2) {
+        CodeGenOpts.OutputFile = Arg.substr(2).str();
+      } else if (i + 1 < Argc) {
+        ++i;
+        CodeGenOpts.OutputFile = Argv[i];
+      }
+      continue;
+    }
+    if (Arg.startswith("-std=")) {
+      llvm::StringRef StdStr = Arg.substr(5);
+      if (StdStr == "c++11" || StdStr == "c++0x")
+        LangOpts.CXXStandard = 11;
+      else if (StdStr == "c++14" || StdStr == "c++1y")
+        LangOpts.CXXStandard = 14;
+      else if (StdStr == "c++17" || StdStr == "c++1z")
+        LangOpts.CXXStandard = 17;
+      else if (StdStr == "c++20" || StdStr == "c++2a")
+        LangOpts.CXXStandard = 20;
+      else if (StdStr == "c++23" || StdStr == "c++2b")
+        LangOpts.CXXStandard = 23;
+      else if (StdStr == "c++26" || StdStr == "c++2c")
+        LangOpts.CXXStandard = 26;
+      else {
+        errs() << "Error: Unknown standard '" << StdStr << "'\n";
+        return false;
+      }
+      continue;
+    }
+    if (Arg.startswith("-O")) {
+      llvm::StringRef OptStr = Arg.substr(2);
+      if (OptStr.empty()) {
+        CodeGenOpts.OptimizationLevel = 2;
+      } else {
+        unsigned Level = 0;
+        if (!OptStr.getAsInteger(10, Level) && Level <= 3) {
+          CodeGenOpts.OptimizationLevel = Level;
+        }
+      }
+      continue;
+    }
+    if (Arg.startswith("-I")) {
+      if (Arg.size() > 2) {
+        FrontendOpts.IncludePaths.push_back(Arg.substr(2).str());
+      } else if (i + 1 < Argc) {
+        ++i;
+        FrontendOpts.IncludePaths.push_back(Argv[i]);
+      }
+      continue;
+    }
+    if (Arg.startswith("-L")) {
+      if (Arg.size() > 2) {
+        FrontendOpts.LibraryPaths.push_back(Arg.substr(2).str());
+      } else if (i + 1 < Argc) {
+        ++i;
+        FrontendOpts.LibraryPaths.push_back(Argv[i]);
+      }
+      continue;
+    }
+    if (Arg.startswith("-l")) {
+      FrontendOpts.Libraries.push_back(Arg.substr(2).str());
+      continue;
+    }
+    if (Arg == "-g" || Arg == "-g1") {
+      CodeGenOpts.DebugInfo = true;
+      continue;
+    }
+    if (Arg == "-PIC" || Arg == "-fPIC") {
+      CodeGenOpts.PIC = true;
+      continue;
+    }
+    if (Arg == "-PIE" || Arg == "-fPIE") {
+      CodeGenOpts.PIE = true;
+      continue;
+    }
+    if (Arg == "-E") {
+      CodeGenOpts.PreprocessOnly = true;
+      continue;
+    }
+
+    // Unknown option: skip (might be handled by the driver layer)
+  }
+
+  return true;
 }

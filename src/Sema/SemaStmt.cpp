@@ -74,7 +74,12 @@ StmtResult Sema::ActOnIfStmtWithBindings(Expr *Cond, Stmt *Then, Stmt *Else,
     Diags.report(IfLoc, DiagID::err_expected_expression);
     return StmtResult::getInvalid();
   }
-  
+
+  // P0963R3: Check binding condition (contextually convertible to bool)
+  if (!CheckBindingCondition(Bindings, IfLoc)) {
+    return StmtResult::getInvalid();
+  }
+
   // Create IfStmt with structured bindings
   auto *IS = Context.create<IfStmt>(IfLoc, Cond, Then, Else, Bindings,
                                      IsConsteval, IsNegated);
@@ -93,6 +98,31 @@ StmtResult Sema::ActOnWhileStmt(Expr *Cond, Stmt *Body,
   }
 
   auto *WS = Context.create<WhileStmt>(WhileLoc, Cond, Body, CondVar);
+  --BreakScopeDepth;
+  --ContinueScopeDepth;
+  return StmtResult(WS);
+}
+
+StmtResult Sema::ActOnWhileStmtWithBindings(Expr *Cond, Stmt *Body,
+                                             SourceLocation WhileLoc,
+                                             llvm::ArrayRef<class BindingDecl *> Bindings) {
+  ++BreakScopeDepth;
+  ++ContinueScopeDepth;
+  if (Cond && !Cond->getType().isNull() && !TC.CheckCondition(Cond, WhileLoc)) {
+    --BreakScopeDepth;
+    --ContinueScopeDepth;
+    return StmtResult::getInvalid();
+  }
+
+  // P0963R3: Check binding condition (contextually convertible to bool)
+  if (!CheckBindingCondition(Bindings, WhileLoc)) {
+    --BreakScopeDepth;
+    --ContinueScopeDepth;
+    return StmtResult::getInvalid();
+  }
+
+  auto *WS = Context.create<WhileStmt>(WhileLoc, Cond, Body, nullptr);
+  WS->setBindingDecls(Bindings);
   --BreakScopeDepth;
   --ContinueScopeDepth;
   return StmtResult(WS);

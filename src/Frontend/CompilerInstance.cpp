@@ -242,6 +242,10 @@ std::unique_ptr<llvm::Module> CompilerInstance::generateLLVMIR(StringRef ModuleN
   CodeGenModule CGM(*Context, *LLVMCtx, *SourceMgr, ModuleName.str(),
                     Invocation->CodeGenOpts.TargetTriple);
 
+  // P7.3.2.3: Propagate contract mode from invocation to CodeGenModule
+  CGM.setDefaultContractMode(Invocation->FrontendOpts.DefaultContractMode);
+  CGM.setContractsEnabled(Invocation->FrontendOpts.ContractsEnabled);
+
   // Emit translation unit
   CGM.EmitTranslationUnit(CurrentTU);
 

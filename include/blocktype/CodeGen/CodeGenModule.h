@@ -157,6 +157,9 @@ class CodeGenModule {
   /// P7.3.1: Default contract checking mode (configurable via -fcontract-mode).
   ContractMode DefaultContractMode = ContractMode::Enforce;
 
+  /// P7.3.2.3: Whether contracts are enabled at all (-fcontracts / -fno-contracts).
+  bool ContractsEnabled = true;
+
 public:
   CodeGenModule(ASTContext &Ctx, llvm::LLVMContext &LLVMCtx,
                 SourceManager &SMRef,  // P0 修复：添加 SourceManager 参数
@@ -180,14 +183,6 @@ public:
   //===------------------------------------------------------------------===//
   // 属性处理（参照 Clang CodeGenModule::getGlobalValueAttributes）
   //===------------------------------------------------------------------===//
-
-  /// Iterate over all AttributeDecl nodes attached to the given Decl.
-  /// Covers FunctionDecl, VarDecl, FieldDecl (direct attrs) and
-  /// CXXRecordDecl (member attrs).  The callback receives each
-  /// AttributeDecl; return false from the callback to stop iteration.
-  /// (LOST-1: eliminates duplicated traversal in QueryAttributes etc.)
-  void forEachAttribute(const Decl *D,
-                        llvm::function_ref<bool(AttributeDecl *)> Callback) const;
 
   /// 统一的属性查询接口 - 从 Decl 中提取所有属性
   [[nodiscard]] AttributeQuery QueryAttributes(const Decl *Decl);
@@ -317,6 +312,12 @@ public:
   /// Set the default contract checking mode.
   /// Can be called from the driver to implement -fcontract-mode=...
   void setDefaultContractMode(ContractMode M) { DefaultContractMode = M; }
+
+  /// P7.3.2.3: Get whether contracts are enabled.
+  bool areContractsEnabled() const { return ContractsEnabled; }
+
+  /// P7.3.2.3: Set whether contracts are enabled.
+  void setContractsEnabled(bool Enabled) { ContractsEnabled = Enabled; }
 
   //===------------------------------------------------------------------===//
   // 全局构造/析构

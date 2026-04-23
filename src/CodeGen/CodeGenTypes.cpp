@@ -9,6 +9,7 @@
 #include "blocktype/CodeGen/CodeGenTypes.h"
 #include "blocktype/CodeGen/CodeGenModule.h"
 #include "blocktype/CodeGen/TargetInfo.h"
+#include "blocktype/CodeGen/ABIInfo.h"
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/Decl.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -17,6 +18,16 @@
 #include "llvm/Support/Casting.h"
 
 using namespace blocktype;
+
+//===----------------------------------------------------------------------===//
+// CodeGenTypes 构造/析构
+//===----------------------------------------------------------------------===//
+
+CodeGenTypes::CodeGenTypes(CodeGenModule &M) : CGM(M) {
+  TheABIInfo = ABIInfo::Create(M.getTarget());
+}
+
+CodeGenTypes::~CodeGenTypes() = default;
 
 //===----------------------------------------------------------------------===//
 // 类型转换主接口
@@ -274,15 +285,15 @@ bool CodeGenTypes::needsSRet(QualType RetTy) const {
   // 只有 record 类型需要 sret
   if (!Ty->isRecordType()) return false;
 
-  // 查询 TargetInfo：如果结构体可以在寄存器中返回，则不需要 sret
-  return !CGM.getTarget().isStructReturnInRegister(RetTy);
+  // 使用 ABIInfo 分类器判断
+  ABIArgInfo Info = TheABIInfo->classifyReturnType(RetTy);
+  return Info.isSRet();
 }
 
 bool CodeGenTypes::shouldUseInReg(QualType ParamTy) const {
-  // 当前简化实现：不使用 inreg
-  // 后续可扩展：某些 ABI（如 x86 32-bit）对 this 指针和小结构体使用 inreg
-  (void)ParamTy;
-  return false;
+  // 使用 ABIInfo 分类器判断
+  ABIArgInfo Info = TheABIInfo->classifyArgumentType(ParamTy);
+  return Info.isInReg();
 }
 
 llvm::FunctionType *CodeGenTypes::GetFunctionTypeForDecl(FunctionDecl *FD) {
@@ -345,14 +356,16 @@ const FunctionABITy *CodeGenTypes::GetFunctionABI(FunctionDecl *FD) {
 
       // 显式参数
       for (const Type *PT : FnTy->getParamTypes()) {
-        llvm::Type *P = ConvertType(QualType(PT, Qualifier::None));
+        QualType ParamQT(PT, Qualifier::None);
+        llvm::Type *P = ConvertType(ParamQT);
         if (P) {
+          // 使用 ABIInfo 分类器判断参数传递方式
+          ABIArgInfo ParamInfo = TheABIInfo->classifyArgumentType(ParamQT);
+          // For Expand: we still pass the struct type as-is at the LLVM level;
+          // the Expand semantics are handled at the CodeGenFunction call site.
+          // For now, treat Expand the same as Direct for LLVM type purposes.
           ParamTys.push_back(P);
-          if (shouldUseInReg(QualType(PT, Qualifier::None))) {
-            ParamInfos.push_back(ABIArgInfo::getInReg());
-          } else {
-            ParamInfos.push_back(ABIArgInfo::getDirect());
-          }
+          ParamInfos.push_back(ParamInfo);
         }
       }
 

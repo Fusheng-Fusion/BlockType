@@ -940,6 +940,9 @@ public:
   StmtResult ActOnWhileStmt(Expr *Cond, Stmt *Body,
                             SourceLocation WhileLoc,
                             VarDecl *CondVar = nullptr);
+  StmtResult ActOnWhileStmtWithBindings(Expr *Cond, Stmt *Body,
+                                         SourceLocation WhileLoc,
+                                         llvm::ArrayRef<class BindingDecl *> Bindings);
   StmtResult ActOnForStmt(Stmt *Init, Expr *Cond, Expr *Inc, Stmt *Body,
                           SourceLocation ForLoc);
   StmtResult ActOnDoStmt(Expr *Cond, Stmt *Body, SourceLocation DoLoc);

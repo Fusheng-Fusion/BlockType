@@ -74,7 +74,7 @@ std::string Mangler::getMangledName(const FunctionDecl *FD) {
 
     // Collect namespace chain from FunctionDecl's DeclContext parent chain
     llvm::SmallVector<llvm::StringRef, 4> NsChain;
-    DeclContext *Ctx = FD->getDeclContext()->getParent();
+    DeclContext *Ctx = llvm::cast<DeclContext>(FD)->getParent();
     while (Ctx) {
       if (Ctx->isNamespace()) {
         if (auto *ND = Ctx->getOwningDecl()) {

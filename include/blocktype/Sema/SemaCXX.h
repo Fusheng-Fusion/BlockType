@@ -116,6 +116,42 @@ public:
   ContractAttr *BuildContractAttr(SourceLocation Loc, ContractKind Kind,
                                   Expr *Cond);
 
+  //===------------------------------------------------------------------===//
+  // P7.3.2: Contract inheritance and virtual function interaction
+  //===------------------------------------------------------------------===//
+
+  /// Check contract inheritance when a derived class overrides a virtual
+  /// function.
+  ///
+  /// Per P2900R14:
+  /// - Derived class preconditions cannot be stricter than base class
+  ///   (can be omitted or made more permissive)
+  /// - Derived class postconditions cannot be more permissive than base class
+  ///   (can be omitted or made more strict)
+  ///
+  /// This emits diagnostics for violations but does not prevent compilation.
+  ///
+  /// @param DerivedMD  The overriding method in the derived class
+  /// @param BaseMD     The overridden method in the base class
+  void CheckContractInheritance(CXXMethodDecl *DerivedMD,
+                                CXXMethodDecl *BaseMD);
+
+  /// Inherit contracts from base class methods to the derived class override.
+  ///
+  /// When a derived class overrides a virtual function, this method collects
+  /// the base class's pre/post contracts and adds them to the derived class's
+  /// attribute list (if not already present). The derived class's own contracts
+  /// are checked against the base class contracts via CheckContractInheritance.
+  ///
+  /// @param DerivedMD  The overriding method in the derived class
+  void InheritBaseContracts(CXXMethodDecl *DerivedMD);
+
+  /// Collect all contracts from a function declaration.
+  ///
+  /// @param FD  The function declaration
+  /// @return Vector of ContractAttr pointers (pre and post only)
+  llvm::SmallVector<ContractAttr *, 4> collectContracts(FunctionDecl *FD);
+
 private:
   /// Recursively check a statement tree for CXXThisExpr usage.
   void checkBodyForThisUse(Stmt *Body, SourceLocation Loc);

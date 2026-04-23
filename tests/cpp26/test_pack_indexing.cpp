@@ -70,6 +70,48 @@ int test_pack_var_decl() {
     return 0;
 }
 
+// Test case 8: Nested pack indexing
+template <typename... Ts>
+struct NestedPackIndex {
+    using Inner = Ts...[0];
+    template <typename... Us>
+    struct InnerPack {
+        using Combined = Us...[0];
+    };
+};
+
+int test_nested_pack_index() {
+    return 0;
+}
+
+// Test case 9: Pack indexing in return type
+template <typename... Ts>
+auto get_first_type() -> Ts...[0] {
+    return Ts...[0]{};
+}
+
+int test_return_type_pack_index() {
+    return 0;
+}
+
+// Test case 10: Pack indexing with sizeof...(Ts) - 1 (last element)
+template <typename... Ts>
+struct LastElement {
+    using Type = Ts...[sizeof...(Ts) - 1];
+};
+
+int test_last_element() {
+    return 0;
+}
+
+// P7.4.4 边界测试：负索引（应报错）
+// template <typename... Ts>
+// using NegativeIndex = Ts...[-1];  // error: pack index must not be negative
+
+// P7.4.4 边界测试：0 - 1 模式的负索引
+// template <typename... Ts>
+// using ZeroMinusOne = Ts...[0 - 1];  // error: pack index must not be negative
+
 int main() {
     int r1 = test_basic_pack_index();
     int r2 = test_last_pack_index();
@@ -78,5 +120,8 @@ int main() {
     int r5 = test_multi_pack_index();
     int r6 = test_pack_index_three();
     int r7 = test_pack_var_decl();
-    return r1 + r2 + r3 + r4 + r5 + r6 + r7;
+    int r8 = test_nested_pack_index();
+    int r9 = test_return_type_pack_index();
+    int r10 = test_last_element();
+    return r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10;
 }

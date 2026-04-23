@@ -2,7 +2,7 @@
   "name": "blocktype-team",
   "leadAgentId": "946d5dc52dcf47fc9da3e720ed5f5991",
   "workspacePath": "/Users/yuan/Documents/BlockType",
-  "createdAt": "2026-04-23T03:44:20.137Z",
+  "createdAt": "2026-04-23T16:55:58.964Z",
   "options": {
     "workspacePath": "/Users/yuan/Documents/BlockType",
     "isAutoTeam": false
@@ -14,19 +14,19 @@
       "role": "Team Lead - coordinates the team and interacts with the user"
     },
     {
-      "memberId": "planner@blocktype-team",
-      "name": "planner",
-      "role": "planner-规划角色"
-    },
-    {
       "memberId": "dev-tester@blocktype-team",
       "name": "dev-tester",
-      "role": "dev-tester-开发测试合并角色"
+      "role": "dev-tester 开发成员"
     },
     {
       "memberId": "reviewer@blocktype-team",
       "name": "reviewer",
-      "role": "reviewer-代码审查角色"
+      "role": "代码审查成员"
+    },
+    {
+      "memberId": "planner@blocktype-team",
+      "name": "planner",
+      "role": "规划成员"
     }
   ],
   "isAutoTeam": false

@@ -35,6 +35,21 @@ void test_legacy_delete() {
     LegacyDeleted b = a;  // error: call to deleted function 'LegacyDeleted'
 }
 
+// 测试空字符串原因
+void empty_reason() = delete("");
+
+// 测试自由函数带原因的delete
+void deprecated_func() = delete("Use new_func() instead");
+
+void test_free_function_delete() {
+    deprecated_func();  // error: call to deleted function 'deprecated_func': Use new_func() instead
+}
+
+// P7.4.1 边界测试：非字符串字面量 delete reason（应报错）
+// int x;
+// void bad_delete_int() = delete(x);       // error: delete reason must be a string literal
+// void bad_delete_number() = delete(42);   // error: delete reason must be a string literal
+
 int main() {
     return 0;
 }

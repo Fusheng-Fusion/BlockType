@@ -419,10 +419,22 @@ Expr *TemplateInstantiator::InstantiatePackIndexingExpr(
   // Try to evaluate the index as a constant
   if (auto *IntLit = llvm::dyn_cast<IntegerLiteral>(IndexExpr)) {
     Index = IntLit->getValue().getZExtValue();
+  } else if (auto *UO = llvm::dyn_cast<UnaryOperator>(IndexExpr)) {
+    // Handle constant unary expressions like -1
+    if (UO->getOpcode() == UnaryOpKind::Minus) {
+      if (auto *SubLit = llvm::dyn_cast<IntegerLiteral>(UO->getSubExpr())) {
+        // Negative index - emit error, return original for error recovery
+        SemaRef.Diag(IndexExpr->getLocation(), DiagID::err_pack_index_negative);
+        return PIE;  // Return original node for error recovery
+      }
+    }
+    // Other unary operators - try to evaluate as non-constant
+    SemaRef.Diag(IndexExpr->getLocation(), DiagID::err_pack_index_non_constant);
+    return PIE;  // Return original node for error recovery
   } else {
-    // Runtime index - cannot instantiate at compile time
-    // Return the original expression for runtime evaluation
-    return PIE;
+    // Non-constant index - cannot instantiate at compile time
+    SemaRef.Diag(IndexExpr->getLocation(), DiagID::err_pack_index_non_constant);
+    return PIE;  // Return original node for error recovery
   }
   
   // Check bounds
@@ -435,7 +447,7 @@ Expr *TemplateInstantiator::InstantiatePackIndexingExpr(
   if (Index >= PackElements.size()) {
     // Out of bounds - emit diagnostic
     SemaRef.Diag(IndexExpr->getLocation(), DiagID::err_pack_index_out_of_bounds,
-                 std::to_string(Index) + " " + std::to_string(PackElements.size()));
+                 std::to_string(Index) + " (pack size " + std::to_string(PackElements.size()) + ")");
     return nullptr;
   }
   

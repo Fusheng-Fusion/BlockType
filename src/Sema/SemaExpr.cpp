@@ -363,6 +363,41 @@ ExprResult Sema::ActOnPackIndexingExpr(SourceLocation Loc, Expr *Pack,
     // Still create the node for error recovery
   }
 
+  // 2b. Validate that Index is not negative (compile-time check)
+  if (!Index->isTypeDependent()) {
+    if (auto *IntLit = llvm::dyn_cast<IntegerLiteral>(Index)) {
+      if (IntLit->getValue().isNegative()) {
+        Diag(Index->getLocation(), DiagID::err_pack_index_negative);
+      }
+    } else if (auto *UO = llvm::dyn_cast<UnaryOperator>(Index)) {
+      // Check for -N pattern
+      if (UO->getOpcode() == UnaryOpKind::Minus) {
+        Diag(Index->getLocation(), DiagID::err_pack_index_negative);
+      }
+    } else if (auto *BO = llvm::dyn_cast<BinaryOperator>(Index)) {
+      // Check for A - B pattern where result could be negative
+      // We can't fully evaluate, but check for obvious negative results
+      // like 0 - N or where both operands are known constants
+      if (BO->getOpcode() == BinaryOpKind::Sub) {
+        Expr *LHS = BO->getLHS();
+        Expr *RHS = BO->getRHS();
+        auto *LHSLit = llvm::dyn_cast<IntegerLiteral>(LHS);
+        auto *RHSLit = llvm::dyn_cast<IntegerLiteral>(RHS);
+        if (LHSLit && RHSLit) {
+          // Both operands are constants: check if result is negative
+          if (LHSLit->getValue().slt(RHSLit->getValue())) {
+            Diag(Index->getLocation(), DiagID::err_pack_index_negative);
+          }
+        }
+        // If LHS is 0 and RHS is any positive literal, result is negative
+        if (LHSLit && LHSLit->getValue().isZero() && RHSLit &&
+            !RHSLit->getValue().isNegative()) {
+          Diag(Index->getLocation(), DiagID::err_pack_index_negative);
+        }
+      }
+    }
+  }
+
   // 3. Create the node
   auto *PIE = Context.create<PackIndexingExpr>(Loc, Pack, Index);
 

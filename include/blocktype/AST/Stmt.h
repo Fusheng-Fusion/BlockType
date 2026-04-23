@@ -360,6 +360,7 @@ class WhileStmt : public Stmt {
   Expr *Cond;
   Stmt *Body;
   VarDecl *CondVar;
+  llvm::SmallVector<class BindingDecl *, 4> BindingDecls; // P0963R3: structured binding in condition
 
 public:
   WhileStmt(SourceLocation Loc, Expr *Cond, Stmt *Body,
@@ -369,6 +370,13 @@ public:
   Expr *getCond() const { return Cond; }
   Stmt *getBody() const { return Body; }
   VarDecl *getConditionVariable() const { return CondVar; }
+
+  // P0963R3: Structured binding accessors
+  llvm::ArrayRef<class BindingDecl *> getBindingDecls() const { return BindingDecls; }
+  void setBindingDecls(llvm::ArrayRef<class BindingDecl *> BDs) {
+    BindingDecls.assign(BDs.begin(), BDs.end());
+  }
+  bool hasBindingDecls() const { return !BindingDecls.empty(); }
 
   NodeKind getKind() const override { return NodeKind::WhileStmtKind; }
 

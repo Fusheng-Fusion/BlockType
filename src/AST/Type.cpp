@@ -710,9 +710,16 @@ bool Type::isTriviallyRelocatable() const {
   case TypeClass::MemberPointer:
     return true;
   case TypeClass::Record: {
+    // For CXXRecordDecl, check if it has a user-declared move constructor
+    // or destructor. For plain records, assume trivially relocatable.
     auto *RT = cast<RecordType>(this);
-    if (auto *CXXRD = dyn_cast<CXXRecordDecl>(RT->getDecl()))
-      return CXXRD->isTriviallyRelocatable();
+    if (auto *CXXRD = dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+      // If it has a destructor or move constructor, it may not be trivially
+      // relocatable. Conservative: return false for such cases.
+      if (CXXRD->hasDestructor() || CXXRD->hasMoveConstructor())
+        return false;
+      return true;
+    }
     // Plain structs/unions without CXX semantics are trivially relocatable
     return true;
   }

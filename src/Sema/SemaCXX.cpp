@@ -380,4 +380,156 @@ ContractAttr *SemaCXX::BuildContractAttr(SourceLocation Loc, ContractKind Kind,
   return CA;
 }
 
+//===----------------------------------------------------------------------===//
+// P7.3.2: Contract inheritance and virtual function interaction
+//===----------------------------------------------------------------------===//
+
+llvm::SmallVector<ContractAttr *, 4>
+SemaCXX::collectContracts(FunctionDecl *FD) {
+  llvm::SmallVector<ContractAttr *, 4> Result;
+  if (!FD) return Result;
+
+  if (auto *Attrs = FD->getAttrs()) {
+    for (auto *CA : Attrs->getContracts()) {
+      if (CA && (CA->isPrecondition() || CA->isPostcondition()))
+        Result.push_back(CA);
+    }
+  }
+  return Result;
+}
+
+void SemaCXX::CheckContractInheritance(CXXMethodDecl *DerivedMD,
+                                        CXXMethodDecl *BaseMD) {
+  if (!DerivedMD || !BaseMD) return;
+
+  auto BaseContracts = collectContracts(BaseMD);
+  auto DerivedContracts = collectContracts(DerivedMD);
+
+  if (BaseContracts.empty()) return;
+
+  // Count pre/post contracts in base and derived.
+  unsigned BasePreCount = 0, BasePostCount = 0;
+  unsigned DerivedPreCount = 0, DerivedPostCount = 0;
+
+  for (auto *CA : BaseContracts) {
+    if (CA->isPrecondition()) ++BasePreCount;
+    if (CA->isPostcondition()) ++BasePostCount;
+  }
+  for (auto *CA : DerivedContracts) {
+    if (CA->isPrecondition()) ++DerivedPreCount;
+    if (CA->isPostcondition()) ++DerivedPostCount;
+  }
+
+  // P2900R14: Derived class preconditions cannot be stricter than base.
+  // If the base has preconditions and the derived adds more, warn that
+  // the derived's additional preconditions may be stricter.
+  // (A full formal check would require SAT solving; we do a heuristic check.)
+  if (BasePreCount > 0 && DerivedPreCount > BasePreCount) {
+    S.Diag(DerivedMD->getLocation(),
+           DiagID::warn_contract_pre_stricter_than_base);
+  }
+
+  // P2900R14: Derived class postconditions cannot be more permissive.
+  // If the base has postconditions and the derived omits some, warn that
+  // the derived's postconditions may be more permissive.
+  if (BasePostCount > 0 && DerivedPostCount < BasePostCount) {
+    S.Diag(DerivedMD->getLocation(),
+           DiagID::warn_contract_post_more_permissive_than_base);
+  }
+}
+
+void SemaCXX::InheritBaseContracts(CXXMethodDecl *DerivedMD) {
+  if (!DerivedMD || !DerivedMD->isVirtual()) return;
+
+  CXXRecordDecl *DerivedClass = DerivedMD->getParent();
+  if (!DerivedClass) return;
+
+  // Collect all base class methods that this method overrides.
+  // Walk the base class chain and find methods with the same signature.
+  llvm::SmallVector<CXXMethodDecl *, 4> BaseMethods;
+
+  for (const auto &Base : DerivedClass->bases()) {
+    QualType BaseType = Base.getType();
+    if (BaseType.isNull()) continue;
+
+    // Get the CXXRecordDecl from the base type.
+    CXXRecordDecl *BaseRecord = nullptr;
+    if (auto *RecTy = llvm::dyn_cast_or_null<RecordType>(BaseType.getTypePtr())) {
+      BaseRecord = llvm::dyn_cast<CXXRecordDecl>(RecTy->getDecl());
+    }
+    if (!BaseRecord) continue;
+
+    // Find the overridden method in the base class.
+    for (auto *Method : BaseRecord->methods()) {
+      if (Method->getName() == DerivedMD->getName() &&
+          Method->isVirtual()) {
+        // Check parameter signature matches to avoid mismatching
+        // overloaded virtual functions with the same name.
+        if (Method->getNumParams() != DerivedMD->getNumParams())
+          continue;
+        bool ParamsMatch = true;
+        for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+          if (Method->getParamDecl(I)->getType() !=
+              DerivedMD->getParamDecl(I)->getType()) {
+            ParamsMatch = false;
+            break;
+          }
+        }
+        if (!ParamsMatch)
+          continue;
+        BaseMethods.push_back(Method);
+      }
+    }
+  }
+
+  if (BaseMethods.empty()) return;
+
+  // For each base method, check contract inheritance and inherit contracts.
+  auto DerivedContracts = collectContracts(DerivedMD);
+
+  for (auto *BaseMD : BaseMethods) {
+    // Check inheritance rules.
+    CheckContractInheritance(DerivedMD, BaseMD);
+
+    // Inherit contracts from base that are not already in derived.
+    auto BaseContracts = collectContracts(BaseMD);
+
+    for (auto *BaseCA : BaseContracts) {
+      bool AlreadyHas = false;
+
+      // Check if derived already has a contract of the same kind.
+      for (auto *DerivedCA : DerivedContracts) {
+        if (BaseCA->getContractKind() == DerivedCA->getContractKind()) {
+          AlreadyHas = true;
+          break;
+        }
+      }
+
+      if (!AlreadyHas) {
+        // Inherit this contract from the base class.
+        // Create a new ContractAttr that is a copy of the base's contract.
+        auto &Ctx = S.getASTContext();
+        auto *InheritedCA = Ctx.create<ContractAttr>(
+            BaseCA->getLocation(),
+            BaseCA->getContractKind(),
+            BaseCA->getCondition(),
+            BaseCA->getContractMode());
+
+        // Copy result decl for postconditions.
+        if (BaseCA->getResultDecl()) {
+          InheritedCA->setResultDecl(BaseCA->getResultDecl());
+        }
+
+        // Add to the derived method's attribute list.
+        if (!DerivedMD->getAttrs()) {
+          auto *Attrs = Ctx.create<AttributeListDecl>(DerivedMD->getLocation());
+          DerivedMD->setAttrs(Attrs);
+        }
+        DerivedMD->getAttrs()->addContract(InheritedCA);
+        DerivedContracts.push_back(InheritedCA);
+      }
+    }
+  }
+}
+
 } // namespace blocktype

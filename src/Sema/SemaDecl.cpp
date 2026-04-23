@@ -443,19 +443,24 @@ DeclResult Sema::ActOnVarDeclFull(SourceLocation Loc, llvm::StringRef Name,
 
 // P7.4.2: Placeholder variable `_` implementation
 DeclResult Sema::ActOnPlaceholderVarDecl(SourceLocation Loc, QualType T, Expr *Init) {
+  // P2169R4: Placeholder variable must have auto type or be initialized
+  if (!T.isNull() && T->getTypeClass() != TypeClass::Auto && !Init) {
+    Diags.report(Loc, DiagID::err_placeholder_var_not_auto);
+    return DeclResult::getInvalid();
+  }
+
+  // P2169R4: Placeholder variable should not have external linkage
+  // (checked by caller in buildVarDecl via DeclSpec storage class)
+
   // Create a VarDecl with name "_" but mark it as placeholder
   auto *VD = Context.create<VarDecl>(Loc, "_", T, Init, false);
   VD->setPlaceholder(true);
   
-  // IMPORTANT: Do NOT add to symbol table or current context
-  // Each `_` is a separate variable, even in the same scope
-  // We still need to register for CodeGen, but not for name lookup
-  
-  // Only add to CurContext for CodeGen purposes (so it gets emitted)
-  // But don't add to Symbols (symbol table)
-  if (CurContext) {
-    CurContext->addDecl(VD);
-  }
+  // P7.4.2 (P2169R4): Placeholder variables are NOT added to the symbol table
+  // or CurContext for name lookup. Each `_` is a separate variable, even in
+  // the same scope. CodeGen handles them via a separate internal structure.
+  // Do NOT call CurContext->addDecl(VD) — that would make `_` visible in
+  // name lookup and cause redefinition errors for multiple `_` in same scope.
   
   return DeclResult(VD);
 }
@@ -679,6 +684,13 @@ DeclGroupRef Sema::ActOnDecompositionDecl(SourceLocation Loc,
     auto *BD = Context.create<BindingDecl>(Loc, Names[i], ElementType,
                                             BindingExpr, i);
     
+    // P7.4.2 (P2169R4): If the binding name is "_", mark it as placeholder.
+    // This means it won't participate in name lookup and multiple "_" bindings
+    // are allowed in the same scope.
+    if (isPlaceholderIdentifier(Names[i])) {
+      BD->setPlaceholder(true);
+    }
+    
     Decls.push_back(BD);
     
     if (CurContext) {
@@ -759,8 +771,8 @@ DeclGroupRef Sema::ActOnDecompositionDeclWithPack(
     ExprResult GetCall = BuildStdGetCall(i, Init, ElementType, Loc);
     Expr *BindingExpr = GetCall.isUsable() ? GetCall.get() : nullptr;
     
-    // For pack elements, append index to name: rest0, rest1, ...
-    std::string ExpandedName = PackName.str() + std::to_string(i - NumFixedBindings);
+    // For pack elements, use internal name to avoid user-code conflicts
+    std::string ExpandedName = "$pack.rest." + std::to_string(i - NumFixedBindings);
     auto *BD = Context.create<BindingDecl>(Loc, ExpandedName, ElementType,
                                             BindingExpr, i);
     Decls.push_back(BD);
@@ -776,7 +788,28 @@ DeclGroupRef Sema::ActOnDecompositionDeclWithPack(
 bool Sema::CheckBindingCondition(llvm::ArrayRef<class BindingDecl *> Bindings,
                                   SourceLocation Loc) {
   // P0963R3: Check if structured binding can be used in condition
-  // For now, just return true (allow it)
+  // The binding values must be contextually convertible to bool
+  if (Bindings.empty()) {
+    return true;
+  }
+
+  for (auto *BD : Bindings) {
+    QualType BindingType = BD->getType();
+    if (BindingType.isNull() || BindingType->isDependentType()) {
+      // Dependent types — skip check, will be verified at instantiation
+      continue;
+    }
+    // Check contextual conversion to bool
+    if (!BindingType->isBooleanType() &&
+        !BindingType->isIntegerType() &&
+        !BindingType->isPointerType() &&
+        !BindingType->isFloatingType()) {
+      // Not contextually convertible to bool
+      Diags.report(Loc, DiagID::err_decomp_decl_not_bool_convertible,
+                   BD->getName(), BindingType.getAsString());
+      return false;
+    }
+  }
   return true;
 }
 
@@ -1125,6 +1158,12 @@ DeclResult Sema::ActOnCXXMethodDeclFactory(SourceLocation Loc, llvm::StringRef N
     if (!Checker.CheckStaticOperator(MD, Loc)) {
       // Diagnostic already emitted.
     }
+  }
+
+  // P7.3.2: Inherit contracts from base class virtual methods.
+  if (MD && MD->isVirtual()) {
+    SemaCXX Checker(*this);
+    Checker.InheritBaseContracts(MD);
   }
 
   return DeclResult(MD);

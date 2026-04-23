@@ -466,6 +466,13 @@ void CodeGenFunction::EmitWhileStmt(WhileStmt *WhileStatement) {
     EmitCondVarDecl(WhileStatement->getConditionVariable());
   }
 
+  // P0963R3: Emit structured binding declarations in while condition
+  if (WhileStatement->hasBindingDecls()) {
+    for (auto *BD : WhileStatement->getBindingDecls()) {
+      EmitBindingDecl(BD, nullptr, BD->getBindingIndex());
+    }
+  }
+
   if (WhileStatement->getCond()) {
     llvm::Value *Cond = EmitExpr(WhileStatement->getCond());
     if (Cond) {
@@ -627,12 +634,20 @@ void CodeGenFunction::EmitDeclStmt(DeclStmt *DeclarationStatement) {
     if (auto *VariableDecl = llvm::dyn_cast<VarDecl>(Declaration)) {
       QualType VarType = VariableDecl->getType();
 
+      // P7.4.2 (P2169R4): Placeholder variables use anonymous names in CodeGen
+      // to avoid name conflicts when multiple "_" exist in the same scope.
+      std::string VarName = VariableDecl->getName().str();
+      if (VariableDecl->isPlaceholder()) {
+        static unsigned PlaceholderCounter = 0;
+        VarName = "$placeholder." + std::to_string(PlaceholderCounter++);
+      }
+
       // NRVO: 如果变量是 NRVO 候选，直接使用 ReturnValue alloca
       llvm::AllocaInst *Alloca = nullptr;
       if (isNRVOCandidate(VariableDecl) && ReturnValue && !IsSRetFn) {
         Alloca = ReturnValue;
       } else {
-        Alloca = CreateAlloca(VarType, VariableDecl->getName());
+        Alloca = CreateAlloca(VarType, VarName);
       }
       if (!Alloca) {
         continue;
@@ -699,7 +714,13 @@ void CodeGenFunction::EmitBindingDecl(BindingDecl *BD, llvm::Value *TupleAddr, u
   // 3. Store the extracted value
   
   QualType BindingType = BD->getType();
-  llvm::AllocaInst *Alloca = CreateAlloca(BindingType, BD->getName());
+  // P7.4.2 (P2169R4): Placeholder bindings "_" use anonymous names
+  std::string BindingName = BD->getName().str();
+  if (BD->isPlaceholder()) {
+    static unsigned BindingPlaceholderCounter = 0;
+    BindingName = "$placeholder.binding." + std::to_string(BindingPlaceholderCounter++);
+  }
+  llvm::AllocaInst *Alloca = CreateAlloca(BindingType, BindingName);
   
   if (!Alloca) {
     return;

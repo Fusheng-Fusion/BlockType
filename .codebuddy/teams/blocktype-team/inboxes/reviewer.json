@@ -1,11 +1,11 @@
 [
   {
-    "id": "msg-1776916023811-wr8sdk",
+    "id": "msg-1776969082656-4jf11q",
     "from": "team-lead",
     "to": "reviewer",
     "type": "message",
-    "content": "请立即开始审查 Wave6 的修复（commit 8613108 和 cfc2b33），共8个P1+1个P0修复，14个文件变更。\n\n审查重点：\n1. P0-NEW-2: 模板实例化替换映射 TypedefNameDecl→TemplateTypeParmDecl（3处）— src/Sema/TemplateInstantiation.cpp:92, src/Sema/Sema.cpp:162, src/Sema/ConstraintSatisfaction.cpp\n2. P1-5: CheckCatchMatch catch(...) 添加 return — src/Sema/ExceptionAnalysis.cpp:137-141\n3. P1-6: Lambda 静态变量捕获 err→warn — src/Sema/LambdaAnalysis.cpp:83\n4. P1-8: 整型提升 First 步骤 Identity — src/Sema/Conversion.cpp:697-699\n5. P1-3: Overload::addCandidates 处理 FunctionTemplateDecl — src/Sema/Overload.cpp:245-252\n6. P1-2: ConstraintSatisfaction 完整替换 — src/Sema/ConstraintSatisfaction.cpp\n7. P1-7: 泛型 lambda 推导使用 DeducedArgs — src/Sema/LambdaAnalysis.cpp:220-222\n8. P1-4: InstantiateClassTemplate 完整实现 — src/Sema/TemplateInstantiator.cpp:88-90\n\n特别关注3个风险点：\n- P1-4 InstantiateClassTemplate 新增大量代码，验证 API 签名是否正确\n- P1-3 addTemplateCandidate 方法签名是否匹配\n- P0-NEW-2 addSubstitution 键类型设计意图\n\n输出审查报告到 docs/status/audits/wave6_audit.md，完成后通知我。",
-    "timestamp": "2026-04-23T03:47:03.811Z",
+    "content": "## 审查任务：Task 7.3.2 Contract 语义 + Task 8.1.2 ABI 支持\n\n请审查以下两个已完成的任务：\n\n### 1. Task 8.1.2 ABI 支持\n新增文件：\n- `include/blocktype/CodeGen/ABIInfo.h`\n- `src/CodeGen/ABIInfo.cpp`\n- `tests/unit/CodeGen/ABIInfoTest.cpp`\n\n修改文件：\n- `include/blocktype/CodeGen/CodeGenTypes.h`（扩展 ABIArgKind）\n- `src/CodeGen/CodeGenTypes.cpp`（使用 ABIInfo）\n- `src/CodeGen/CMakeLists.txt`\n\n### 2. Task 7.3.2 Contract 语义\n修改文件：\n- `include/blocktype/Sema/SemaCXX.h`\n- `src/Sema/SemaCXX.cpp`\n- `src/Sema/SemaDecl.cpp`\n- `include/blocktype/Basic/DiagnosticSemaKinds.def`\n- `src/Frontend/CompilerInvocation.cpp`\n- `include/blocktype/CodeGen/CodeGenModule.h`\n- `src/CodeGen/CodeGenExpr.cpp`\n- `src/Frontend/CompilerInstance.cpp`\n\n新增测试：\n- `tests/cpp26/contracts_inheritance.cpp`\n- `tests/cpp26/contracts_virtual.cpp`\n- `tests/cpp26/contracts_mode.cpp`\n\n### 注意\ndev-tester 报告 918 测试中 916 通过、2 个失败（声称与本次修改无关）。请确认这 2 个失败是否确实是预存问题。\n\n### 审查维度\n1. 代码质量和风格一致性\n2. 潜在 bug 和边界情况\n3. 测试覆盖是否充分\n4. 是否引入回归风险\n5. 2 个失败测试的根因分析",
+    "timestamp": "2026-04-23T18:31:22.656Z",
     "read": true
   }
 ]

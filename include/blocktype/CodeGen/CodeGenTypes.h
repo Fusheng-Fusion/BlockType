@@ -17,6 +17,7 @@
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Type.h"
 #include "blocktype/AST/Type.h"
+#include <memory>
 
 namespace llvm {
 class FunctionType;
@@ -31,6 +32,7 @@ class FunctionDecl;
 class RecordDecl;
 class FieldDecl;
 class CXXRecordDecl;
+class ABIInfo;
 
 //===----------------------------------------------------------------------===//
 // ABIArgInfo — 描述参数/返回值的 ABI 传递方式
@@ -43,6 +45,8 @@ enum class ABIArgKind {
   Direct,   ///< 直接传递（值或指针，无特殊属性）
   SRet,     ///< 通过隐藏指针参数传递（结构体返回值 > ABI 限制）
   InReg,    ///< 通过寄存器传递（添加 inreg 属性）
+  Expand,   ///< 结构体按字段展开传递（每个字段独立传递）
+  Coerce,   ///< 类型强制转换后传递（如 bitcast 到整数寄存器）
 };
 
 /// ABIArgInfo — 描述一个参数或返回值的 ABI 传递细节。
@@ -56,10 +60,14 @@ struct ABIArgInfo {
   static ABIArgInfo getDirect() { return {ABIArgKind::Direct, nullptr}; }
   static ABIArgInfo getSRet(llvm::Type *T) { return {ABIArgKind::SRet, T}; }
   static ABIArgInfo getInReg() { return {ABIArgKind::InReg, nullptr}; }
+  static ABIArgInfo getExpand() { return {ABIArgKind::Expand, nullptr}; }
+  static ABIArgInfo getCoerce(llvm::Type *T = nullptr) { return {ABIArgKind::Coerce, T}; }
 
   bool isSRet() const { return Kind == ABIArgKind::SRet; }
   bool isInReg() const { return Kind == ABIArgKind::InReg; }
   bool isDirect() const { return Kind == ABIArgKind::Direct; }
+  bool isExpand() const { return Kind == ABIArgKind::Expand; }
+  bool isCoerce() const { return Kind == ABIArgKind::Coerce; }
 };
 
 /// FunctionABITy — 函数的完整 ABI 信息。
@@ -88,6 +96,9 @@ struct FunctionABITy {
 class CodeGenTypes {
   CodeGenModule &CGM;
 
+  /// ABI 分类器（平台特定）
+  std::unique_ptr<ABIInfo> TheABIInfo;
+
   /// Type → llvm::Type* 缓存
   llvm::DenseMap<const Type *, llvm::Type *> TypeCache;
 
@@ -104,7 +115,8 @@ class CodeGenTypes {
   llvm::DenseMap<const FieldDecl *, unsigned> FieldIndexCache;
 
 public:
-  explicit CodeGenTypes(CodeGenModule &M) : CGM(M) {}
+  explicit CodeGenTypes(CodeGenModule &M);
+  ~CodeGenTypes();
 
   //===------------------------------------------------------------------===//
   // 类型转换主接口
@@ -153,6 +165,9 @@ public:
   //===------------------------------------------------------------------===//
   // 类型信息查询
   //===------------------------------------------------------------------===//
+
+  /// 获取 ABI 分类器。
+  const ABIInfo &getABIInfo() const { return *TheABIInfo; }
 
   /// 获取类型的大小（字节）。
   uint64_t GetTypeSize(QualType T) const;

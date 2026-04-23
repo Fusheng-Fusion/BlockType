@@ -11,23 +11,26 @@
 
 namespace blocktype {
 
-/// 根据目标三元组生成数据布局字符串
-static std::string getDataLayoutForTriple(llvm::StringRef TripleStr) {
+//===----------------------------------------------------------------------===//
+// 工厂方法
+//===----------------------------------------------------------------------===//
+
+std::unique_ptr<TargetInfo> TargetInfo::Create(llvm::StringRef TripleStr) {
   llvm::Triple T(TripleStr);
-  if (T.isArch64Bit()) {
-    // 64-bit: pointers are 8 bytes, 64-bit aligned
-    // e-i64:64-f80:128-n8:16:32:64-S128
-    return "e-m:o-i64:64-i128:128-n32:64-S128";
-  } else if (T.isArch32Bit()) {
-    // 32-bit
-    return "e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128";
+
+  if (T.getArch() == llvm::Triple::aarch64 ||
+      T.getArch() == llvm::Triple::aarch64_be ||
+      T.getArch() == llvm::Triple::aarch64_32) {
+    return std::make_unique<AArch64TargetInfo>(TripleStr);
   }
-  // Default 64-bit
-  return "e-m:o-i64:64-i128:128-n32:64-S128";
+
+  // Default: x86_64 for all other 64-bit architectures
+  return std::make_unique<X86_64TargetInfo>(TripleStr);
 }
 
-TargetInfo::TargetInfo(llvm::StringRef TargetTriple)
-    : DL(getDataLayoutForTriple(TargetTriple)), TripleStr(TargetTriple.str()) {}
+//===----------------------------------------------------------------------===//
+// TargetInfo 基类实现
+//===----------------------------------------------------------------------===//
 
 uint64_t TargetInfo::getTypeSize(QualType T) const {
   if (T.isNull()) return 0;
@@ -82,15 +85,7 @@ uint64_t TargetInfo::getBuiltinSize(BuiltinKind K) const {
   case BuiltinKind::LongLong:
   case BuiltinKind::UnsignedLongLong: return 8;
   case BuiltinKind::LongDouble:
-    // macOS / Darwin: long double = double (8 bytes)
-    // Linux x86_64: long double = x87 extended (16 bytes, 80-bit padded)
-    // 其他平台默认 16 字节
-    {
-      llvm::Triple T(TripleStr);
-      if (T.isOSDarwin())
-        return 8;  // macOS: long double == double
-      return 16;   // Linux 等: long double == 80-bit extended padded to 16
-    }
+    return getLongDoubleWidth();
   case BuiltinKind::Float128:  return 16;
   case BuiltinKind::Int128:
   case BuiltinKind::UnsignedInt128: return 16;
@@ -111,6 +106,69 @@ uint64_t TargetInfo::getBuiltinAlign(BuiltinKind K) const {
 
 bool TargetInfo::isStructReturnInRegister(QualType T) const {
   return getTypeSize(T) <= 16;
+}
+
+//===----------------------------------------------------------------------===//
+// X86_64TargetInfo
+//===----------------------------------------------------------------------===//
+
+X86_64TargetInfo::X86_64TargetInfo(llvm::StringRef TripleStr)
+    : TargetInfo(TripleStr,
+                 "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"),
+      IsDarwin(llvm::Triple(TripleStr).isOSDarwin()) {}
+
+uint64_t X86_64TargetInfo::getBuiltinSize(BuiltinKind K) const {
+  // x86_64: long double = 80-bit extended padded to 16 bytes
+  if (K == BuiltinKind::LongDouble)
+    return 16;
+  return TargetInfo::getBuiltinSize(K);
+}
+
+bool X86_64TargetInfo::isStructReturnInRegister(QualType T) const {
+  // System V AMD64 ABI: structs ≤ 16 bytes that can be classified as
+  // INTEGER and/or SSE can be returned in registers (RAX/RDX or XMM0/XMM1).
+  // Simplified: ≤ 16 bytes → in register.
+  return getTypeSize(T) <= 16;
+}
+
+bool X86_64TargetInfo::isThisPassedInRegister() const {
+  // System V AMD64: this pointer passed in RDI (register)
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
+// AArch64TargetInfo
+//===----------------------------------------------------------------------===//
+
+AArch64TargetInfo::AArch64TargetInfo(llvm::StringRef TripleStr)
+    : TargetInfo(TripleStr,
+                 "e-m:o-i64:64-i128:128-n32:64-S128"),
+      IsDarwin(llvm::Triple(TripleStr).isOSDarwin()) {}
+
+uint64_t AArch64TargetInfo::getBuiltinSize(BuiltinKind K) const {
+  // Darwin AArch64: long double = double (8 bytes)
+  // Linux AArch64: long double = 16 bytes (IEEE quad)
+  if (K == BuiltinKind::LongDouble)
+    return IsDarwin ? 8 : 16;
+  return TargetInfo::getBuiltinSize(K);
+}
+
+bool AArch64TargetInfo::isStructReturnInRegister(QualType T) const {
+  // AAPCS64: structs ≤ 16 bytes that are not MEMORY class can be
+  // returned in registers (x0/x1 or v0/v1).
+  // Simplified: ≤ 16 bytes → in register.
+  return getTypeSize(T) <= 16;
+}
+
+bool AArch64TargetInfo::isThisPassedInRegister() const {
+  // AAPCS64: this pointer passed in X0 (register)
+  return true;
+}
+
+uint64_t AArch64TargetInfo::getLongDoubleWidth() const {
+  // Darwin AArch64: long double = double (8 bytes)
+  // Linux AArch64: long double = IEEE quad (16 bytes)
+  return IsDarwin ? 8 : 16;
 }
 
 } // namespace blocktype

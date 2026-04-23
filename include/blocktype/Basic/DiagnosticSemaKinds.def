@@ -80,6 +80,12 @@ DIAG(err_ovl_deleted_function,   Error, \
 DIAG(err_ovl_deleted_function_with_reason, Error, \
   "call to deleted function '%0': %1",           \
   "调用已删除函数 '%0'：%1")
+DIAG(err_delete_reason_not_string_literal, Error, \
+  "delete reason must be a string literal",      \
+  "delete 原因必须是字符串字面量")
+DIAG(note_deleted_function_reason, Note, \
+  "deleted function '%0' declared here with reason: %1", \
+  "已删除函数 '%0' 在此声明，原因：%1")
 
 //===----------------------------------------------------------------------===//
 // P7.4.2: Placeholder variable diagnostics (P2169R4)
@@ -112,6 +118,9 @@ DIAG(err_decomp_decl_wrong_count, Error, \
 DIAG(err_decomp_decl_in_condition, Error, \
   "structured binding in condition requires explicit 'auto' type", \
   "条件中的结构化绑定需要显式 'auto' 类型")
+DIAG(err_decomp_decl_not_bool_convertible, Error, \
+  "binding '%0' of type '%1' is not contextually convertible to bool", \
+  "类型为 '%1' 的绑定 '%0' 不能上下文转换为 bool")
 DIAG(note_ovl_candidate,         Note, \
   "candidate function",                           \
   "候选函数")
@@ -295,6 +304,22 @@ DIAG(warn_contract_mode_override, Warning, \
   "contract mode '%0' overrides previous mode '%1'", \
   "契约模式 '%0' 覆盖了先前的模式 '%1'")
 
+// P7.3.2: Contract inheritance diagnostics (P2900R14)
+
+DIAG(warn_contract_pre_stricter_than_base, Warning, \
+  "derived class precondition may be stricter than base class; " \
+  "preconditions should be no stronger than those of the overridden function", \
+  "派生类的 precondition 可能比基类更严格；precondition 不应比被覆盖函数的更强")
+
+DIAG(warn_contract_post_more_permissive_than_base, Warning, \
+  "derived class postcondition may be more permissive than base class; " \
+  "postconditions should be no weaker than those of the overridden function", \
+  "派生类的 postcondition 可能比基类更宽松；postcondition 不应比被覆盖函数的更弱")
+
+DIAG(note_contract_inherited_from_base, Note, \
+  "contract inherited from base class method", \
+  "契约继承自基类方法")
+
 //===----------------------------------------------------------------------===//
 // Warnings
 //===----------------------------------------------------------------------===//
@@ -392,8 +417,8 @@ DIAG(warn_structured_binding_reference, Warning, \
 //===----------------------------------------------------------------------===//
 
 DIAG(err_pack_index_out_of_bounds, Error, \
-  "pack index %0 is out of bounds (pack size is %1)", \
-  "包索引 %0 超出边界（包大小为 %1）")
+  "pack index out of bounds: index %0 exceeds pack size", \
+  "包索引超出边界：索引 %0 超出包大小")
 
 DIAG(err_pack_index_empty_pack, Error, \
   "cannot index an empty parameter pack", \
@@ -410,6 +435,9 @@ DIAG(err_pack_index_not_pack, Error, \
 DIAG(err_pack_index_non_integral, Error, \
   "pack index must be an integral expression", \
   "包索引必须是整型表达式")
+DIAG(err_pack_index_negative, Error, \
+  "pack index must not be negative", \
+  "包索引不能为负数")
 
 DIAG(warn_pack_index_runtime, Warning, \
   "runtime pack indexing may generate less efficient code", \

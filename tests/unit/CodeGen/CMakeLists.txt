@@ -1,6 +1,7 @@
 #===--- CodeGen/CMakeLists.txt - CodeGen Test CMake ----------*- CMake -*-===#
 
 add_executable(blocktype-codegen-test
+  ABIInfoTest.cpp
   CodeGenTypesTest.cpp
   CodeGenConstantTest.cpp
   CodeGenExprTest.cpp
@@ -9,6 +10,7 @@ add_executable(blocktype-codegen-test
   CodeGenClassTest.cpp
   CodeGenDebugInfoTest.cpp
   ManglerTest.cpp
+  TargetInfoTest.cpp
 )
 
 target_include_directories(blocktype-codegen-test PUBLIC

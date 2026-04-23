@@ -14,6 +14,7 @@
 #pragma once
 
 #include "blocktype/Basic/LLVM.h"
+#include "blocktype/AST/Attr.h"  // ContractMode
 #include <string>
 #include <vector>
 
@@ -182,6 +183,12 @@ struct FrontendOptions {
 
   /// Additional linker flags.
   std::vector<std::string> LinkerFlags;
+
+  /// P7.3.2.3: Contract checking mode (configurable via -fcontract-mode).
+  ContractMode DefaultContractMode = ContractMode::Enforce;
+
+  /// P7.3.2.3: Whether contracts are enabled (-fcontracts / -fno-contracts).
+  bool ContractsEnabled = true;
 };
 
 /// CompilerInvocation - Encapsulates all compiler options.
