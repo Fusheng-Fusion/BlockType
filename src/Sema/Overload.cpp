@@ -247,8 +247,24 @@ void OverloadCandidateSet::addCandidates(const LookupResult &R) {
     if (auto *FD = llvm::dyn_cast<FunctionDecl>(D)) {
       addCandidate(FD);
     } else if (auto *FTD = llvm::dyn_cast<FunctionTemplateDecl>(D)) {
-      // Add as a template candidate — the caller is responsible for
-      // deducing template arguments and instantiating before viability check.
+      // TODO(W6-P2-2): Template argument deduction should be performed here
+      // before adding the candidate. Currently the templated function's parameter
+      // types still contain dependent types (e.g. TemplateTypeParmType) that
+      // have not been substituted with concrete types deduced from call arguments.
+      //
+      // The correct flow per C++ [temp.deduct.call] is:
+      //   1. Deduce template arguments from call argument types using
+      //      TemplateDeduction::DeduceTemplateArguments()
+      //   2. Substitute deduced args into the templated function's signature
+      //      to produce a concrete FunctionDecl
+      //   3. Add that concrete specialization as the candidate
+      //
+      // This cannot be done inside addCandidates() because call arguments (Args)
+      // are not available here — they are only passed to resolve(). The deduction
+      // should ideally happen in resolve() or in Sema::ResolveOverload() between
+      // addCandidates() and resolve(). For now, add the template candidate as-is;
+      // viability checking in resolve() will reject candidates with unresolved
+      // dependent types.
       if (auto *TemplatedFD = llvm::dyn_cast_or_null<FunctionDecl>(
               FTD->getTemplatedDecl())) {
         addTemplateCandidate(TemplatedFD, FTD);

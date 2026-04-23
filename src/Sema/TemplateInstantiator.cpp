@@ -14,6 +14,7 @@
 #include "blocktype/AST/Type.h"
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/TemplateParameterList.h"
+#include "blocktype/AST/StmtCloner.h"
 #include "blocktype/Basic/DiagnosticIDs.h"
 #include "llvm/Support/Casting.h"
 #include <string>
@@ -150,13 +151,30 @@ CXXRecordDecl *TemplateInstantiator::InstantiateClassTemplate(
       ClonedParams.push_back(ClonedParam);
     }
     
+    // Clone method body using StmtCloner to avoid sharing the original
+    // template's body AST with the specialization (W6-P2-3).
+    Stmt *ClonedBody = nullptr;
+    if (Method->getBody()) {
+      StmtCloner BodyCloner(Inst);
+      // Register mapping from original params to cloned params so that
+      // DeclRefExprs inside the body resolve to the cloned declarations.
+      for (unsigned I = 0; I < Method->getParams().size(); ++I) {
+        BodyCloner.registerDeclMapping(Method->getParams()[I], ClonedParams[I]);
+      }
+      ClonedBody = BodyCloner.Clone(Method->getBody());
+    }
+
+    // Access specifier is passed via the constructor parameter (Method->getAccess()),
+    // which correctly propagates the original method's access level (public/protected/
+    // private). CXXMethodDecl stores Access in its own field and getAccess()/setAccess()
+    // work correctly, so no additional setAccess() call is needed here.
     auto *NewMethod = Context.create<CXXMethodDecl>(
         Method->getLocation(),
         Method->getName(),
         SubstMethodType,
         ClonedParams,
         SpecializedRecord,
-        Method->getBody(),
+        ClonedBody,
         Method->isStatic(),
         Method->isConst(),
         Method->isVolatile(),

@@ -88,8 +88,11 @@ QualType TypeDeduction::deduceAutoRefType(QualType DeclaredType, Expr *Init) {
   // Per C++ [dcl.spec.auto]:
   //   auto& x = e;  →  T& where T is the type of e (without decay)
   //   const auto& x = e;  →  const T& (can bind to rvalues)
-  return QualType(Context.getLValueReferenceType(T.getTypePtr()),
-                  T.getQualifiers());
+  //
+  // CV qualifiers belong to the referenced type, not the reference itself
+  // (references cannot be cv-qualified per C++ [dcl.ref]).
+  QualType InnerType = Context.getQualifiedType(T.getTypePtr(), T.getQualifiers());
+  return Context.getLValueReferenceType(InnerType.getTypePtr());
 }
 
 QualType TypeDeduction::deduceAutoForwardingRefType(Expr *Init) {
@@ -446,7 +449,29 @@ QualType TypeDeduction::deduceStructuredBindingType(QualType EType,
     auto *RD = RT->getDecl();
     if (!RD) return QualType();
 
-    // Try to get the Index-th field
+    // Tuple-like types (std::tuple<Ts...>, std::pair<T1, T2>):
+    // Per C++ [dcl.struct.bind], when the type is tuple-like, the i-th
+    // binding's type is std::tuple_element<i, E>::type.  For template
+    // specializations named "tuple" or "pair", the template arguments
+    // directly encode the element types, so we use them instead of
+    // traversing fields (which would hit internal implementation details).
+    if (auto *Spec = llvm::dyn_cast<ClassTemplateSpecializationDecl>(RD)) {
+      llvm::StringRef Name = RD->getName();
+      bool IsTupleLike = (Name == "tuple" || Name.ends_with("::tuple") ||
+                          Name == "pair" || Name.ends_with("::pair"));
+      if (IsTupleLike && Index < Spec->getNumTemplateArgs()) {
+        const TemplateArgument &Arg = Spec->getTemplateArg(Index);
+        if (Arg.isType()) {
+          QualType ElemType = Arg.getAsType();
+          return QualType(Context.getLValueReferenceType(ElemType.getTypePtr()),
+                          ElemType.getQualifiers());
+        }
+      }
+      // For non-tuple-like specializations or out-of-range index,
+      // fall through to aggregate field lookup below.
+    }
+
+    // Aggregate: try to get the Index-th field
     unsigned FieldIdx = 0;
     for (auto *D : RD->fields()) {
       if (FieldIdx == Index) {

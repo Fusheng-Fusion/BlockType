@@ -182,6 +182,11 @@ bool ConstraintSatisfaction::EvaluateExprRequirement(
       // If substitution failed, the requirement is not satisfied.
       if (SubstType.isNull())
         return false;
+      // Apply the substituted type to the expression for downstream checks.
+      // Per C++ [temp.constr]: substitution must be applied before evaluation.
+      if (SubstType.getTypePtr() != E->getType().getTypePtr()) {
+        E->setType(SubstType);
+      }
     }
 
     // 2. Substitute dependent sub-expressions within E.

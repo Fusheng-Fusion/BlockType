@@ -133,11 +133,11 @@ CatchMatchResult ExceptionAnalysis::CheckCatchMatch(
   if (CatchType.isNull() || ThrowType.isNull())
     return CatchMatchResult::NoMatch;
 
-  // catch(...) matches everything
-  if (CatchType->isVoidType() || CatchType->isBuiltinType()) {
-    // catch(...) is represented as catch(void) or catch(auto)
-    // in some implementations. For now, we check if it's a
-    // catch-all pattern.
+  // catch(...) matches everything.
+  // In this compiler, catch(...) is represented as catch(void).
+  // Only void type should be treated as catch-all — other builtin types
+  // like int are legitimate specific catch types (e.g., catch(int)).
+  if (CatchType->isVoidType()) {
     return CatchMatchResult::ExactMatch;
   }
 
