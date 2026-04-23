@@ -65,6 +65,8 @@ add_subdirectory(tools)
 add_subdirectory(tests/unit)
 add_subdirectory(tests/integration)
 add_subdirectory(tests/benchmark)
+add_subdirectory(tests/cpp23)
+add_subdirectory(tests/cpp26)
 
 # 安装配置
 install(DIRECTORY include/blocktype
