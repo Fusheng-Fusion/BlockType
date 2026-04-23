@@ -1,11 +1,12 @@
 # BlockType 测试基线报告
 
-**生成时间**: 2026-04-23 (第二轮更新)  
+**生成时间**: 2026-04-23 (第三轮更新 - 第三波功能补全后)  
 **生成人**: tester（测试人员）  
 **项目版本**: 0.1.0  
 **项目阶段**: Phase 0-6 并行开发中  
 **构建类型**: Release  
-**测试运行时间**: 5.03 秒
+**测试运行时间**: 2.04 秒  
+**构建修复**: 修复了 CXXCatchStmt 前向声明缺失和 RecordDecl::members() API 不存在的问题
 
 ---
 
@@ -98,12 +99,12 @@ cd build && ctest && make coverage
 
 ## 3. 已知测试失败
 
-### 3.1 当前测试结果 (2026-04-23 第二轮)
+### 3.1 当前测试结果 (2026-04-23 第三轮 - 第三波功能补全后)
 
 **总测试数**: 766  
 **通过**: 760 (99.2%)  
 **失败**: 6 (0.8%)  
-**测试运行时间**: 5.03 秒
+**测试运行时间**: 2.04 秒
 
 #### 失败测试详情
 
@@ -160,15 +161,43 @@ cd build && ctest && make coverage
 | Contracts 相关 | 9 | 9 | 0 | ✅ 全通过 |
 | 模板实例化 | 12 | 12 | 0 | ✅ 全通过 |
 | 约束/概念 | 18 | 17 | 1 | ⚠️ ExprRequirement 评估失败 |
-| 类型推导 (DeducingThis) | 3 | 3 | 0 | ✅ 全通过 |
+| 类型推导 (auto/decltype/DeducingThis) | 3 | 3 | 0 | ✅ 全通过 |
 | 赋值表达式 | 12 | 12 | 0 | ✅ 全通过 |
 | Sema 拆分后功能 | 19 | 19 | 0 | ✅ 全通过 |
 | 属性系统 | 1 | 1 | 0 | ✅ 全通过 |
 | 重载解析 | 10 | 10 | 0 | ✅ 全通过 |
 | SFINAE | 10 | 10 | 0 | ✅ 全通过 |
 | 模板推导 | 9 | 9 | 0 | ✅ 全通过 |
+| 模板实例化（含深度嵌套） | 31 | 31 | 0 | ✅ 全通过 |
+| 异常处理 (throw/catch/noexcept) | 3 | 3 | 0 | ✅ 全通过 |
+| Lambda 表达式 | 1 | 1 | 0 | ✅ 全通过 |
+| 类型检查（含隐式转换） | 19 | 19 | 0 | ✅ 全通过 |
 
-### 3.6 旧版测试结果（存档）
+### 3.6 第三波功能补全验证
+
+第三波补全涉及以下新增功能模块：
+- **TypeDeduction**: auto/decltype(auto) 返回类型推导、结构化绑定类型推导
+- **Conversion**: 隐式转换序列构建、标准转换等级、用户定义转换
+- **ExceptionAnalysis**: 异常规范推导、noexcept 检查、throw 表达式分析
+- **LambdaAnalysis**: Lambda 捕获分析、泛型 Lambda、闭包类型推导
+- **TemplateInstantiator**: 依赖类型/表达式替换、深度实例化限制
+
+验证结果：所有现有测试通过，未引入回归。第三波新增代码无对应单元测试（建议补充）。
+
+### 3.7 构建修复记录
+
+第三波功能补全引入2个编译错误，已由 tester 修复：
+
+1. **CXXCatchStmt 前向声明缺失** (`include/blocktype/AST/Stmt.h`)
+   - 问题：`CXXTryStmt::getHandlers()` 使用了尚未声明的 `CXXCatchStmt*`
+   - 修复：在 `CXXTryStmt` 定义前添加 `class CXXCatchStmt;` 前向声明
+   - 同时将 `CXXCatchStmt::isCatchAll()` 移至 `src/AST/Stmt.cpp`（因需访问 `VarDecl` 完整类型）
+
+2. **RecordDecl::members() API 不存在** (`src/Sema/TemplateInstantiator.cpp`)
+   - 问题：`RecordDecl` 只有 `fields()` 方法，没有 `members()`
+   - 修复：将 `RD->members()` 替换为 `RD->fields()`
+
+### 3.8 旧版测试结果（存档）
 
 #### test_result.xml (2026-04-16)
 

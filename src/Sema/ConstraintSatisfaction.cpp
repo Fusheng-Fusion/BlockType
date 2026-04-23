@@ -178,14 +178,27 @@ bool ConstraintSatisfaction::EvaluateExprRequirement(
     // Substitute the expression's type if it is dependent.
     if (E->getType().getTypePtr() && E->getType()->isDependentType()) {
       QualType SubstType = CurrentSubstInst.substituteType(E->getType());
-      (void)SubstType; // Type is now substituted, expression can be evaluated
+      // If substitution failed, the requirement is not satisfied.
+      if (SubstType.isNull())
+        return false;
     }
   }
-    return false;
 
   // Expression validity check:
-  // A non-null expression is considered well-formed for our purposes.
-  // Full validity checking would require attempting type-checking on E.
+  // A non-null expression that has survived substitution is considered
+  // well-formed. Evaluate the expression as a constant boolean.
+  // Per C++ [temp.constr.expr]: an expression requirement is satisfied
+  // if the expression is valid and, when evaluated, yields true.
+  ConstantExprEvaluator Eval(SemaRef.getASTContext());
+  auto Result = Eval.Evaluate(E);
+  if (Result.isSuccess() && Result.isIntegral()) {
+    return Result.getInt().getBoolValue();
+  }
+
+  // If we cannot evaluate the expression, the requirement is satisfied
+  // as long as the expression is well-formed (non-null, non-dependent).
+  // This handles cases like `requires { expr; }` where expr is valid
+  // but not a constant expression.
   return true;
 }
 

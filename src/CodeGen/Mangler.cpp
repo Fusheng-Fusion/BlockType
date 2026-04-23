@@ -84,32 +84,52 @@ std::string Mangler::getMangledName(const VarDecl *VD) {
 
 std::string Mangler::getVTableName(const CXXRecordDecl *RD) {
   if (!RD) return "_ZTV";
-  
+
   // Itanium C++ ABI: vtable name = _ZTV + <mangled-name>
-  // 例如：_ZTVN3foo3BarE for class foo::Bar
-  std::string Name = "_ZTVN";  // N 表示 nested name
-  mangleNestedName(RD, Name);
-  Name += 'E';  // E 结束 nested name
+  // For a top-level (non-nested) class: _ZTV3Foo (no N/E wrapper)
+  // For a nested class: _ZTVN3foo3BarE (N/E wrapper for nested name)
+  std::string Name = "_ZTV";
+  if (RD->getParent()) {
+    // Nested class: use N...E wrapper
+    Name += 'N';
+    mangleNestedName(RD, Name);
+    Name += 'E';
+  } else {
+    // Top-level class: just the source name
+    mangleSourceName(RD->getName(), Name);
+  }
   return Name;
 }
 
 std::string Mangler::getRTTIName(const CXXRecordDecl *RD) {
   if (!RD) return "_ZTI";
-  
+
   // Itanium C++ ABI: typeinfo name = _ZTI + <mangled-name>
-  std::string Name = "_ZTIN";  // N 表示 nested name
-  mangleNestedName(RD, Name);
-  Name += 'E';  // E 结束 nested name
+  // Same nested/top-level distinction as vtable.
+  std::string Name = "_ZTI";
+  if (RD->getParent()) {
+    Name += 'N';
+    mangleNestedName(RD, Name);
+    Name += 'E';
+  } else {
+    mangleSourceName(RD->getName(), Name);
+  }
   return Name;
 }
 
 std::string Mangler::getTypeinfoName(const CXXRecordDecl *RD) {
   if (!RD) return "_ZTS";
-  
+
   // Itanium C++ ABI: typeinfo string name = _ZTS + <mangled-name>
-  std::string Name = "_ZTSN";  // N 表示 nested name
-  mangleNestedName(RD, Name);
-  Name += 'E';  // E 结束 nested name
+  // Same nested/top-level distinction as vtable.
+  std::string Name = "_ZTS";
+  if (RD->getParent()) {
+    Name += 'N';
+    mangleNestedName(RD, Name);
+    Name += 'E';
+  } else {
+    mangleSourceName(RD->getName(), Name);
+  }
   return Name;
 }
 

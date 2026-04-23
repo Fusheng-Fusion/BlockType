@@ -456,6 +456,8 @@ public:
 // Exception Handling Statements
 //===----------------------------------------------------------------------===//
 
+class CXXCatchStmt;
+
 /// CXXTryStmt - C++ try statement.
 class CXXTryStmt : public Stmt {
   Stmt *TryBlock;
@@ -499,10 +501,7 @@ public:
   SourceLocation getCatchLoc() const { return getLocation(); }
 
   /// Check if this is a catch-all handler (catch(...)).
-  bool isCatchAll() const {
-    return ExceptionDecl == nullptr ||
-           ExceptionDecl->getType()->isVoidType();
-  }
+  bool isCatchAll() const;
 
   NodeKind getKind() const override { return NodeKind::CXXCatchStmtKind; }
 

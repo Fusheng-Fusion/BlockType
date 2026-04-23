@@ -7,5 +7,14 @@
     "content": "第三波功能补全已全部完成！请立即审查以下修复：\n\n**Task 1: auto/decltype 完整类型推导**\n- 新增 deduceDecltypeDoubleParenType、deduceConstAutoRefType 等7个推导函数\n- 文件：src/Sema/TypeDeduction.cpp, include/blocktype/Sema/TypeDeduction.h\n\n**Task 2: 模板实例化关键路径打通**\n- 修复 static CurrentInstantiationDepth 线程安全bug\n- 实现 substituteDependentType/substituteDependentExpr\n- 1024深度限制 + SFINAE上下文管理\n- 文件：src/Sema/TemplateInstantiator.cpp, src/Sema/Sema.cpp\n\n**Task 3: 异常处理 Sema 分析**\n- 新建 ExceptionAnalysis.h/.cpp\n- CheckThrowExpr/CheckCatchMatch/CheckNoexceptSpec 等6个函数\n- 文件：src/Sema/ExceptionAnalysis.cpp, include/blocktype/Sema/ExceptionAnalysis.h\n\n**Task 4: Lambda Sema 分析补全**\n- 新建 LambdaAnalysis.h/.cpp\n- CheckCaptureODrUse/DeduceInitCaptureType/CheckGenericLambda 等6个函数\n- 文件：src/Sema/LambdaAnalysis.cpp, include/blocktype/Sema/LambdaAnalysis.h\n\n**Task 5: 隐式转换序列补全**\n- 增强派生到基类转换、限定转换、数组/函数到指针衰减\n- 文件：src/Sema/Conversion.cpp, include/blocktype/Sema/Conversion.h\n\n审查重点：\n1. 新增代码是否完整实现（不是空壳或TODO）\n2. 是否引入新问题\n3. 线程安全修复是否正确\n4. 新模块(ExceptionAnalysis/LambdaAnalysis)架构是否合理\n5. 与 Clang 对应实现的对比\n\n完成后通过 send_message 通知我。",
     "timestamp": "2026-04-23T00:16:44.673Z",
     "read": true
+  },
+  {
+    "id": "msg-1776905109005-a5a6ue",
+    "from": "team-lead",
+    "to": "reviewer",
+    "type": "message",
+    "content": "第四波修复已完成，请立即审查以下4个修复：\n\n**Task 1: deduceDecltypeType 引用错误修复**\n- 文件：`src/Sema/TypeDeduction.cpp`\n- 修复：区分 unparenthesized id-expression（直接返回声明类型）和其他表达式（按值类别推导）\n- 验证：`decltype(x)` 应返回 `int`，`decltype((x))` 应返回 `int&`\n\n**Task 2: EvaluateExprRequirement 修复**\n- 文件：`src/Sema/ConstraintSatisfaction.cpp`\n- 修复：删除无条件 `return false`，使用 `ConstantExprEvaluator` 评估表达式\n\n**Task 3: Mangler 嵌套名修饰修复**\n- 文件：`src/CodeGen/Mangler.cpp`\n- 修复：检查 `RD->getParent()` 判断嵌套类型，顶层类不添加 N/E\n\n**Task 4: HTTPClient::urlEncode UB 修复**\n- 文件：`src/AI/HTTPClient.cpp`\n- 修复：使用 `curl_easy_init()` 获取有效 handle，失败时 RFC 3986 手动编码回退\n\n审查重点：\n1. decltype 修复是否符合 C++ [dcl.type.decltype] 标准\n2. ExprRequirement 评估是否完整\n3. Mangler 修复是否符合 Itanium C++ ABI\n4. HTTPClient 修复是否有资源泄漏\n\n完成后通过 send_message 通知我。",
+    "timestamp": "2026-04-23T00:45:09.005Z",
+    "read": true
   }
 ]

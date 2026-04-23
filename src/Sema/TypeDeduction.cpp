@@ -165,9 +165,38 @@ QualType TypeDeduction::deduceDecltypeType(Expr *E) {
   QualType T = E->getType();
   if (T.isNull()) return QualType();
 
-  // decltype rules (C++ [dcl.type.decltype]):
-  // - decltype(id) → declared type of id (no reference stripping)
-  // - decltype(expr) → type of expr, preserving value category:
+  // C++ [dcl.type.decltype]p1:
+  //
+  // 1. If E is an unparenthesized id-expression or an unparenthesized
+  //    class member access, decltype(E) yields the declared type of E.
+  //    (No reference is added based on value category.)
+  //
+  // 2. Otherwise (E is a parenthesized expression or any other expression):
+  //    - xvalue → T&&
+  //    - lvalue → T&
+  //    - prvalue → T
+  //
+  // The key distinction: decltype(x) returns the declared type of x (e.g., int),
+  // while decltype((x)) returns a reference type (e.g., int&) because (x) is
+  // an lvalue expression, not an unparenthesized id-expression.
+  //
+  // For an unparenthesized id-expression (DeclRefExpr or MemberExpr without
+  // surrounding ParenExpr), we return the declared type directly.
+
+  if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(E)) {
+    // Unparenthesized id-expression: return the declared type of the entity.
+    // The type from the DeclRefExpr already reflects the declared type.
+    // Do NOT add reference based on value category.
+    return T;
+  }
+
+  if (auto *ME = llvm::dyn_cast<MemberExpr>(E)) {
+    // Unparenthesized class member access: return the declared type of the member.
+    return T;
+  }
+
+  // For all other expressions (including parenthesized id-expressions),
+  // apply value-category-based deduction:
   //   - xvalue → T&&
   //   - lvalue → T&
   //   - prvalue → T

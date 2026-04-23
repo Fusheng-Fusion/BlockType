@@ -246,6 +246,11 @@ void CXXTryStmt::dump(raw_ostream &OS, unsigned Indent) const {
 // CXXCatchStmt
 //===----------------------------------------------------------------------===//
 
+bool CXXCatchStmt::isCatchAll() const {
+  return ExceptionDecl == nullptr ||
+         ExceptionDecl->getType()->isVoidType();
+}
+
 void CXXCatchStmt::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << "CXXCatchStmt: catch\n";

@@ -205,7 +205,29 @@ llvm::Expected<HTTPResponse> HTTPClient::get(
 std::string HTTPClient::urlEncode(llvm::StringRef Str) {
   initCurl();
 
-  char* Encoded = curl_easy_escape(nullptr, Str.data(), Str.size());
+  // curl_easy_escape requires a valid CURL handle.
+  // Passing nullptr is undefined behavior per libcurl documentation.
+  CURL *Curl = curl_easy_init();
+  if (!Curl) {
+    // Fallback: manual percent-encoding for ASCII safe chars
+    std::string Result;
+    for (char C : Str) {
+      if (std::isalnum(static_cast<unsigned char>(C)) || C == '-' || C == '_' ||
+          C == '.' || C == '~') {
+        Result += C;
+      } else {
+        char Buf[4];
+        std::snprintf(Buf, sizeof(Buf), "%%%02X",
+                      static_cast<unsigned char>(C));
+        Result += Buf;
+      }
+    }
+    return Result;
+  }
+
+  char *Encoded = curl_easy_escape(Curl, Str.data(), Str.size());
+  curl_easy_cleanup(Curl);
+
   if (!Encoded) {
     return Str.str();
   }

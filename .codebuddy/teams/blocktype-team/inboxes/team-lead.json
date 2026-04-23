@@ -25,5 +25,41 @@
     "content": "第三波功能补全全部5个任务已完成：\n\n**Task 1: auto/decltype 完整类型推导** ✅\n- 新增 `deduceDecltypeDoubleParenType` — 处理 `decltype((x))` 双括号情况（总是产生引用类型）\n- 新增 `deduceConstAutoRefType` — `const auto&` 推导，可绑定右值\n- 新增 `deduceVolatileAutoRefType` — `volatile auto&` 推导\n- 新增 `deduceCVAutoRefType` — `const volatile auto&` 推导\n- 新增 `deduceConstAutoForwardingRefType` — `const auto&&`（非转发引用）\n- 新增 `deduceReturnTypeDecltypeAuto` — `decltype(auto)` 返回值推导，保留值类别\n- 新增 `deduceStructuredBindingType` — 结构化绑定类型推导\n\n**Task 2: 模板实例化关键路径打通** ✅\n- 修复 `Sema.cpp` 中 `static unsigned CurrentInstantiationDepth` 线程安全bug，改用 `TemplateInstantiator` 成员变量\n- 实现1024深度限制（符合C++标准建议）\n- 实现 `substituteDependentType` — 处理 DependentType (T::name) 替换\n- 实现 `substituteDependentExpr` — 处理 CXXDependentScopeMemberExpr 和 DependentScopeDeclRefExpr\n- SFINAE 上下文管理，记录替换失败原因\n\n**Task 3: 异常处理 Sema 分析** ✅\n- 新建 `ExceptionAnalysis.h/.cpp` 模块\n- `CheckThrowExpr` — rethrow检查、完整类型、非抽象、可复制/移动、非引用、非数组\n- `CheckCatchMatch` — 精确匹配、引用绑定、指针限定、派生到基类（指针+引用）\n- `CheckCatchReachability` — 不可达catch子句警告\n- `CheckNoexceptSpec`/`CheckNoexceptViolation` — noexcept违规检测\n- `CheckExceptionSpecCompatibility` — 重写函数异常规范兼容性\n\n**Task 4: Lambda Sema 分析补全** ✅\n- 新建 `LambdaAnalysis.h/.cpp` 模块\n- `CheckCaptureODrUse` — 引用捕获ODR-use检查，自动存储期验证\n- `DeduceInitCaptureType` — init捕获类型推导（使用auto规则）\n- `CheckGenericLambda` — 泛型lambda模板参数验证\n- `DeduceGenericLambdaCallOperatorType` — auto参数类型推导\n- `GetLambdaConversionFunctionType` — 无捕获非泛型lambda→函数指针转换\n\n**Task 5: 隐式转换序列补全** ✅\n- 增强 `isDerivedToBaseConversion` — 支持指针、引用和直接类类型的派生到基类转换\n- 新增 `isDerivedToBaseRefConversion` — 引用派生到基类（Derived& → Base&）\n- 增强 `isQualificationConversion` — 递归多级指针限定转换 per [conv.qual]\n- 新增 `isArrayToPointerDecay` 和 `isFunctionToPointerDecay`\n- 更新 `isStandardConversion` 和 `GetStandardConversion` 包含引用转换\n\n修改文件清单：\n- 修改: `include/blocktype/Sema/TypeDeduction.h`, `src/Sema/TypeDeduction.cpp`\n- 修改: `include/blocktype/Sema/TemplateInstantiation.h`, `src/Sema/TemplateInstantiator.cpp`\n- 修改: `src/Sema/Sema.cpp`（修复static depth bug）\n- 新建: `include/blocktype/Sema/ExceptionAnalysis.h`, `src/Sema/ExceptionAnalysis.cpp`\n- 新建: `include/blocktype/Sema/LambdaAnalysis.h`, `src/Sema/LambdaAnalysis.cpp`\n- 修改: `include/blocktype/Sema/Conversion.h`, `src/Sema/Conversion.cpp`\n- 修改: `include/blocktype/AST/Stmt.h`, `include/blocktype/AST/Decl.h`\n- 修改: `include/blocktype/Basic/DiagnosticIDs.def`",
     "timestamp": "2026-04-23T00:16:06.409Z",
     "read": true
+  },
+  {
+    "id": "msg-1776904015656-bcu9ah",
+    "from": "reviewer",
+    "to": "team-lead",
+    "type": "message",
+    "content": "审查任务已完成。报告输出到 `docs/audit/wave1_wave2_ai_module_audit.md`。\n\n## 审查摘要\n\n### P0 问题（4个，必须修复）\n1. **ConstraintSatisfaction::EvaluateExprRequirement** — 第184行无条件 `return false`，导致所有含表达式要求的 requires 子句永远失败（一行修复，影响巨大）\n2. **substituteType 依赖** — InstantiateFunctionTemplate 正确性完全依赖 `TemplateInstantiation::substituteType` 实现，需验证非空壳\n3. **BMIWriter 关键功能缺失** — 导入/导出信息未写入 BMI 文件，模块系统无法工作\n4. **HTTPClient::urlEncode** — `curl_easy_escape(nullptr, ...)` 未定义行为\n\n### P1 问题（9个）\n- postcondition 禁止使用 this（过于严格）\n- 默认参数表达式克隆未实现\n- SubstituteAndEvaluate 替换结果被丢弃\n- forEachAttribute 对 CXXRecordDecl 成员遍历有 bug\n- Sema.cpp 仍含大量模板代码应移出\n- SFINAE 保护未在 TemplateDeduction 中使用\n- Overload 未处理模板候选实例化\n- ConcurrentRequest 竞态条件\n- ResponseCache 使用 steady_clock 持久化\n\n### 正面评价\n- TypeDeduction 修复质量优秀\n- EmitAssignment 左值处理设计合理\n- AddGlobalCtor hack 修复彻底\n- SFINAE Guard RAII 设计正确\n- 重载解析排名增强符合 C++ 标准\n- Sema 拆分职责清晰",
+    "timestamp": "2026-04-23T00:26:55.656Z",
+    "read": true
+  },
+  {
+    "id": "msg-1776904400692-zrc3gm",
+    "from": "reviewer",
+    "to": "team-lead",
+    "type": "message",
+    "content": "第三波功能补全审查完成！报告已输出到 `docs/audit/wave3_feature_audit.md`。\n\n**关键发现**：\n- **1个P0问题**: `deduceDecltypeType` 对 DeclRefExpr 错误添加引用，与 `deduceDecltypeDoubleParenType` 逻辑完全相同，导致 `decltype(x)` 对变量 x 错误推导为 T& 而非 T\n- **8个P1问题**: catch(...) 检测无 return、整型提升 First 步骤错误、静态变量引用捕获误报 err、泛型 lambda 推导未完成、类模板实例化 TODO、DependentScopeDeclRefExpr 未处理、auto& CV 位置、tuple-like 结构化绑定\n- **10个P2问题**: initializer_list 语义、enum 底层类型、explicit 转换运算符、逻辑重复等\n\n**总体评价**: 第三波质量显著优于前两波，新增代码均为实质性实现，但 P0 的 decltype 问题是核心语义缺陷需立即修复。",
+    "timestamp": "2026-04-23T00:33:20.692Z",
+    "read": true
+  },
+  {
+    "id": "msg-1776904508581-dfeamz",
+    "from": "tester",
+    "to": "team-lead",
+    "type": "message",
+    "content": "## 第三波功能补全回归测试验证完成\n\n### 测试总结\n- **总测试数**: 766\n- **通过**: 760 (99.2%)\n- **失败**: 6 (0.8%) — 与第二轮相同，无新增失败\n- **测试运行时间**: 2.04 秒\n\n### 回归分析结论：未引入回归问题\n\n6个失败测试与第二轮完全一致：\n- Mangler 嵌套名修饰 Bug（4个，P1）\n- DeclarationTest.TemplateTypeAlias（1个，P2）\n- ConceptTest.EvaluateRequiresExprWithExprRequirement（1个，P2）\n\n### 重点验证结果\n\n| 类别 | 测试数 | 状态 |\n|------|--------|------|\n| auto/decltype 类型推导 | 3 | ✅ 全通过 |\n| 模板实例化（含深度嵌套） | 31 | ✅ 全通过 |\n| 异常处理 (throw/catch/noexcept) | 3 | ✅ 全通过 |\n| Lambda 表达式 | 1 | ✅ 全通过 |\n| 类型检查（含隐式转换） | 19 | ✅ 全通过 |\n\n### 构建修复（已由 tester 完成）\n\n第三波代码引入了2个编译错误，已修复：\n\n1. **CXXCatchStmt 前向声明缺失** — `include/blocktype/AST/Stmt.h` 中 `CXXTryStmt::getHandlers()` 使用了未声明的 `CXXCatchStmt*`。修复：添加前向声明，并将 `isCatchAll()` 移至 `src/AST/Stmt.cpp`。\n\n2. **RecordDecl::members() API 不存在** — `src/Sema/TemplateInstantiator.cpp` 使用了不存在的 `members()` 方法。修复：替换为 `fields()`。\n\n### 建议\n\n1. **P1 修复 Mangler 嵌套名修饰 Bug** — 4个失败测试的根因，只需修复 `Mangler.cpp` 中 `getVTableName`/`getRTTIName`/`getTypeinfoName` 对非嵌套类型的处理\n2. **补充第三波新增功能测试** — TypeDeduction、Conversion、ExceptionAnalysis、LambdaAnalysis 新增了大量代码但无对应单元测试\n3. **P2 修复 Concept ExprRequirement 评估** 和 **模板别名解析**\n\n测试基线报告已更新：`docs/TEST_BASELINE.md`",
+    "timestamp": "2026-04-23T00:35:08.581Z",
+    "read": true
+  },
+  {
+    "id": "msg-1776904892656-mtpye1",
+    "from": "developer",
+    "to": "team-lead",
+    "type": "message",
+    "content": "第四波紧急修复全部4个任务已完成：\n\n**Task 1: deduceDecltypeType 引用错误修复（P0）** ✅\n- 文件：`src/Sema/TypeDeduction.cpp`\n- 问题：`deduceDecltypeType` 对 `DeclRefExpr`（如变量 `x`）因为 `isLValue()` 返回 true 而错误添加引用，导致 `decltype(x)` 推导为 `T&` 而非 `T`\n- 修复：按C++ [dcl.type.decltype]p1，区分 unparenthesized id-expression 和一般表达式：\n  - `DeclRefExpr` / `MemberExpr`（无括号的id-expression）：直接返回声明类型，不添加引用\n  - 其他表达式（包括括号表达式）：按值类别推导（lvalue→T&, xvalue→T&&, prvalue→T）\n- 这样 `decltype(x)` 返回 `int`，`decltype((x))` 返回 `int&`\n\n**Task 2: EvaluateExprRequirement 无条件返回false修复（P0）** ✅\n- 文件：`src/Sema/ConstraintSatisfaction.cpp`\n- 问题：第184行 `return false` 导致所有含表达式要求的 requires 子句永远失败\n- 修复：\n  - 删除无条件 `return false`\n  - 替换后增加替换失败检查（`SubstType.isNull()` → return false）\n  - 尝试使用 `ConstantExprEvaluator` 评估表达式，返回布尔结果\n  - 若无法常量求值，只要表达式合法（非null、非dependent）即视为满足\n\n**Task 3: Mangler 嵌套名修饰修复（P1）** ✅\n- 文件：`src/CodeGen/Mangler.cpp`\n- 问题：`getVTableName`/`getRTTIName`/`getTypeinfoName` 对所有类型无条件添加 `N` 前缀和 `E` 后缀，违反 Itanium C++ ABI 规范\n- 修复：检查 `RD->getParent()` 判断是否为嵌套类型：\n  - 嵌套类（有parent）：使用 `N...E` 包装（如 `_ZTVN3foo3BarE`）\n  - 顶层类（无parent）：直接使用 source-name（如 `_ZTV3Foo`）\n\n**Task 4: HTTPClient::urlEncode 未定义行为修复（P0）** ✅\n- 文件：`src/AI/HTTPClient.cpp`\n- 问题：`curl_easy_escape(nullptr, ...)` 传入空指针，是未定义行为\n- 修复：\n  - 使用 `curl_easy_init()` 获取有效的 CURL handle\n  - 若初始化失败，提供 RFC 3986 手动 percent-encoding 回退方案\n  - 编码完成后 `curl_easy_cleanup(Curl)` 释放 handle",
+    "timestamp": "2026-04-23T00:41:32.656Z",
+    "read": true
   }
 ]

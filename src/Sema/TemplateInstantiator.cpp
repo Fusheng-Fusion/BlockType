@@ -372,7 +372,7 @@ QualType TemplateInstantiator::substituteDependentType(
             auto *RD = RT->getDecl();
             if (RD) {
               // Look up the member name in the record
-              for (auto *D : RD->members()) {
+              for (auto *D : RD->fields()) {
                 if (auto *ND = llvm::dyn_cast<NamedDecl>(D)) {
                   if (ND->getName() == DT->getName()) {
                     if (auto *VD = llvm::dyn_cast<ValueDecl>(ND)) {
@@ -415,7 +415,7 @@ Expr *TemplateInstantiator::substituteDependentExpr(
           auto *RT = llvm::cast<RecordType>(SubstBase.getTypePtr());
           auto *RD = RT->getDecl();
           if (RD) {
-            for (auto *D : RD->members()) {
+            for (auto *D : RD->fields()) {
               if (auto *ND = llvm::dyn_cast<NamedDecl>(D)) {
                 if (ND->getName() == DSME->getMemberName()) {
                   if (auto *VD = llvm::dyn_cast<ValueDecl>(ND)) {
