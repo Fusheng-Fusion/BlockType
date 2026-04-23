@@ -66,11 +66,42 @@ std::string Mangler::getMangledName(const FunctionDecl *FD) {
     return Name;
   }
 
-  // 普通自由函数: _Z<name-len><name><param-types>
-  std::string Name = "_Z";
-  mangleSourceName(FD->getName(), Name);
-  mangleFunctionParamTypes(FD->getParams(), Name);
-  return Name;
+  // 普通自由函数: 需要检查是否在命名空间内
+  // _Z<name-len><name><param-types>           (全局作用域)
+  // _ZN<namespace><name-len><name>E<params>   (命名空间内)
+  {
+    std::string Name = "_Z";
+
+    // Collect namespace chain from FunctionDecl's DeclContext parent chain
+    llvm::SmallVector<llvm::StringRef, 4> NsChain;
+    DeclContext *Ctx = FD->getDeclContext()->getParent();
+    while (Ctx) {
+      if (Ctx->isNamespace()) {
+        auto *NS = reinterpret_cast<NamespaceDecl *>(Ctx);
+        if (!NS->getName().empty()) {
+          NsChain.push_back(NS->getName());
+        }
+      }
+      Ctx = Ctx->getParent();
+    }
+
+    if (!NsChain.empty()) {
+      // Function is inside namespace(s): use nested-name form
+      Name += 'N';
+      // Emit namespaces from outermost to innermost
+      for (auto It = NsChain.rbegin(); It != NsChain.rend(); ++It) {
+        mangleSourceName(*It, Name);
+      }
+      mangleSourceName(FD->getName(), Name);
+      Name += 'E';
+    } else {
+      // Top-level function: simple source-name form
+      mangleSourceName(FD->getName(), Name);
+    }
+
+    mangleFunctionParamTypes(FD->getParams(), Name);
+    return Name;
+  }
 }
 
 std::string Mangler::getMangledName(const VarDecl *VD) {
@@ -86,11 +117,11 @@ std::string Mangler::getVTableName(const CXXRecordDecl *RD) {
   if (!RD) return "_ZTV";
 
   // Itanium C++ ABI: vtable name = _ZTV + <mangled-name>
-  // For a top-level (non-nested) class: _ZTV3Foo (no N/E wrapper)
-  // For a nested class: _ZTVN3foo3BarE (N/E wrapper for nested name)
+  // For a top-level (non-nested, no namespace) class: _ZTV3Foo
+  // For a nested class or class in namespace: _ZTVN3foo3BarE
   std::string Name = "_ZTV";
-  if (RD->getParent()) {
-    // Nested class: use N...E wrapper
+  if (RD->getParent() || hasNamespaceParent(RD)) {
+    // Nested class or class in namespace: use N...E wrapper
     Name += 'N';
     mangleNestedName(RD, Name);
     Name += 'E';
@@ -107,7 +138,7 @@ std::string Mangler::getRTTIName(const CXXRecordDecl *RD) {
   // Itanium C++ ABI: typeinfo name = _ZTI + <mangled-name>
   // Same nested/top-level distinction as vtable.
   std::string Name = "_ZTI";
-  if (RD->getParent()) {
+  if (RD->getParent() || hasNamespaceParent(RD)) {
     Name += 'N';
     mangleNestedName(RD, Name);
     Name += 'E';
@@ -123,7 +154,7 @@ std::string Mangler::getTypeinfoName(const CXXRecordDecl *RD) {
   // Itanium C++ ABI: typeinfo string name = _ZTS + <mangled-name>
   // Same nested/top-level distinction as vtable.
   std::string Name = "_ZTS";
-  if (RD->getParent()) {
+  if (RD->getParent() || hasNamespaceParent(RD)) {
     Name += 'N';
     mangleNestedName(RD, Name);
     Name += 'E';
@@ -425,9 +456,57 @@ void Mangler::mangleNestedName(const CXXRecordDecl *RD,
                                 std::string &Out) {
   if (!RD) return;
 
-  // 检查父类的命名空间层级（简化：只处理类名，不递归处理嵌套类）
-  // 未来可扩展为递归处理嵌套类/命名空间
-  mangleSourceName(RD->getName(), Out);
+  // Itanium C++ ABI: nested-name-specifier encodes the full qualification
+  // from outermost namespace/class to innermost.
+  //   ns::Outer::Inner  →  2ns5Outer5Inner
+  //
+  // We build the parent chain from innermost to outermost, then emit
+  // in reverse order (outermost first).
+
+  llvm::SmallVector<llvm::StringRef, 8> NameChain;
+
+  // Walk up the parent chain: nested classes first
+  const CXXRecordDecl *Cur = RD;
+  while (Cur) {
+    NameChain.push_back(Cur->getName());
+    Cur = Cur->getParent();
+  }
+
+  // Check if the class's DeclContext has namespace parents.
+  // CXXRecordDecl inherits from DeclContext, so we can walk the
+  // DeclContext parent chain to find enclosing namespaces.
+  DeclContext *Ctx = RD->getDeclContext()->getParent();
+  while (Ctx) {
+    if (Ctx->isNamespace()) {
+      // The DeclContext for a NamespaceDecl IS the NamespaceDecl itself,
+      // so we can reinterpret_cast. This is safe because DeclContextKind::Namespace
+      // guarantees the object is a NamespaceDecl.
+      auto *NS = reinterpret_cast<NamespaceDecl *>(Ctx);
+      if (!NS->getName().empty()) {
+        NameChain.push_back(NS->getName());
+      }
+    }
+    Ctx = Ctx->getParent();
+  }
+
+  // Emit names from outermost to innermost (reverse the chain)
+  for (auto It = NameChain.rbegin(); It != NameChain.rend(); ++It) {
+    mangleSourceName(*It, Out);
+  }
+}
+
+bool Mangler::hasNamespaceParent(const CXXRecordDecl *RD) {
+  if (!RD) return false;
+  DeclContext *Ctx = RD->getDeclContext()->getParent();
+  while (Ctx) {
+    if (Ctx->isNamespace()) {
+      auto *NS = reinterpret_cast<const NamespaceDecl *>(Ctx);
+      if (!NS->getName().empty())
+        return true;
+    }
+    Ctx = Ctx->getParent();
+  }
+  return false;
 }
 
 void Mangler::mangleSourceName(llvm::StringRef Name, std::string &Out) {

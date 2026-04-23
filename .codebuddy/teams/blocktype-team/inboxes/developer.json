@@ -16,5 +16,14 @@
     "content": "心跳巡检：请汇报第三波功能补全的进度，包括：auto/decltype推导、模板实例化路径、异常处理Sema、Lambda Sema、隐式转换序列。哪些已完成？哪些仍在进行中？",
     "timestamp": "2026-04-23T00:50:10.761Z",
     "read": true
+  },
+  {
+    "id": "msg-1776906610743-6tyz09",
+    "from": "team-lead",
+    "to": "developer",
+    "type": "message",
+    "content": "第五波修复任务（3个P1，按顺序执行）：\n\n**Task 1: EvaluateExprRequirement 替换不完整（P1）**\n- 文件：`src/Sema/ConstraintSatisfaction.cpp`\n- 问题：EvaluateExprRequirement 仅替换类型未替换子表达式\n- 修复：在类型替换后，对表达式中的子表达式也执行替换（substituteExpr）\n\n**Task 2: mangleNestedName 不递归处理多层嵌套/命名空间（P1）**\n- 文件：`src/CodeGen/Mangler.cpp`\n- 问题：mangleNestedName 不递归处理多层嵌套和命名空间\n- 修复：递归处理 parent 链，从最外层命名空间/类到最内层，正确生成嵌套名修饰\n\n**Task 3: 方法名修饰缺少命名空间前缀（P1）**\n- 文件：`src/CodeGen/Mangler.cpp`\n- 问题：方法名修饰缺少命名空间前缀\n- 修复：方法名修饰时包含所属命名空间/类的完整限定名\n\n每完成一个任务通过 send_message 通知我。请立即开始！",
+    "timestamp": "2026-04-23T01:10:10.743Z",
+    "read": true
   }
 ]

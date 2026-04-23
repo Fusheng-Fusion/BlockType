@@ -97,5 +97,23 @@
     "content": "文档治理与重组执行已全部完成！\n\n## 执行结果汇总\n\n### P0（已完成）\n- **ROADMAP.md** 已重写，移入 `docs/plan/ROADMAP.md`，当前阶段标注为 Phase 7，基于 PROJECT_PLAN_MASTER.md 数据\n- **PHASE_PROGRESS.md** 已更新，标注 Phase 7，移入 `docs/review/PHASE_PROGRESS.md`\n\n### P1（已完成）\n- 创建了 9 个新分类目录：architecture/ archive/ design/ features/ guides/ plan/ review/ status/ examples/\n- 使用 `git mv` 移动了全部文件（保留 Git 历史）\n- 重命名了所有含中文/空格的目录和文件：\n  - `dev status/` → `status/`\n  - `AST功能重构/` → `ast-refactor/`\n  - `原生中英双语方案/` → `bilingual/`\n  - `Unicode字符集支持/` → `unicode/`\n  - `ideal feature.md` → `ideal-features.md`\n  - `开发-前中后-三阶段-核查要求.md` → `dev-checklist.md`\n  - `初始化列表类型推导+双层架构.md` → `init-list-type-deduction.md`\n  - `KEYWORD_MAPPING.md` → `keyword-mapping.md`\n- 全局搜索替换了文档内部链接（69+ 处旧路径引用）\n\n### P2（已完成）\n- **ARCHITECTURE.md** 补充了 AST 重构、Sema 激活、C++26 特性架构等最新变更\n- **AI_API.md** 补充了深度集成 API（AIDiagnosticsHelper、AISecurityChecker）\n- **review/README.md** 更新了审查进度状态\n\n### P3（已完成）\n- 删除了空文件 `review_output/phase1_task1.0_lexer_analysis.md`\n- 删除了所有空目录（project_review/analysis/、dev status/、audit/ 等）\n\n### 验证结果\n- docs/ 根目录：0 个散落文件（重组前 11 个）\n- 含中文/空格的目录名：0 个（重组前 3 个）\n- 空目录：0 个\n- 空文件：0 个\n- 总文件数：141 个\n\nDOC_REORGANIZATION_PLAN.md 状态已更新为\"已执行\"。",
     "timestamp": "2026-04-23T01:03:20.056Z",
     "read": true
+  },
+  {
+    "id": "msg-1776906591125-pi8tx6",
+    "from": "reviewer",
+    "to": "team-lead",
+    "type": "message",
+    "content": "第四波修复审查完成！报告已输出到 `docs/status/audits/wave4_audit.md`。\n\n**关键发现**：\n- **0个P0** — Wave3的P0（decltype引用错误）已彻底修复 ✅\n- **3个P1**: EvaluateExprRequirement仅替换类型未替换子表达式、mangleNestedName不递归处理多层嵌套/命名空间、方法名修饰缺少命名空间前缀\n- **5个P2**: DeclRefExpr隐式转换包装、CompoundRequirement替换结果丢弃、UTF-8多字节处理、CURL handle复用等\n\n**亮点**：\n- decltype修复质量优秀，正确区分DeclRefExpr/MemberExpr（直接返回声明类型）和其他表达式（按值类别推导）\n- HTTPClient urlEncode UB修复彻底，RFC 3986回退方案正确\n- Mangler顶层/嵌套类区分正确，但mangleNestedName需递归化\n\n**Wave3 P0验证**: `decltype(x)`→T 和 `decltype((x))`→T& 均正确 ✅",
+    "timestamp": "2026-04-23T01:09:51.125Z",
+    "read": true
+  },
+  {
+    "id": "msg-1776906905845-omdh3n",
+    "from": "developer",
+    "to": "team-lead",
+    "type": "message",
+    "content": "第五波修复全部3个任务已完成：\n\n**Task 1: EvaluateExprRequirement 替换不完整（P1）** ✅\n- 文件：`src/Sema/ConstraintSatisfaction.cpp`\n- 问题：`EvaluateExprRequirement` 仅替换类型，未替换子表达式\n- 修复：\n  - 在类型替换后，调用 `Instantiator.substituteDependentExpr(E, CurrentSubstInst)` 对表达式中的子表达式执行替换\n  - 处理 `CXXDependentScopeMemberExpr`、`DependentScopeDeclRefExpr` 等依赖表达式\n  - 替换失败时返回 false（需求不满足），而非忽略\n  - 替换成功后使用替换后的表达式进行后续常量求值\n\n**Task 2: mangleNestedName 不递归处理多层嵌套/命名空间（P1）** ✅\n- 文件：`src/CodeGen/Mangler.cpp`\n- 问题：`mangleNestedName` 只输出类名，不递归处理嵌套类和命名空间\n- 修复：\n  - 构建 parent 链：先沿 `CXXRecordDecl::getParent()` 收集嵌套类名\n  - 再沿 `DeclContext::getParent()` 收集命名空间名\n  - 反转链后从最外层到最内层输出（如 `2ns5Outer5Inner`）\n  - 新增 `hasNamespaceParent` 辅助方法检查类是否在命名空间内\n\n**Task 3: 方法名修饰缺少命名空间前缀（P1）** ✅\n- 文件：`src/CodeGen/Mangler.cpp`, `include/blocktype/CodeGen/Mangler.h`\n- 问题：方法名修饰缺少命名空间前缀，自由函数在命名空间内也没有正确修饰\n- 修复：\n  - `mangleNestedName` 已递归处理命名空间，方法名修饰自动包含命名空间前缀\n  - 自由函数：新增命名空间检查，如果函数在命名空间内，使用 `_ZN<ns><name>E<params>` 格式\n  - `getVTableName`/`getRTTIName`/`getTypeinfoName`：更新嵌套判断条件，增加 `hasNamespaceParent` 检查\n  - 在 Mangler.h 中声明 `hasNamespaceParent` 静态方法",
+    "timestamp": "2026-04-23T01:15:05.845Z",
+    "read": true
   }
 ]

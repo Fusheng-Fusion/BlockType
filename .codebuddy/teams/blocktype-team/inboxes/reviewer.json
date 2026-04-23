@@ -25,5 +25,14 @@
     "content": "心跳巡检：请汇报审查进度，包括：第一波+第二波修复质量审查，以及AI/Module模块审查。是否已完成？",
     "timestamp": "2026-04-23T00:50:13.909Z",
     "read": true
+  },
+  {
+    "id": "msg-1776906289116-a1b3m1",
+    "from": "team-lead",
+    "to": "reviewer",
+    "type": "message",
+    "content": "请立即审查第四波修复（4个任务），这是你的当前任务：\n\n**Task 1: deduceDecltypeType 引用错误修复**\n- 文件：`src/Sema/TypeDeduction.cpp`\n- 验证 `decltype(x)` 返回 T vs `decltype((x))` 返回 T& 是否正确\n\n**Task 2: EvaluateExprRequirement 修复**\n- 文件：`src/Sema/ConstraintSatisfaction.cpp`\n- 验证表达式需求评估是否完整\n\n**Task 3: Mangler 嵌套名修饰修复**\n- 文件：`src/CodeGen/Mangler.cpp`\n- 验证 Itanium ABI 合规性\n\n**Task 4: HTTPClient::urlEncode UB修复**\n- 文件：`src/AI/HTTPClient.cpp`\n- 检查资源泄漏\n\n审查报告输出到 `docs/status/audits/wave4_audit.md`，完成后通过 send_message 通知我。",
+    "timestamp": "2026-04-23T01:04:49.116Z",
+    "read": true
   }
 ]

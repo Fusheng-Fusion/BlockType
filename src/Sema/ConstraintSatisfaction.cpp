@@ -174,13 +174,30 @@ bool ConstraintSatisfaction::EvaluateExprRequirement(
 
   // Substitute template arguments if any
   if (!Args.empty() && HasSubstContext) {
-    // Use the stored TemplateInstantiation for type substitution.
-    // Substitute the expression's type if it is dependent.
+    auto &Instantiator = SemaRef.getTemplateInstantiator();
+
+    // 1. Substitute the expression's type if it is dependent.
     if (E->getType().getTypePtr() && E->getType()->isDependentType()) {
       QualType SubstType = CurrentSubstInst.substituteType(E->getType());
       // If substitution failed, the requirement is not satisfied.
       if (SubstType.isNull())
         return false;
+    }
+
+    // 2. Substitute dependent sub-expressions within E.
+    // Per C++ [temp.constr], substitution must be applied to the entire
+    // expression, not just its top-level type. Expressions like
+    // CXXDependentScopeMemberExpr and DependentScopeDeclRefExpr need
+    // to be resolved via substituteDependentExpr.
+    Expr *SubstE = Instantiator.substituteDependentExpr(E, CurrentSubstInst);
+    if (SubstE) {
+      // Substitution succeeded — use the substituted expression for evaluation.
+      E = SubstE;
+    } else {
+      // Substitution failed in a non-SFINAE context — requirement not satisfied.
+      // (In SFINAE context, this would make the constraint unsatisfied, not a
+      // hard error. We treat it as unsatisfied here.)
+      return false;
     }
   }
 

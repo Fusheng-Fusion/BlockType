@@ -135,6 +135,9 @@ private:
   /// 编码嵌套名称限定符（namespace::Class::）。
   void mangleNestedName(const CXXRecordDecl *RD, std::string &Out);
 
+  /// 检查一个 CXXRecordDecl 是否位于命名空间内（通过 DeclContext 父链）。
+  static bool hasNamespaceParent(const CXXRecordDecl *RD);
+
   /// 编码 source-name（长度 + 名称）。
   static void mangleSourceName(llvm::StringRef Name, std::string &Out);
 
