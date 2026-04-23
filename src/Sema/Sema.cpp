@@ -398,8 +398,10 @@ FunctionDecl *Sema::ResolveOverload(llvm::StringRef Name,
                                      const LookupResult &Candidates) {
   SourceLocation CallLoc;
   OverloadCandidateSet OCS(CallLoc);
+  OCS.setSema(*this);
 
   OCS.addCandidates(Candidates);
+  OCS.deduceTemplateCandidates(Args);
 
   if (OCS.empty()) {
     Diags.report(SourceLocation(), DiagID::err_ovl_no_viable_function, Name);

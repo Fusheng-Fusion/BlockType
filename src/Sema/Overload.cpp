@@ -17,6 +17,9 @@
 #include "blocktype/Sema/Overload.h"
 #include "blocktype/Sema/Lookup.h"
 #include "blocktype/Sema/ConstraintSatisfaction.h"
+#include "blocktype/Sema/Sema.h"
+#include "blocktype/Sema/SFINAE.h"
+#include "blocktype/AST/ASTContext.h"
 
 #include "llvm/Support/Casting.h"
 
@@ -247,29 +250,123 @@ void OverloadCandidateSet::addCandidates(const LookupResult &R) {
     if (auto *FD = llvm::dyn_cast<FunctionDecl>(D)) {
       addCandidate(FD);
     } else if (auto *FTD = llvm::dyn_cast<FunctionTemplateDecl>(D)) {
-      // TODO(W6-P2-2): Template argument deduction should be performed here
-      // before adding the candidate. Currently the templated function's parameter
-      // types still contain dependent types (e.g. TemplateTypeParmType) that
-      // have not been substituted with concrete types deduced from call arguments.
-      //
-      // The correct flow per C++ [temp.deduct.call] is:
-      //   1. Deduce template arguments from call argument types using
-      //      TemplateDeduction::DeduceTemplateArguments()
-      //   2. Substitute deduced args into the templated function's signature
-      //      to produce a concrete FunctionDecl
-      //   3. Add that concrete specialization as the candidate
-      //
-      // This cannot be done inside addCandidates() because call arguments (Args)
-      // are not available here — they are only passed to resolve(). The deduction
-      // should ideally happen in resolve() or in Sema::ResolveOverload() between
-      // addCandidates() and resolve(). For now, add the template candidate as-is;
-      // viability checking in resolve() will reject candidates with unresolved
-      // dependent types.
+      // Template candidates are added with their generic templated declaration.
+      // Template argument deduction is performed later in
+      // deduceTemplateCandidates() when call arguments are available.
       if (auto *TemplatedFD = llvm::dyn_cast_or_null<FunctionDecl>(
               FTD->getTemplatedDecl())) {
         addTemplateCandidate(TemplatedFD, FTD);
       }
     }
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// OverloadCandidateSet — deduceTemplateCandidates (W6-P2-2)
+//===----------------------------------------------------------------------===//
+
+void OverloadCandidateSet::deduceTemplateCandidates(
+    llvm::ArrayRef<Expr *> Args) {
+  if (!SemaRef) return;
+
+  for (auto &C : Candidates) {
+    // Only process candidates that came from a function template
+    FunctionTemplateDecl *FTD = C.getTemplate();
+    if (!FTD) continue;
+
+    FunctionDecl *TemplatedFD = C.getFunction();
+    if (!TemplatedFD) continue;
+
+    // Check if parameter types still contain dependent (unresolved) types.
+    // If all params are concrete, deduction was already done implicitly.
+    bool HasDependentParam = false;
+    for (unsigned I = 0; I < TemplatedFD->getNumParams(); ++I) {
+      QualType ParamTy = TemplatedFD->getParamDecl(I)->getType();
+      if (ParamTy.isNull()) continue;
+      if (ParamTy->isDependentType()) {
+        HasDependentParam = true;
+        break;
+      }
+    }
+    if (!HasDependentParam) continue;
+
+    // Execute template argument deduction under SFINAE context.
+    // Per C++ [temp.deduct.call]: deduction failures are not errors.
+    TemplateDeductionInfo Info;
+    TemplateDeductionResult DedResult;
+
+    {
+      SFINAEContext &SFContext =
+          SemaRef->getTemplateInstantiator().getSFINAEContext();
+      unsigned SavedErrors = SemaRef->getDiagnostics().getNumErrors();
+      SFINAEGuard Guard(SFContext, SavedErrors,
+                         &SemaRef->getDiagnostics());
+      DedResult = SemaRef->getTemplateDeduction().DeduceFunctionTemplateArguments(
+          FTD, Args, Info);
+    }
+
+    if (DedResult != TemplateDeductionResult::Success) {
+      // SFINAE: deduction failure — mark candidate as non-viable.
+      C.setViable(false);
+      C.setDeductionResult(DedResult,
+          std::make_unique<TemplateDeductionInfo>(std::move(Info)));
+      switch (DedResult) {
+      case TemplateDeductionResult::TooFewArguments:
+        C.setFailureReason("template deduction: too few arguments");
+        break;
+      case TemplateDeductionResult::TooManyArguments:
+        C.setFailureReason("template deduction: too many arguments");
+        break;
+      case TemplateDeductionResult::Inconsistent:
+        C.setFailureReason("template deduction: inconsistent");
+        break;
+      case TemplateDeductionResult::NonDeducedMismatch:
+        C.setFailureReason("template deduction: non-deduced mismatch");
+        break;
+      default:
+        C.setFailureReason("template deduction failed");
+        break;
+      }
+      continue;
+    }
+
+    // Deduction succeeded — collect deduced template arguments.
+    auto *Params = FTD->getTemplateParameterList();
+    unsigned NumParams = Params ? Params->size() : 0;
+    llvm::SmallVector<TemplateArgument, 4> DeducedArgs =
+        Info.getDeducedArgs(NumParams);
+
+    // Check requires-clause constraint (if any).
+    if (FTD->hasRequiresClause()) {
+      Expr *RequiresClause = FTD->getRequiresClause();
+      bool Satisfied =
+          SemaRef->getConstraintChecker().CheckConstraintSatisfaction(
+              RequiresClause, DeducedArgs);
+      if (!Satisfied) {
+        C.setViable(false);
+        C.setDeductionResult(
+            TemplateDeductionResult::SubstitutionFailure, nullptr);
+        C.setFailureReason("constraint not satisfied");
+        continue;
+      }
+    }
+
+    // Instantiate: substitute deduced args into the template signature.
+    FunctionDecl *Specialization =
+        SemaRef->InstantiateFunctionTemplate(FTD, DeducedArgs, CallLoc);
+
+    if (!Specialization) {
+      C.setViable(false);
+      C.setDeductionResult(
+          TemplateDeductionResult::SubstitutionFailure, nullptr);
+      C.setFailureReason("template instantiation failed");
+      continue;
+    }
+
+    // Replace the candidate's FunctionDecl with the concrete specialization.
+    C.setFunction(Specialization);
+    C.setDeductionResult(TemplateDeductionResult::Success,
+        std::make_unique<TemplateDeductionInfo>(std::move(Info)));
   }
 }
 
@@ -295,6 +392,9 @@ std::pair<OverloadResult, FunctionDecl *>
 OverloadCandidateSet::resolve(llvm::ArrayRef<Expr *> Args) {
   // 1. Check viability of all candidates
   for (auto &C : Candidates) {
+    // Skip candidates already marked as deduction failures (SFINAE).
+    // These were rejected by deduceTemplateCandidates().
+    if (C.isDeductionFailure()) continue;
     C.checkViability(Args);
   }
 

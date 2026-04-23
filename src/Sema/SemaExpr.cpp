@@ -14,7 +14,6 @@
 #include "blocktype/Sema/Sema.h"
 #include "blocktype/Sema/SemaReflection.h"
 #include "blocktype/Sema/TypeDeduction.h"
-#include "blocktype/Sema/TemplateInstantiation.h"
 #include "blocktype/Sema/TemplateDeduction.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
@@ -602,40 +601,13 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
 
   if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(Fn)) {
     Decl *D = DRE->getDecl();
-    llvm::StringRef Name = DRE->getName();  // Get name from DeclRefExpr
     
-    if (!D) {
-      // D is nullptr - this happens for FunctionTemplateDecl
-      // Try to lookup template by name
-      if (!Name.empty()) {
-        if (auto *FTD = Symbols.lookupTemplate(Name)) {
-          if (auto *FuncFTD = llvm::dyn_cast_or_null<FunctionTemplateDecl>(FTD)) {
-            FD = DeduceAndInstantiateFunctionTemplate(FuncFTD, Args, LParenLoc);
-          }
-        }
-      }
-      if (!FD) {
-        // Still no FD, create CallExpr for error recovery
-        auto *CE = Context.create<CallExpr>(LParenLoc, Fn, Args);
-        return ExprResult(CE);
-      }
-    } else if (auto *FunD = llvm::dyn_cast<FunctionDecl>(D)) {
+    if (auto *FunD = llvm::dyn_cast_or_null<FunctionDecl>(D)) {
+      // Fast path: direct FunctionDecl reference
       FD = FunD;
     }
-    // Handle function template: deduce arguments and instantiate
-    if (!FD) {
-      if (auto *FTD = llvm::dyn_cast<FunctionTemplateDecl>(D)) {
-        FD = DeduceAndInstantiateFunctionTemplate(FTD, Args, LParenLoc);
-      }
-    }
-    // Also check if the DeclRefExpr refers to a TemplateDecl by name
-    if (!FD && !Name.empty()) {
-      if (auto *FTD = Symbols.lookupTemplate(Name)) {
-        if (auto *FuncFTD = llvm::dyn_cast_or_null<FunctionTemplateDecl>(FTD)) {
-          FD = DeduceAndInstantiateFunctionTemplate(FuncFTD, Args, LParenLoc);
-        }
-      }
-    }
+    // For FunctionTemplateDecl or D==null, fall through to ResolveOverload
+    // which now handles template deduction via deduceTemplateCandidates
   }
 
   // If not a direct function reference, try overload resolution

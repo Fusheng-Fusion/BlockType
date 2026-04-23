@@ -17,7 +17,9 @@
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Type.h"
 #include "blocktype/Sema/Conversion.h"
+#include "blocktype/Sema/TemplateDeduction.h"  // TemplateDeductionResult, TemplateDeductionInfo
 #include "llvm/ADT/SmallVector.h"
+#include <memory>
 #include <utility>
 
 // Forward declare — used only for constraint-based tie-breaking.
@@ -28,6 +30,7 @@ class ConstraintTieBreaker;
 namespace blocktype {
 
 class LookupResult;
+class Sema;
 
 /// OverloadCandidate - A single candidate in overload resolution.
 class OverloadCandidate {
@@ -50,10 +53,19 @@ class OverloadCandidate {
   /// Failure reason (for error diagnostics).
   llvm::StringRef FailureReason;
 
+  /// Deduction result for template candidates (W6-P2-2).
+  /// Success means deduction succeeded; any other value means the
+  /// candidate should be skipped during viability checking (SFINAE).
+  TemplateDeductionResult DeductionResult = TemplateDeductionResult::Success;
+
+  /// Deduction info: records the deduced template arguments.
+  std::unique_ptr<TemplateDeductionInfo> DeductionInfo;
+
 public:
   explicit OverloadCandidate(FunctionDecl *F) : Function(F) {}
 
   FunctionDecl *getFunction() const { return Function; }
+  void setFunction(FunctionDecl *F) { Function = F; }
   FunctionTemplateDecl *getTemplate() const { return Template; }
   void setTemplate(FunctionTemplateDecl *T) { Template = T; }
   bool isViable() const { return Viable; }
@@ -64,6 +76,17 @@ public:
 
   llvm::StringRef getFailureReason() const { return FailureReason; }
   void setFailureReason(llvm::StringRef Reason) { FailureReason = Reason; }
+
+  /// Deduction state accessors (W6-P2-2).
+  void setDeductionResult(TemplateDeductionResult R,
+                           std::unique_ptr<TemplateDeductionInfo> Info) {
+    DeductionResult = R;
+    DeductionInfo = std::move(Info);
+  }
+  TemplateDeductionResult getDeductionResult() const { return DeductionResult; }
+  bool isDeductionFailure() const {
+    return DeductionResult != TemplateDeductionResult::Success;
+  }
 
   /// Check argument count and conversions.
   bool checkViability(llvm::ArrayRef<Expr *> Args);
@@ -96,6 +119,9 @@ class OverloadCandidateSet {
   /// Constraint checker for tie-breaking via constraint partial ordering.
   class ConstraintSatisfaction *ConstraintChecker = nullptr;
 
+  /// Sema reference for executing template deduction and instantiation (W6-P2-2).
+  class Sema *SemaRef = nullptr;
+
 public:
   explicit OverloadCandidateSet(SourceLocation Loc) : CallLoc(Loc) {}
 
@@ -103,6 +129,9 @@ public:
   void setConstraintChecker(ConstraintSatisfaction *Checker) {
     ConstraintChecker = Checker;
   }
+
+  /// Set the Sema reference (call before deduceTemplateCandidates).
+  void setSema(class Sema &S) { SemaRef = &S; }
 
   /// Add a candidate function.
   OverloadCandidate &addCandidate(FunctionDecl *F);
@@ -113,6 +142,11 @@ public:
 
   /// Add all functions from a LookupResult.
   void addCandidates(const LookupResult &R);
+
+  /// Perform template argument deduction for all template candidates.
+  /// Must be called after addCandidates() and before resolve().
+  /// Deduction failures mark candidates as non-viable (SFINAE).
+  void deduceTemplateCandidates(llvm::ArrayRef<Expr *> Args);
 
   /// Get all candidates.
   llvm::ArrayRef<OverloadCandidate> getCandidates() const { return Candidates; }
