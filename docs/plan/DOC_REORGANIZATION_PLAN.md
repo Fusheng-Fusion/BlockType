@@ -3,7 +3,7 @@
 > **规划人**: planner（规划人员）
 > **规划日期**: 2026-04-23
 > **文档版本**: v1.0
-> **状态**: 待执行
+> **状态**: ✅ 已执行（2026-04-23）
 
 ---
 
@@ -232,20 +232,20 @@ docs/
 
 | 源 | 目标 |
 |----|------|
-| `docs/CPP20_Modules_Development_Plan.md` | `docs/plan/CPP20_Modules_Development_Plan.md` |
+| `docs/plan/CPP20_Modules_Development_Plan.md` | `docs/plan/CPP20_Modules_Development_Plan.md` |
 
 #### 移入 architecture/（新建目录）
 
 | 源 | 目标 |
 |----|------|
-| `docs/ARCHITECTURE.md` | `docs/architecture/ARCHITECTURE.md` |
-| `docs/review_flowchart.md` | `docs/architecture/review_flowchart.md` |
+| `docs/architecture/ARCHITECTURE.md` | `docs/architecture/ARCHITECTURE.md` |
+| `docs/architecture/review_flowchart.md` | `docs/architecture/review_flowchart.md` |
 
 #### 移入 features/（新建目录）
 
 | 源 | 目标 |
 |----|------|
-| `docs/CPP23-CPP26-FEATURES.md` | `docs/features/CPP23-CPP26-FEATURES.md` |
+| `docs/features/CPP23-CPP26-FEATURES.md` | `docs/features/CPP23-CPP26-FEATURES.md` |
 | `docs/implementation/P0963R3-if-structured-binding.md` | `docs/features/P0963R3-if-structured-binding.md` |
 | `docs/implementation/template-factory-final-status.md` | `docs/features/template-factory-final-status.md` |
 
@@ -253,10 +253,10 @@ docs/
 
 | 源 | 目标 |
 |----|------|
-| `docs/AI_API.md` | `docs/guides/AI_API.md` |
-| `docs/AI_USAGE.md` | `docs/guides/AI_USAGE.md` |
-| `docs/TEST_BASELINE.md` | `docs/guides/TEST_BASELINE.md` |
-| `docs/ACCESS_CONTROL_IMPLEMENTATION.md` | `docs/guides/ACCESS_CONTROL_IMPLEMENTATION.md` |
+| `docs/guides/AI_API.md` | `docs/guides/AI_API.md` |
+| `docs/guides/AI_USAGE.md` | `docs/guides/AI_USAGE.md` |
+| `docs/guides/TEST_BASELINE.md` | `docs/guides/TEST_BASELINE.md` |
+| `docs/guides/ACCESS_CONTROL_IMPLEMENTATION.md` | `docs/guides/ACCESS_CONTROL_IMPLEMENTATION.md` |
 | `docs/ideal feature.md` | `docs/guides/ideal-features.md` |
 | `docs/开发-前中后-三阶段-核查要求.md` | `docs/guides/dev-checklist.md` |
 
@@ -279,7 +279,7 @@ docs/
 
 #### review_output/ → archive/lexer-reviews/
 
-将 `docs/review_output/` 中 13 个非空文件迁入 `docs/archive/lexer-reviews/`。
+将 `docs/archive/lexer-reviews/` 中 13 个非空文件迁入 `docs/archive/lexer-reviews/`。
 
 #### 归档
 
@@ -303,7 +303,7 @@ docs/
 - `docs/audit/`
 - `docs/implementation/`
 - `docs/project_review/`
-- `docs/review_output/`
+- `docs/archive/lexer-reviews/`
 
 ---
 

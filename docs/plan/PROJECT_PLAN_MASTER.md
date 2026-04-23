@@ -543,11 +543,11 @@ P2-8 --> P3-1~8 (长期)
 
 | 文档 | 内容 |
 |------|------|
-| docs/ROADMAP.md | 开发路线图 |
-| docs/ARCHITECTURE.md | 架构文档 |
-| docs/CPP23-CPP26-FEATURES.md | C++23/C++26 特性审计 |
-| docs/AI_API.md | AI 功能 API 文档 |
-| docs/AI_USAGE.md | AI 功能使用指南 |
+| docs/plan/ROADMAP.md | 开发路线图 |
+| docs/architecture/ARCHITECTURE.md | 架构文档 |
+| docs/features/CPP23-CPP26-FEATURES.md | C++23/C++26 特性审计 |
+| docs/guides/AI_API.md | AI 功能 API 文档 |
+| docs/guides/AI_USAGE.md | AI 功能使用指南 |
 | docs/ideal feature.md | 理想特性（产品未来规划） |
 | plan.md | 项目根目录规划文档（AST 重构方案） |
 

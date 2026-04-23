@@ -1959,7 +1959,7 @@ DIAG(warn_size_t_suffix_overflow, Warning,
 **参照资源：**
 - Clang 源码：`clang/include/clang/AST/`, `clang/lib/Sema/`, `clang/lib/CodeGen/`
 - C++ 标准提案：P0847R7, P0849R8, P1169R4, P1774R8, P2900R14 等
-- BlockType 现有架构：`docs/ARCHITECTURE.md`
+- BlockType 现有架构：`docs/architecture/ARCHITECTURE.md`
 
 **下一步行动：**
 1. 按本文件清单逐个创建/修改头文件

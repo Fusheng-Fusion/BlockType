@@ -414,7 +414,7 @@ Phase 4 包含 5 个 Stage，共 15 个 Task，预计 5 周完成。
 **开发关键点提示：**
 > 请为 BlockType 实现 Sema 主类。
 >
-> **核心职责**（参照 `docs/ARCHITECTURE.md` Sema 模块）：
+> **核心职责**（参照 `docs/architecture/ARCHITECTURE.md` Sema 模块）：
 > 1. 协调符号表、作用域、类型系统
 > 2. 处理声明（变量、函数、类等）
 > 3. 处理表达式（类型推导、重载决议）

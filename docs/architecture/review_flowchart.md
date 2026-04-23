@@ -353,4 +353,4 @@ sequenceDiagram
 ---
 
 **报告生成时间**: 2026-04-21 20:48
-**文件位置**: `docs/review_flowchart.md`
+**文件位置**: `docs/architecture/review_flowchart.md`

@@ -838,11 +838,11 @@ BlockType/
   
   ## Status
   
-  This project is under active development. See [docs/ROADMAP.md](docs/ROADMAP.md) for the development plan.
+  This project is under active development. See [docs/plan/ROADMAP.md](docs/plan/ROADMAP.md) for the development plan.
   ```
 
-- **E0.4.2** 创建 `docs/ROADMAP.md`
-- **E0.4.3** 创建 `docs/ARCHITECTURE.md`
+- **E0.4.2** 创建 `docs/plan/ROADMAP.md`
+- **E0.4.3** 创建 `docs/architecture/ARCHITECTURE.md`
 - **E0.4.4** 创建 `CONTRIBUTING.md`
 
 **开发关键点提示：**
@@ -854,12 +854,12 @@ BlockType/
 > - 快速开始
 > - 项目状态
 >
-> **docs/ROADMAP.md**：
+> **docs/plan/ROADMAP.md**：
 > - 开发阶段规划
 > - 当前进展
 > - 未来计划
 >
-> **docs/ARCHITECTURE.md**：
+> **docs/architecture/ARCHITECTURE.md**：
 > - 编译器架构概述
 > - 模块划分
 > - 数据流图

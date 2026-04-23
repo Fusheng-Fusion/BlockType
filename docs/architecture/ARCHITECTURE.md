@@ -514,6 +514,34 @@ option(BLOCKTYPE_TARGET_MACOS "Build for macOS" ON)
 option(BLOCKTYPE_TARGET_WINDOWS "Build for Windows" OFF)
 ```
 
+## 架构演进（2026-04 更新）
+
+### AST 重构
+
+BlockType 正在进行 AST 重构，分三个阶段：
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| 阶段 1 | Sema 层从死代码激活为编译流程必要阶段 | ✅ 完成 |
+| 阶段 2 | Parser 委托 Sema 创建节点（155+ 处 Context.create 需迁移） | 🔄 进行中 |
+| 阶段 3 | 完成剩余迁移，统一节点创建流程 | ❌ 未开始 |
+
+**关键变更**：
+- CodeGen 不再修改 AST 节点（纯消费者）
+- Sema 成为编译流程的必要阶段，负责类型标注和语义检查
+- 初始化列表采用双层类型传播架构
+
+### C++26 特性架构
+
+| 特性 | 架构影响 | 状态 |
+|------|---------|------|
+| 静态反射 (P2996) | 新增 ReflexprExpr/ReflexprDecl AST 节点 | ⚠️ 基础框架 |
+| Contracts (P2900R14) | 新增 ContractAttr/ContractDecl AST 节点 | ⚠️ 部分实现（P0 零调用问题） |
+| #embed (P1967R14) | Preprocessor 扩展 | ✅ 完成 |
+| 包索引 T...[N] (P2662R3) | PackIndexExpr AST 节点 | ✅ 完成 |
+
+---
+
 ## 未来规划
 
 1. **WebAssembly 支持**: 编译到 WASM

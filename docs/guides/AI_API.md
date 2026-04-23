@@ -521,7 +521,46 @@ std::cout << Result->Content << std::endl;
 3. **合理设置超时**：根据网络状况调整
 4. **选择合适的模型**：平衡成本和质量
 
+## 深度集成 API（Phase 7.5 规划）
+
+> 以下 API 为规划阶段，尚未实现。
+
+### AIDiagnosticsHelper
+
+AI 辅助诊断，提供智能错误解释和修复建议。
+
+```cpp
+class AIDiagnosticsHelper {
+  AIOrchestrator &AI;
+public:
+  /// 智能错误解释
+  std::string explainError(const Diagnostic &Diag);
+
+  /// 修复建议
+  std::vector<FixIt> suggestFixes(const Diagnostic &Diag);
+
+  /// 代码改进建议
+  std::vector<Suggestion> analyzeCode(const ASTNode *N);
+};
+```
+
+### AISecurityChecker
+
+AI 安全检查，检测潜在安全漏洞。
+
+```cpp
+class AISecurityChecker {
+  AIOrchestrator &AI;
+public:
+  /// 检查安全漏洞
+  std::vector<SecurityWarning> checkSecurity(const TranslationUnitDecl *TU);
+
+  /// 检查内存安全
+  std::vector<MemoryWarning> checkMemorySafety(const FunctionDecl *FD);
+};
+```
+
 ---
 
-**文档版本**: 1.0  
-**最后更新**: 2026-04-14
+**文档版本**: 1.1
+**最后更新**: 2026-04-23
