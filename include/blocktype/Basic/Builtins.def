@@ -1,0 +1,62 @@
+//===--- Builtins.def - Builtin Function Definitions ----------*- C++ -*-===//
+//
+// Part of the BlockType Project, under the Apache License v2.0 with LLVM
+// Exceptions. See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// This file defines the builtin functions recognized by BlockType.
+//
+// The macro BUILTIN(ID, TYPE, ATTRS) is used to define each builtin:
+//   ID    - The name of the builtin (e.g., __builtin_abs)
+//   TYPE  - The type signature encoding:
+//           i=int, l=long, x=long long, v=void, b=bool, z=size_t
+//           U=unsigned, P=pointer, K=const
+//           Format: "ReturnType.Arg1TypeArg2Type..."
+//           Example: "i.i" means int(int), "iUi" means int(unsigned int)
+//   ATTRS - Attribute flags:
+//           n=nothrow, c=const, r=noreturn
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef BUILTIN
+#error "BUILTIN macro must be defined before including this file"
+#endif
+
+// Arithmetic
+BUILTIN(__builtin_abs,         "i.i",    "nc")
+BUILTIN(__builtin_labs,        "l.l",    "nc")
+BUILTIN(__builtin_llabs,       "x.x",    "nc")
+
+// Bit operations
+BUILTIN(__builtin_ctz,         "iUi",    "nc")
+BUILTIN(__builtin_ctzl,        "iUl",    "nc")
+BUILTIN(__builtin_ctzll,       "iUx",    "nc")
+BUILTIN(__builtin_clz,         "iUi",    "nc")
+BUILTIN(__builtin_clzl,        "iUl",    "nc")
+BUILTIN(__builtin_clzll,       "iUx",    "nc")
+BUILTIN(__builtin_popcount,    "iUi",    "nc")
+BUILTIN(__builtin_popcountl,   "iUl",    "nc")
+BUILTIN(__builtin_popcountll,  "iUx",    "nc")
+
+// Byte swapping
+BUILTIN(__builtin_bswap16,     "UsUs",   "nc")
+BUILTIN(__builtin_bswap32,     "UiUi",   "nc")
+BUILTIN(__builtin_bswap64,     "UxUx",   "nc")
+
+// Control flow
+BUILTIN(__builtin_expect,      "x.xb",   "nc")
+BUILTIN(__builtin_unreachable, "v",      "nr")
+BUILTIN(__builtin_trap,        "v",      "nr")
+
+// String / Memory
+BUILTIN(__builtin_strlen,      "zPKc",   "nc")
+BUILTIN(__builtin_memcpy,      "v*v*Pvz", "n")
+BUILTIN(__builtin_memset,      "v*Pviz",  "n")
+BUILTIN(__builtin_memmove,     "v*v*Pvz", "n")
+
+// Type traits
+BUILTIN(__builtin_is_constant_evaluated, "bv", "nc")
+
+#undef BUILTIN

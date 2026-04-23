@@ -269,6 +269,7 @@ private:
   llvm::Value *EmitUnaryOperator(UnaryOperator *UO);
   llvm::Value *EmitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *E);
   llvm::Value *EmitCallExpr(CallExpr *CE);
+  llvm::Value *EmitBuiltinCall(const CallExpr *CE, llvm::StringRef BuiltinName);
   llvm::Value *EmitMemberExpr(MemberExpr *ME);
   llvm::Value *EmitDeclRefExpr(DeclRefExpr *DRE);
   llvm::Value *EmitCastExpr(CastExpr *CE);

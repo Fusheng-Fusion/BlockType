@@ -10,9 +10,11 @@
 #include "blocktype/AST/Type.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
+#include "blocktype/Basic/Builtins.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/StringRef.h"
+#include <cstring>
 
 namespace blocktype {
 
@@ -375,6 +377,86 @@ QualType ASTContext::getMetaInfoType() {
   // per-expression, not per-type.
   static auto *MetaInfo = new MetaInfoType(nullptr, MetaInfoType::RK_Type);
   return QualType(MetaInfo, Qualifier::None);
+}
+
+/// Helper: parse a builtin type signature character (or multi-char sequence)
+/// starting at position \p Pos in \p TypeStr, advancing \p Pos past the
+/// consumed characters.  Returns the corresponding QualType or null on error.
+static QualType parseBuiltinTypeChar(const char *TypeStr, unsigned &Pos,
+                                      ASTContext &Ctx) {
+  char C = TypeStr[Pos];
+  switch (C) {
+  case 'v': return Ctx.getVoidType();
+  case 'b': return Ctx.getBoolType();
+  case 'i': return Ctx.getIntType();
+  case 'l': return Ctx.getLongType();
+  case 'x': return Ctx.getLongLongType();
+  case 'z': return Ctx.getULongType(); // size_t ≈ unsigned long
+  case 'U': {
+    // Unsigned prefix: next char is the base type
+    char Next = TypeStr[Pos + 1];
+    ++Pos; // consume extra char
+    switch (Next) {
+    case 'i': return Ctx.getUIntType();
+    case 'l': return Ctx.getULongType();
+    case 'x': return Ctx.getULongLongType();
+    case 's': return Ctx.getUShortType();
+    default:  return Ctx.getUIntType();
+    }
+  }
+  case 'P': {
+    // Pointer type: P followed by pointee type (simplified as void*)
+    // Skip pointee chars (e.g. PKc = pointer to const char)
+    // For simplicity, treat all pointers as void*
+    unsigned Scan = Pos + 1;
+    if (TypeStr[Scan] == 'K') ++Scan; // skip const
+    // Skip the pointee type char(s)
+    if (TypeStr[Scan] == 'U') { ++Scan; ++Scan; } // unsigned type
+    else if (TypeStr[Scan] != '\0' && TypeStr[Scan] != '.') { ++Scan; }
+    Pos = Scan - 1; // will be incremented by loop
+    return QualType(Ctx.getPointerType(Ctx.getVoidType().getTypePtr()),
+                    Qualifier::None);
+  }
+  case 'K': {
+    // const qualifier — skip and parse underlying type
+    ++Pos;
+    return parseBuiltinTypeChar(TypeStr, Pos, Ctx);
+  }
+  default:
+    return QualType(); // unknown
+  }
+}
+
+FunctionDecl *ASTContext::createImplicitBuiltinDecl(BuiltinID ID,
+                                                      llvm::StringRef Name) {
+  const auto &Info = Builtins::getInfo(ID);
+
+  // Parse return type (first char before '.')
+  QualType RetType = getIntType(); // default
+  unsigned Pos = 0;
+  if (Info.Type && Info.Type[0] != '\0') {
+    RetType = parseBuiltinTypeChar(Info.Type, Pos, *this);
+    if (RetType.isNull()) RetType = getIntType();
+  }
+
+  // Parse parameter types (after first '.')
+  llvm::SmallVector<const Type *, 4> ParamTypes;
+  if (Info.Type) {
+    unsigned Len = static_cast<unsigned>(std::strlen(Info.Type));
+    for (++Pos; Pos < Len; ++Pos) {
+      if (Info.Type[Pos] == '.') continue; // separator
+      QualType PT = parseBuiltinTypeChar(Info.Type, Pos, *this);
+      if (!PT.isNull() && !PT->isVoidType())
+        ParamTypes.push_back(PT.getTypePtr());
+    }
+  }
+
+  auto *FT = getFunctionType(RetType.getTypePtr(), ParamTypes, false);
+  QualType FnType = QualType(FT, Qualifier::None);
+
+  auto *FD = create<FunctionDecl>(SourceLocation(), saveString(Name), FnType,
+                                   llvm::ArrayRef<ParmVarDecl *>());
+  return FD;
 }
 
 } // namespace blocktype

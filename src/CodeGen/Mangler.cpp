@@ -35,6 +35,7 @@ using namespace blocktype;
 
 std::string Mangler::getMangledName(const FunctionDecl *FD) {
   if (!FD) return "";
+  resetSubstitutions();  // 每个顶层 mangle 调用时重置 substitution 表
 
   // CXXConstructorDecl
   if (auto *Ctor = llvm::dyn_cast<CXXConstructorDecl>(FD)) {
@@ -74,12 +75,14 @@ std::string Mangler::getMangledName(const FunctionDecl *FD) {
 
     // Collect namespace chain from FunctionDecl's DeclContext parent chain
     llvm::SmallVector<llvm::StringRef, 4> NsChain;
+    llvm::SmallVector<const void *, 4> NsEntityChain;
     DeclContext *Ctx = llvm::cast<DeclContext>(FD)->getParent();
     while (Ctx) {
       if (Ctx->isNamespace()) {
         if (auto *ND = Ctx->getOwningDecl()) {
           if (!ND->getName().empty()) {
             NsChain.push_back(ND->getName());
+            NsEntityChain.push_back(ND);  // NamespaceDecl 指针
           }
         }
       }
@@ -87,14 +90,32 @@ std::string Mangler::getMangledName(const FunctionDecl *FD) {
     }
 
     if (!NsChain.empty()) {
-      // Function is inside namespace(s): use nested-name form
-      Name += 'N';
-      // Emit namespaces from outermost to innermost
-      for (auto It = NsChain.rbegin(); It != NsChain.rend(); ++It) {
-        mangleSourceName(*It, Name);
+      // Itanium ABI: 如果命名空间链仅包含 std，使用 _ZSt 前缀
+      // 而非 _ZNSt...E 形式
+      if (NsChain.size() == 1 && NsChain[0] == "std") {
+        // std::foo → _ZSt3foo (no N...E wrapper needed)
+        Name += "St";
+        mangleSourceName(FD->getName(), Name);
+      } else {
+        // Function is inside namespace(s): use nested-name form
+        Name += 'N';
+        // Emit namespaces from outermost to innermost
+        for (auto It = NsChain.rbegin(); It != NsChain.rend(); ++It) {
+          // std 命名空间使用 St 缩写
+          if (*It == "std") { Name += "St"; continue; }
+          // 编码前先查找 substitution（基于实体指针）
+          auto EntityIt = NsEntityChain.rbegin() + (It - NsChain.rbegin());
+          const void *Entity = *EntityIt;
+          if (auto Subst = trySubstitution(Entity)) {
+            Name += *Subst;
+          } else {
+            mangleSourceName(*It, Name);
+            if (shouldAddSubstitution(*It)) addSubstitution(Entity);
+          }
+        }
+        mangleSourceName(FD->getName(), Name);
+        Name += 'E';
       }
-      mangleSourceName(FD->getName(), Name);
-      Name += 'E';
     } else {
       // Top-level function: simple source-name form
       mangleSourceName(FD->getName(), Name);
@@ -116,6 +137,7 @@ std::string Mangler::getMangledName(const VarDecl *VD) {
 
 std::string Mangler::getVTableName(const CXXRecordDecl *RD) {
   if (!RD) return "_ZTV";
+  resetSubstitutions();
 
   // Itanium C++ ABI: vtable name = _ZTV + <mangled-name>
   // For a top-level (non-nested, no namespace) class: _ZTV3Foo
@@ -135,6 +157,7 @@ std::string Mangler::getVTableName(const CXXRecordDecl *RD) {
 
 std::string Mangler::getRTTIName(const CXXRecordDecl *RD) {
   if (!RD) return "_ZTI";
+  resetSubstitutions();
 
   // Itanium C++ ABI: typeinfo name = _ZTI + <mangled-name>
   // Same nested/top-level distinction as vtable.
@@ -151,6 +174,7 @@ std::string Mangler::getRTTIName(const CXXRecordDecl *RD) {
 
 std::string Mangler::getTypeinfoName(const CXXRecordDecl *RD) {
   if (!RD) return "_ZTS";
+  resetSubstitutions();
 
   // Itanium C++ ABI: typeinfo string name = _ZTS + <mangled-name>
   // Same nested/top-level distinction as vtable.
@@ -275,12 +299,26 @@ void Mangler::mangleFunctionType(const FunctionType *T, std::string &Out) {
 }
 
 void Mangler::mangleRecordType(const RecordType *T, std::string &Out) {
-  // source-name: <length><name>
-  mangleSourceName(T->getDecl()->getName(), Out);
+  const void *Entity = T->getDecl();  // 基于 Decl 指针标识实体
+  llvm::StringRef Name = T->getDecl()->getName();
+  // 查找 substitution（基于实体指针）
+  if (auto Subst = trySubstitution(Entity)) {
+    Out += *Subst;
+    return;
+  }
+  mangleSourceName(Name, Out);
+  if (shouldAddSubstitution(Name)) addSubstitution(Entity);
 }
 
 void Mangler::mangleEnumType(const EnumType *T, std::string &Out) {
-  mangleSourceName(T->getDecl()->getName(), Out);
+  const void *Entity = T->getDecl();  // 基于 Decl 指针标识实体
+  llvm::StringRef Name = T->getDecl()->getName();
+  if (auto Subst = trySubstitution(Entity)) {
+    Out += *Subst;
+    return;
+  }
+  mangleSourceName(Name, Out);
+  if (shouldAddSubstitution(Name)) addSubstitution(Entity);
 }
 
 void Mangler::mangleTypedefType(const TypedefType *T, std::string &Out) {
@@ -300,9 +338,20 @@ void Mangler::mangleElaboratedType(const ElaboratedType *T, std::string &Out) {
 
 void Mangler::mangleTemplateSpecializationType(
     const TemplateSpecializationType *T, std::string &Out) {
-  // 编码为 N<template-name>I<args>E
-  Out += 'N';
-  mangleSourceName(T->getTemplateName(), Out);
+  // 模板特化类型编码：<template-name>I<args>E
+  // 注意：在参数位置时不需要 N...E 包裹（N...E 仅用于嵌套名称上下文）
+  // ★ 模板名 substitution：基于 TemplateDecl 指针（如果有）或类型指针
+  const void *TemplateEntity = T->getTemplateDecl()
+                                    ? static_cast<const void *>(T->getTemplateDecl())
+                                    : static_cast<const void *>(T);
+  llvm::StringRef TemplateName = T->getTemplateName();
+  if (auto Subst = trySubstitution(TemplateEntity)) {
+    Out += *Subst;
+  } else {
+    mangleSourceName(TemplateName, Out);
+    if (shouldAddSubstitution(TemplateName)) addSubstitution(TemplateEntity);
+  }
+  // ★ 模板参数（类型参数走 substitution 流程，mangleQualType 内部已支持）
   Out += 'I';
   for (const auto &Arg : T->getTemplateArgs()) {
     if (Arg.isType()) {
@@ -310,7 +359,6 @@ void Mangler::mangleTemplateSpecializationType(
     } else if (Arg.isIntegral()) {
       // integral template argument: L<type><value>E
       Out += 'L';
-      // encode type
       const llvm::APSInt &Val = Arg.getAsIntegral();
       if (Val.isSigned() && Val.isNegative()) {
         Out += 'n'; // negative sign
@@ -329,6 +377,8 @@ void Mangler::mangleTemplateSpecializationType(
     // 其他 template argument 类型暂不处理
   }
   Out += 'E';
+  // ★ 整体模板特化类型记录为 substitution 候选
+  addSubstitution(T);
 }
 
 void Mangler::mangleQualType(QualType QT, std::string &Out) {
@@ -417,9 +467,22 @@ void Mangler::mangleQualType(QualType QT, std::string &Out) {
     break;
   }
   case TypeClass::TemplateTypeParm: {
-    // Template type parameter — encode as substitution or vendor extension
-    Out += 'u';
-    Out += "tparam"; // simplified vendor extension
+    // Template type parameter — use standard Itanium ABI encoding
+    auto *TTP = llvm::cast<TemplateTypeParmType>(T);
+    llvm::StringRef ParamName;
+    const void *Entity = nullptr;  // 用于 substitution 的实体指针
+    if (TTP->getDecl()) {
+      ParamName = TTP->getDecl()->getName();
+      Entity = TTP->getDecl();  // TemplateTypeParmDecl 指针
+    }
+    if (ParamName.empty()) ParamName = "tparam";
+    if (!Entity) Entity = TTP;  // fallback: 使用类型指针
+    if (auto Subst = trySubstitution(Entity)) {
+      Out += *Subst;
+    } else {
+      mangleSourceName(ParamName, Out);
+      if (shouldAddSubstitution(ParamName)) addSubstitution(Entity);
+    }
     break;
   }
   case TypeClass::Dependent: {
@@ -457,17 +520,12 @@ void Mangler::mangleNestedName(const CXXRecordDecl *RD,
                                 std::string &Out) {
   if (!RD) return;
 
-  // Itanium C++ ABI: nested-name-specifier encodes the full qualification
-  // from outermost namespace/class to innermost.
-  //   ns::Outer::Inner  →  2ns5Outer5Inner
-  //
-  // We build the parent chain from innermost to outermost, then emit
-  // in reverse order (outermost first).
-
   llvm::SmallVector<llvm::StringRef, 8> NameChain;
+  llvm::SmallVector<const void *, 8> EntityChain;
 
   // First, add the record's own name.
   NameChain.push_back(RD->getName());
+  EntityChain.push_back(RD);  // CXXRecordDecl 指针
 
   // Walk up the parent chain: nested classes and namespaces.
   for (DeclContext *ParentCtx = RD->getDeclContext()->getParent();
@@ -475,19 +533,19 @@ void Mangler::mangleNestedName(const CXXRecordDecl *RD,
     if (ParentCtx->isCXXRecord()) {
       if (auto *ND = ParentCtx->getOwningDecl()) {
         NameChain.push_back(ND->getName());
+        EntityChain.push_back(ND);  // 父类 Decl 指针
       }
     }
   }
 
   // Check if the class's DeclContext has namespace parents.
-  // CXXRecordDecl inherits from DeclContext, so we can walk the
-  // DeclContext parent chain to find enclosing namespaces.
   DeclContext *Ctx = RD->getDeclContext()->getParent();
   while (Ctx) {
     if (Ctx->isNamespace()) {
       if (auto *ND = Ctx->getOwningDecl()) {
         if (!ND->getName().empty()) {
           NameChain.push_back(ND->getName());
+          EntityChain.push_back(ND);  // NamespaceDecl 指针
         }
       }
     }
@@ -496,7 +554,17 @@ void Mangler::mangleNestedName(const CXXRecordDecl *RD,
 
   // Emit names from outermost to innermost (reverse the chain)
   for (auto It = NameChain.rbegin(); It != NameChain.rend(); ++It) {
-    mangleSourceName(*It, Out);
+    // std 命名空间使用 St 缩写
+    if (*It == "std") { Out += "St"; continue; }
+    // 编码前先查找 substitution（基于实体指针）
+    auto EntityIt = EntityChain.rbegin() + (It - NameChain.rbegin());
+    const void *Entity = *EntityIt;
+    if (auto Subst = trySubstitution(Entity)) {
+      Out += *Subst;
+    } else {
+      mangleSourceName(*It, Out);
+      if (shouldAddSubstitution(*It)) addSubstitution(Entity);
+    }
   }
 }
 
@@ -551,6 +619,7 @@ void Mangler::mangleDtorName(const CXXDestructorDecl *Dtor,
 std::string Mangler::getMangledDtorName(const CXXRecordDecl *RD,
                                          DtorVariant Variant) {
   if (!RD) return "_ZN5dummyD0Ev";
+  resetSubstitutions();
   std::string Name = "_ZN";
   mangleNestedName(RD, Name);
   switch (Variant) {

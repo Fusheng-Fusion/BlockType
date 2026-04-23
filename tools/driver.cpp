@@ -9,6 +9,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/Support/TargetSelect.h"
 #include <memory>
 
 using namespace llvm;
@@ -307,6 +308,12 @@ std::shared_ptr<CompilerInvocation> createCompilerInvocation() {
 }
 
 int main(int argc, char *argv[]) {
+  // Initialize LLVM Target components (must be called before any Target operations)
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmPrinters();
+  llvm::InitializeAllAsmParsers();
+
   // 解析命令行参数
   cl::HideUnrelatedOptions(BlockTypeCategory);
   cl::ParseCommandLineOptions(argc, argv, "BlockType - A C++26 compiler with bilingual support\n");

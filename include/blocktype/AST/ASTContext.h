@@ -35,6 +35,10 @@ class TypeDecl;
 class RecordDecl;
 class EnumDecl;
 class TypedefNameDecl;
+class FunctionDecl;
+
+// Forward declaration for BuiltinID
+enum class BuiltinID : unsigned;
 
 /// ASTContext - Manages memory allocation and lifetime of AST nodes.
 ///
@@ -297,6 +301,10 @@ public:
                                   const Type *ClassType,
                                   bool IsConst, bool IsVolatile,
                                   bool IsVariadic);
+
+  /// Create an implicit FunctionDecl for a builtin function.
+  /// Used by Sema when a __builtin_* name is referenced.
+  FunctionDecl *createImplicitBuiltinDecl(BuiltinID ID, llvm::StringRef Name);
 
 private:
   /// Destroys all nodes in reverse order of creation.

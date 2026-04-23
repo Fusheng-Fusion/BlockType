@@ -847,6 +847,9 @@ llvm::Function *CodeGenModule::GetOrCreateFunctionDecl(FunctionDecl *FD) {
   llvm::Function *Fn = llvm::Function::Create(
       FTy, Linkage, Mangle->getMangledName(FD), TheModule.get());
 
+  // 设置 C 调用约定（Itanium ABI 默认）
+  Fn->setCallingConv(llvm::CallingConv::C);
+
   // 设置参数名和 ABI 属性（sret/inreg）
   const FunctionABITy *ABI = getTypes().GetFunctionABI(FD);
   unsigned ArgIdx = 0;
@@ -878,6 +881,13 @@ llvm::Function *CodeGenModule::GetOrCreateFunctionDecl(FunctionDecl *FD) {
       if (ParamIdx < FD->getNumParams()) {
         ParmVarDecl *PVD = FD->getParamDecl(ParamIdx);
         Arg.setName(PVD->getName());
+
+        // signext/zeroext：x86_64 小整数参数需要扩展属性
+        QualType ParamTy = PVD->getType();
+        if (getTypes().shouldSignExtend(ParamTy))
+          Arg.addAttr(llvm::Attribute::SExt);
+        else if (getTypes().shouldZeroExtend(ParamTy))
+          Arg.addAttr(llvm::Attribute::ZExt);
       }
     }
     ++ArgIdx;
@@ -892,6 +902,20 @@ llvm::Function *CodeGenModule::GetOrCreateFunctionDecl(FunctionDecl *FD) {
   }
   if (FD->hasAttr("noreturn")) {
     Fn->setDoesNotReturn();
+  }
+
+  // 返回值 signext/zeroext 属性（x86_64 小整数返回值）
+  if (ABI && ABI->RetInfo.isDirect()) {
+    QualType FDType = FD->getType();
+    if (!FDType.isNull()) {
+      if (auto *FnTy = llvm::dyn_cast<FunctionType>(FDType.getTypePtr())) {
+        QualType RetTy(QualType(FnTy->getReturnType(), Qualifier::None));
+        if (getTypes().shouldSignExtend(RetTy))
+          Fn->addRetAttr(llvm::Attribute::SExt);
+        else if (getTypes().shouldZeroExtend(RetTy))
+          Fn->addRetAttr(llvm::Attribute::ZExt);
+      }
+    }
   }
 
   // 应用全局属性（visibility, weak, dll 等）

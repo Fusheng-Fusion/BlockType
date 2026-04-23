@@ -18,6 +18,9 @@ gtest_discover_tests(blocktype-tests
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
 )
 
+# Basic 单元测试
+add_subdirectory(Basic)
+
 # Lex 单元测试
 add_subdirectory(Lex)
 

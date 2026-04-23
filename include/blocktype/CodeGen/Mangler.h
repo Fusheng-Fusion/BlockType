@@ -17,8 +17,11 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/SmallVector.h"
 #include "blocktype/AST/Type.h"
 #include <string>
+#include <optional>
 
 namespace blocktype {
 
@@ -52,6 +55,60 @@ class ParmVarDecl;
 /// - 命名空间限定需要 DeclContext 父链支持
 class Mangler {
   CodeGenModule &CGM;
+
+  //===------------------------------------------------------------------===//
+  // Substitution 压缩（Itanium ABI §5.3.5）
+  //===------------------------------------------------------------------===//
+  /// 存储 Decl* 或 QualType opaque 指针，基于实体标识而非名称字符串
+  llvm::SmallVector<const void *, 16> Substitutions;
+  unsigned SubstSeqNo = 0;
+
+  /// 判断实体名称是否应加入 substitution 表（长度>1的名称才有价值压缩）
+  bool shouldAddSubstitution(llvm::StringRef Name) const {
+    return Name.size() > 1;
+  }
+
+  /// 将实体指针加入 substitution 表，返回索引
+  unsigned addSubstitution(const void *Entity) {
+    unsigned Idx = SubstSeqNo++;
+    Substitutions.push_back(Entity);
+    return Idx;
+  }
+
+  /// 索引 0 → "S_", 索引 1 → "S0_", 索引 37 → "SA_"
+  std::string getSubstitutionEncoding(unsigned Idx) const {
+    if (Idx == 0) return "S_";
+    std::string Enc = "S";
+    unsigned V = Idx - 1;
+    if (V < 36) {
+      Enc += (V < 10) ? ('0' + V) : ('A' + V - 10);
+    } else {
+      llvm::SmallString<8> Buf;
+      while (V > 0) {
+        unsigned Rem = V % 36;
+        Buf.push_back(Rem < 10 ? ('0' + Rem) : ('A' + Rem - 10));
+        V /= 36;
+      }
+      Enc.append(Buf.rbegin(), Buf.rend());
+    }
+    Enc += '_';
+    return Enc;
+  }
+
+  /// 查找实体指针是否已在 substitution 表中，命中则返回编码
+  std::optional<std::string> trySubstitution(const void *Entity) const {
+    for (unsigned I = 0; I < Substitutions.size(); ++I) {
+      if (Substitutions[I] == Entity)
+        return getSubstitutionEncoding(I);
+    }
+    return std::nullopt;
+  }
+
+  /// 重置 substitution 状态（每次顶层 mangle 调用时使用）
+  void resetSubstitutions() {
+    Substitutions.clear();
+    SubstSeqNo = 0;
+  }
 
 public:
   explicit Mangler(CodeGenModule &M) : CGM(M) {}

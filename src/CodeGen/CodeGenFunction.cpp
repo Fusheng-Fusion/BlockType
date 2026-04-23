@@ -587,10 +587,18 @@ llvm::CallBase *CodeGenFunction::EmitCallOrInvoke(
     llvm::StringRef Name) {
   if (isInTryBlock()) {
     const auto &Target = getCurrentInvokeTarget();
-    return Builder.CreateInvoke(Callee, Target.NormalBB, Target.UnwindBB,
+    auto *Invoke = Builder.CreateInvoke(Callee, Target.NormalBB, Target.UnwindBB,
                                 Args, Name);
+    // 间接调用设置 C 调用约定
+    if (!llvm::isa<llvm::Function>(Callee.getCallee()))
+      Invoke->setCallingConv(llvm::CallingConv::C);
+    return Invoke;
   }
-  return Builder.CreateCall(Callee, Args, Name);
+  auto *Call = Builder.CreateCall(Callee, Args, Name);
+  // 间接调用设置 C 调用约定
+  if (!llvm::isa<llvm::Function>(Callee.getCallee()))
+    Call->setCallingConv(llvm::CallingConv::C);
+  return Call;
 }
 
 llvm::CallBase *CodeGenFunction::EmitNounwindCall(

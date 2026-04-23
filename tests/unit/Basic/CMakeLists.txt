@@ -2,6 +2,7 @@ add_executable(blocktype-basic-test
   DiagnosticsTest.cpp
   SourceLocationTest.cpp
   FixItHintTest.cpp
+  BuiltinTest.cpp
 )
 
 target_link_libraries(blocktype-basic-test

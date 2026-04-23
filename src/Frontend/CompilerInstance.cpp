@@ -16,8 +16,11 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/TargetParser/Host.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
@@ -25,6 +28,7 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/CodeGen.h"
 #include <cstdlib>
 
 using namespace llvm;
@@ -254,16 +258,42 @@ std::unique_ptr<llvm::Module> CompilerInstance::generateLLVMIR(StringRef ModuleN
 }
 
 bool CompilerInstance::runOptimizationPasses(llvm::Module &Module) {
+  unsigned OptLevel = Invocation->CodeGenOpts.OptimizationLevel;
+
   if (Invocation->FrontendOpts.Verbose) {
-    outs() << "  Running optimization passes (O" 
-           << Invocation->CodeGenOpts.OptimizationLevel << ")...\n";
+    outs() << "  Running optimization passes (O" << OptLevel << ")...\n";
   }
 
-  // TODO: Implement optimization passes using LLVM's PassManager
-  // For now, we skip optimization
-  if (Invocation->CodeGenOpts.OptimizationLevel > 0) {
-    errs() << "Warning: Optimization passes not yet implemented\n";
+  // O0: no optimization
+  if (OptLevel == 0) return true;
+
+  // Create PassBuilder
+  llvm::PassBuilder PB;
+
+  // Register Analysis Managers
+  llvm::LoopAnalysisManager LAM;
+  llvm::FunctionAnalysisManager FAM;
+  llvm::CGSCCAnalysisManager CGAM;
+  llvm::ModuleAnalysisManager MAM;
+
+  // Register standard analyses
+  PB.registerModuleAnalyses(MAM);
+  PB.registerCGSCCAnalyses(CGAM);
+  PB.registerFunctionAnalyses(FAM);
+  PB.registerLoopAnalyses(LAM);
+  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+  // Build optimization pipeline based on level
+  llvm::OptimizationLevel Level;
+  switch (OptLevel) {
+  case 1:  Level = llvm::OptimizationLevel::O1; break;
+  case 2:  Level = llvm::OptimizationLevel::O2; break;
+  case 3:  Level = llvm::OptimizationLevel::O3; break;
+  default: Level = llvm::OptimizationLevel::O2; break;
   }
+
+  auto MPM = PB.buildPerModuleDefaultPipeline(Level);
+  MPM.run(Module, MAM);
 
   return true;
 }
@@ -273,19 +303,57 @@ bool CompilerInstance::generateObjectFile(llvm::Module &Module, StringRef Output
     outs() << "  Generating object file: " << OutputPath << "\n";
   }
 
-  // TODO: Implement object file generation using LLVM's TargetMachine
-  // For now, we just emit LLVM IR
-  errs() << "Warning: Object file generation not yet implemented\n";
-  
-  // Fallback: emit LLVM IR to file
+  // Get target triple
+  auto TargetTriple = Module.getTargetTriple();
+  if (TargetTriple.empty())
+    TargetTriple = llvm::sys::getDefaultTargetTriple();
+  Module.setTargetTriple(TargetTriple);
+
+  // Look up target
+  std::string Error;
+  auto *Target = llvm::TargetRegistry::lookupTarget(TargetTriple, Error);
+  if (!Target) {
+    errs() << "Error: " << Error << "\n";
+    return false;
+  }
+
+  // Create TargetMachine
+  llvm::TargetOptions Opt;
+  auto RM = llvm::Reloc::PIC_;  // Default PIC
+  auto CM = Invocation->CodeGenOpts.OptimizationLevel >= 2
+                ? llvm::CodeGenOptLevel::Default
+                : llvm::CodeGenOptLevel::None;
+
+  std::string CPU = Invocation->TargetOpts.CPU;
+  std::string Features = Invocation->TargetOpts.Features;
+
+  auto TM = Target->createTargetMachine(TargetTriple, CPU, Features, Opt,
+                                         RM, llvm::CodeModel::Small, CM);
+  if (!TM) {
+    errs() << "Error: Could not create TargetMachine\n";
+    return false;
+  }
+
+  Module.setDataLayout(TM->createDataLayout());
+
+  // Open output file
   std::error_code EC;
   llvm::raw_fd_ostream Out(OutputPath, EC, llvm::sys::fs::OF_None);
   if (EC) {
-    errs() << "Error: Cannot open output file '" << OutputPath << "': " << EC.message() << "\n";
+    errs() << "Error: Cannot open output file '" << OutputPath
+           << "': " << EC.message() << "\n";
     return false;
   }
-  
-  Module.print(Out, nullptr);
+
+  // Generate object code using legacy PassManager
+  llvm::legacy::PassManager PM;
+  if (TM->addPassesToEmitFile(PM, Out, nullptr,
+                               llvm::CodeGenFileType::ObjectFile)) {
+    errs() << "Error: TargetMachine can't emit object file\n";
+    return false;
+  }
+
+  PM.run(Module);
   Out.flush();
   return true;
 }

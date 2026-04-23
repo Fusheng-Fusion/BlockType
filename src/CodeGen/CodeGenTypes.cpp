@@ -296,6 +296,32 @@ bool CodeGenTypes::shouldUseInReg(QualType ParamTy) const {
   return Info.isInReg();
 }
 
+bool CodeGenTypes::shouldSignExtend(QualType Ty) const {
+  if (Ty.isNull()) return false;
+  auto *BT = llvm::dyn_cast<BuiltinType>(Ty.getTypePtr());
+  if (!BT) return false;
+  // x86_64: 有符号 i1/i8/i16 需要 signext
+  // AArch64: 不需要（AAPCS64 自动扩展）
+  if (!CGM.getTarget().isX86_64()) return false;
+  if (!BT->isSignedInteger()) return false;
+  unsigned Width = CGM.getTarget().getBuiltinSize(BT->getKind()) * 8;
+  return Width < 32;  // i1/i8/i16
+}
+
+bool CodeGenTypes::shouldZeroExtend(QualType Ty) const {
+  if (Ty.isNull()) return false;
+  auto *BT = llvm::dyn_cast<BuiltinType>(Ty.getTypePtr());
+  if (!BT) return false;
+  if (!CGM.getTarget().isX86_64()) return false;
+  if (BT->isSignedInteger()) return false;
+  // bool is not unsigned integer per C++ type system, but x86_64 ABI
+  // requires zeroext for bool parameters/returns (i1 → zeroext to i32)
+  if (BT->getKind() == BuiltinKind::Bool) return true;
+  if (!BT->isUnsignedInteger()) return false;
+  unsigned Width = CGM.getTarget().getBuiltinSize(BT->getKind()) * 8;
+  return Width < 32;
+}
+
 llvm::FunctionType *CodeGenTypes::GetFunctionTypeForDecl(FunctionDecl *FD) {
   // 委托给 GetFunctionABI，返回其中的 FnTy
   return GetFunctionABI(FD)->FnTy;

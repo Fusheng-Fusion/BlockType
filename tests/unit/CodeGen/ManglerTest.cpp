@@ -11,6 +11,7 @@
 #include "blocktype/CodeGen/CodeGenModule.h"
 #include "blocktype/AST/ASTContext.h"
 #include "blocktype/AST/Decl.h"
+#include "blocktype/AST/DeclContext.h"
 #include "blocktype/AST/Type.h"
 #include "blocktype/Basic/SourceManager.h"
 #include "llvm/IR/LLVMContext.h"
@@ -466,6 +467,255 @@ TEST_F(ManglerTest, FunctionWithRecordParam) {
   auto *Param = makeParam("s", QualType(RT, Qualifier::None), 0);
   auto *FD = makeFuncDecl("print", QualType(FTy, Qualifier::None), {Param});
   EXPECT_EQ(M->getMangledName(FD), "_Z5print6String");
+}
+
+//===----------------------------------------------------------------------===//
+// Substitution 压缩测试（Itanium ABI §5.3.5）
+//===----------------------------------------------------------------------===//
+
+TEST_F(ManglerTest, SubstitutionRecordTypeReuse) {
+  // 同一个 record 类型在参数中出现两次，第二次应使用 substitution
+  // void foo(MyClass, MyClass) → _Z3foo7MyClassS_
+  auto *RD = makeRecordDecl("MyClass");
+  auto *RT = makeRecordType(RD);
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+  auto *FTy = makeFuncType(VoidTy, {RT, RT});
+  auto *P1 = makeParam("a", QualType(RT, Qualifier::None), 0);
+  auto *P2 = makeParam("b", QualType(RT, Qualifier::None), 1);
+  auto *FD = makeFuncDecl("foo", QualType(FTy, Qualifier::None), {P1, P2});
+  EXPECT_EQ(M->getMangledName(FD), "_Z3foo7MyClassS_");
+}
+
+TEST_F(ManglerTest, SubstitutionEnumTypeReuse) {
+  // 同一个 enum 类型出现两次
+  // void bar(Color, Color) → _Z3bar5ColorS_
+  auto *ED = makeEnumDecl("Color");
+  auto *ET = makeEnumType(ED);
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+  auto *FTy = makeFuncType(VoidTy, {ET, ET});
+  auto *P1 = makeParam("a", QualType(ET, Qualifier::None), 0);
+  auto *P2 = makeParam("b", QualType(ET, Qualifier::None), 1);
+  auto *FD = makeFuncDecl("bar", QualType(FTy, Qualifier::None), {P1, P2});
+  EXPECT_EQ(M->getMangledName(FD), "_Z3bar5ColorS_");
+}
+
+TEST_F(ManglerTest, SubstitutionMultipleTypes) {
+  // 三个不同类型，第三个引用第一个
+  // void baz(MyClass, Other, MyClass) → _Z3baz7MyClass5OtherS_
+  auto *RD1 = makeRecordDecl("MyClass");
+  auto *RT1 = makeRecordType(RD1);
+  auto *RD2 = makeRecordDecl("Other");
+  auto *RT2 = makeRecordType(RD2);
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+  auto *FTy = makeFuncType(VoidTy, {RT1, RT2, RT1});
+  auto *P1 = makeParam("a", QualType(RT1, Qualifier::None), 0);
+  auto *P2 = makeParam("b", QualType(RT2, Qualifier::None), 1);
+  auto *P3 = makeParam("c", QualType(RT1, Qualifier::None), 2);
+  auto *FD = makeFuncDecl("baz", QualType(FTy, Qualifier::None), {P1, P2, P3});
+  EXPECT_EQ(M->getMangledName(FD), "_Z3baz7MyClass5OtherS_");
+}
+
+TEST_F(ManglerTest, SubstitutionSecondIndex) {
+  // 第一个类型出现两次，但第二次引用第二个类型
+  // void qux(Alpha, Beta, Beta) → _Z3qux5Alpha4BetaS0_
+  // Alpha = S_ (index 0), Beta = S0_ (index 1), second Beta = S0_
+  auto *RD1 = makeRecordDecl("Alpha");
+  auto *RT1 = makeRecordType(RD1);
+  auto *RD2 = makeRecordDecl("Beta");
+  auto *RT2 = makeRecordType(RD2);
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+  auto *FTy = makeFuncType(VoidTy, {RT1, RT2, RT2});
+  auto *P1 = makeParam("a", QualType(RT1, Qualifier::None), 0);
+  auto *P2 = makeParam("b", QualType(RT2, Qualifier::None), 1);
+  auto *P3 = makeParam("c", QualType(RT2, Qualifier::None), 2);
+  auto *FD = makeFuncDecl("qux", QualType(FTy, Qualifier::None), {P1, P2, P3});
+  EXPECT_EQ(M->getMangledName(FD), "_Z3qux5Alpha4BetaS0_");
+}
+
+TEST_F(ManglerTest, SubstitutionResetBetweenCalls) {
+  // 每次 getMangledName 调用应重置 substitution 表
+  auto *RD = makeRecordDecl("MyClass");
+  auto *RT = makeRecordType(RD);
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+  auto *FTy = makeFuncType(VoidTy, {RT});
+  auto *Param = makeParam("x", QualType(RT, Qualifier::None), 0);
+  auto *FD = makeFuncDecl("single", QualType(FTy, Qualifier::None), {Param});
+  // 第一次调用
+  EXPECT_EQ(M->getMangledName(FD), "_Z6single7MyClass");
+  // 第二次调用应产生相同结果（substitution 表已重置）
+  EXPECT_EQ(M->getMangledName(FD), "_Z6single7MyClass");
+}
+
+TEST_F(ManglerTest, SubstitutionStdNamespace) {
+  // std 命名空间中的函数应使用 St 缩写
+  auto *NsStd = new (Ctx.getAllocator().Allocate(sizeof(NamespaceDecl), alignof(NamespaceDecl)))
+      NamespaceDecl(SourceLocation(), "std");
+  NsStd->setOwningDecl(NsStd);  // NamespaceDecl 自身就是 owning decl
+  auto *TU = new (Ctx.getAllocator().Allocate(sizeof(TranslationUnitDecl), alignof(TranslationUnitDecl)))
+      TranslationUnitDecl(SourceLocation());
+  NsStd->setParent(TU);
+
+  auto *IntTy = makeBuiltin(BuiltinKind::Int);
+  auto *FTy = makeFuncType(IntTy, {IntTy});
+  auto *Param = makeParam("x", QualType(IntTy, Qualifier::None), 0);
+  auto *FD = makeFuncDecl("foo", QualType(FTy, Qualifier::None), {Param});
+  FD->setParent(NsStd);
+
+  // std::foo(int) → _ZSt3fooi（St 缩写）
+  EXPECT_EQ(M->getMangledName(FD), "_ZSt3fooi");
+}
+
+TEST_F(ManglerTest, SubstitutionNestedNamespace) {
+  // ns::Foo::bar(int)
+  auto *Ns = new (Ctx.getAllocator().Allocate(sizeof(NamespaceDecl), alignof(NamespaceDecl)))
+      NamespaceDecl(SourceLocation(), "ns");
+  Ns->setOwningDecl(Ns);
+  auto *TU = new (Ctx.getAllocator().Allocate(sizeof(TranslationUnitDecl), alignof(TranslationUnitDecl)))
+      TranslationUnitDecl(SourceLocation());
+  Ns->setParent(TU);
+
+  auto *RD = makeCXXRecordDecl("Foo");
+  RD->setParent(Ns);
+
+  auto *IntTy = makeBuiltin(BuiltinKind::Int);
+  auto *FTy = makeFuncType(IntTy, {IntTy});
+  auto *Param = makeParam("x", QualType(IntTy, Qualifier::None), 0);
+  auto *MD = makeMethodDecl("bar", QualType(FTy, Qualifier::None), {Param}, RD);
+
+  // ns::Foo::bar(int) → _ZN2ns3Foo3barEi
+  EXPECT_EQ(M->getMangledName(MD), "_ZN2ns3Foo3barEi");
+}
+
+TEST_F(ManglerTest, SubstitutionRecordInMemberAndParam) {
+  // 成员函数的类名和参数类型名相同时，参数应使用 substitution
+  // Foo::method(Foo) → _ZN3Foo6methodE3Foo → 但 Foo 在 nested name 中
+  // 实际上在 Itanium ABI 中，nested name 中的类名和参数中的类名
+  // 共享 substitution 表，所以参数中的 Foo 应为 S_
+  auto *RD = makeCXXRecordDecl("Foo");
+  auto *RT = makeRecordType(RD);
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+  auto *FTy = makeFuncType(VoidTy, {RT});
+  auto *Param = makeParam("x", QualType(RT, Qualifier::None), 0);
+  auto *MD = makeMethodDecl("method", QualType(FTy, Qualifier::None), {Param}, RD);
+  // Foo 在 nested name 中被编码为 3Foo 并加入 substitution 表
+  // 参数中的 Foo 应使用 S_ 替代
+  EXPECT_EQ(M->getMangledName(MD), "_ZN3Foo6methodES_");
+}
+
+TEST_F(ManglerTest, SubstitutionNoShortNames) {
+  // 短名称（长度<=1）不应加入 substitution 表
+  auto *RD = makeRecordDecl("A");  // 长度为1，不应加入 substitution
+  auto *RT = makeRecordType(RD);
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+  auto *FTy = makeFuncType(VoidTy, {RT, RT});
+  auto *P1 = makeParam("a", QualType(RT, Qualifier::None), 0);
+  auto *P2 = makeParam("b", QualType(RT, Qualifier::None), 1);
+  auto *FD = makeFuncDecl("test", QualType(FTy, Qualifier::None), {P1, P2});
+  // "A" 不应被 substitution 压缩（长度<=1）
+  EXPECT_EQ(M->getMangledName(FD), "_Z4test1A1A");
+}
+
+TEST_F(ManglerTest, SubstitutionDifferentScopeSameName) {
+  // 不同命名空间中的同名类型不应共享 substitution
+  // ns1::Foo 和 ns2::Foo 是不同的实体，不应误匹配
+  auto *Ns1 = new (Ctx.getAllocator().Allocate(sizeof(NamespaceDecl), alignof(NamespaceDecl)))
+      NamespaceDecl(SourceLocation(), "ns1");
+  Ns1->setOwningDecl(Ns1);
+  auto *Ns2 = new (Ctx.getAllocator().Allocate(sizeof(NamespaceDecl), alignof(NamespaceDecl)))
+      NamespaceDecl(SourceLocation(), "ns2");
+  Ns2->setOwningDecl(Ns2);
+  auto *TU = new (Ctx.getAllocator().Allocate(sizeof(TranslationUnitDecl), alignof(TranslationUnitDecl)))
+      TranslationUnitDecl(SourceLocation());
+  Ns1->setParent(TU);
+  Ns2->setParent(TU);
+
+  // ns1::Foo
+  auto *RD1 = makeCXXRecordDecl("Foo");
+  RD1->setParent(Ns1);
+  // ns2::Foo
+  auto *RD2 = makeCXXRecordDecl("Foo");
+  RD2->setParent(Ns2);
+
+  auto *RT1 = makeRecordType(RD1);
+  auto *RT2 = makeRecordType(RD2);
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+
+  // void func(ns1::Foo, ns2::Foo) — 两个 Foo 是不同实体，不应 substitution
+  auto *FTy = makeFuncType(VoidTy, {RT1, RT2});
+  auto *P1 = makeParam("a", QualType(RT1, Qualifier::None), 0);
+  auto *P2 = makeParam("b", QualType(RT2, Qualifier::None), 1);
+  auto *FD = makeFuncDecl("func", QualType(FTy, Qualifier::None), {P1, P2});
+  // 两个 Foo 来自不同 Decl，不应被 substitution 压缩
+  // 注意：自由函数默认在全局作用域，所以参数类型直接编码
+  EXPECT_EQ(M->getMangledName(FD), "_Z4func3Foo3Foo");
+}
+
+TEST_F(ManglerTest, SubstitutionSameScopeSameName) {
+  // 同一命名空间中的同名类型应共享 substitution
+  auto *Ns = new (Ctx.getAllocator().Allocate(sizeof(NamespaceDecl), alignof(NamespaceDecl)))
+      NamespaceDecl(SourceLocation(), "ns");
+  Ns->setOwningDecl(Ns);
+  auto *TU = new (Ctx.getAllocator().Allocate(sizeof(TranslationUnitDecl), alignof(TranslationUnitDecl)))
+      TranslationUnitDecl(SourceLocation());
+  Ns->setParent(TU);
+
+  // ns::Foo（同一个 Decl）
+  auto *RD = makeCXXRecordDecl("Foo");
+  RD->setParent(Ns);
+  auto *RT = makeRecordType(RD);
+
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+  // void func(Foo, Foo) — 同一个 Foo Decl，第二次应 substitution
+  auto *FTy = makeFuncType(VoidTy, {RT, RT});
+  auto *P1 = makeParam("a", QualType(RT, Qualifier::None), 0);
+  auto *P2 = makeParam("b", QualType(RT, Qualifier::None), 1);
+  auto *FD = makeFuncDecl("func", QualType(FTy, Qualifier::None), {P1, P2});
+  EXPECT_EQ(M->getMangledName(FD), "_Z4func3FooS_");
+}
+
+TEST_F(ManglerTest, SubstitutionTemplateSpecReuse) {
+  // 同一个模板特化类型出现两次，第二次应使用 substitution
+  // void foo(vector<int>, vector<int>) → _Z3foo6vectorIiES_IiE
+  // 第一个: 6vectorIiE (模板名+参数), 第二个: S_IiE (模板名 substitution + 参数)
+  auto *IntTy = makeBuiltin(BuiltinKind::Int);
+  auto *TST = new (Ctx.getAllocator().Allocate(sizeof(TemplateSpecializationType),
+                                                alignof(TemplateSpecializationType)))
+      TemplateSpecializationType("vector");
+  TST->addTemplateArg(TemplateArgument(QualType(IntTy, Qualifier::None)));
+
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+  auto *FTy = makeFuncType(VoidTy, {TST, TST});
+  auto *P1 = makeParam("a", QualType(TST, Qualifier::None), 0);
+  auto *P2 = makeParam("b", QualType(TST, Qualifier::None), 1);
+  auto *FD = makeFuncDecl("foo", QualType(FTy, Qualifier::None), {P1, P2});
+  // 第二个 vector<int> 的模板名使用 S_ 替代，但参数仍需编码
+  EXPECT_EQ(M->getMangledName(FD), "_Z3foo6vectorIiES_IiE");
+}
+
+TEST_F(ManglerTest, SubstitutionTemplateSpecDifferentArgs) {
+  // 不同模板参数的特化类型是不同实体
+  // 由于测试中 TemplateDecl 为 nullptr，模板名 substitution 基于类型指针，
+  // 两个不同的 TemplateSpecializationType 对象不会共享模板名 substitution
+  // void bar(vector<int>, vector<float>) → _Z3bar6vectorIiE6vectorIfE
+  auto *IntTy = makeBuiltin(BuiltinKind::Int);
+  auto *FloatTy = makeBuiltin(BuiltinKind::Float);
+  auto *TST1 = new (Ctx.getAllocator().Allocate(sizeof(TemplateSpecializationType),
+                                                 alignof(TemplateSpecializationType)))
+      TemplateSpecializationType("vector");
+  TST1->addTemplateArg(TemplateArgument(QualType(IntTy, Qualifier::None)));
+  auto *TST2 = new (Ctx.getAllocator().Allocate(sizeof(TemplateSpecializationType),
+                                                 alignof(TemplateSpecializationType)))
+      TemplateSpecializationType("vector");
+  TST2->addTemplateArg(TemplateArgument(QualType(FloatTy, Qualifier::None)));
+
+  auto *VoidTy = makeBuiltin(BuiltinKind::Void);
+  auto *FTy = makeFuncType(VoidTy, {TST1, TST2});
+  auto *P1 = makeParam("a", QualType(TST1, Qualifier::None), 0);
+  auto *P2 = makeParam("b", QualType(TST2, Qualifier::None), 1);
+  auto *FD = makeFuncDecl("bar", QualType(FTy, Qualifier::None), {P1, P2});
+  // 两个不同的模板特化类型对象，TemplateDecl 为 nullptr，
+  // substitution 基于类型指针，不会误匹配
+  EXPECT_EQ(M->getMangledName(FD), "_Z3bar6vectorIiE6vectorIfE");
 }
 
 } // anonymous namespace

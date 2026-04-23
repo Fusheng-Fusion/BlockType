@@ -1,4 +1,5 @@
 add_library(blocktype-basic
+  Builtins.cpp
   Diagnostics.cpp
   FileManager.cpp
   Language.cpp

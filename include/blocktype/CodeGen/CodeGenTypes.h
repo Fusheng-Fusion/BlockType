@@ -184,6 +184,12 @@ public:
   /// 判断返回类型是否需要通过 sret 传递（公开供 CodeGenFunction 使用）
   bool needsSRet(QualType RetTy) const;
 
+  /// 判断参数类型是否需要 signext（x86_64: 有符号小整数 i1/i8/i16）
+  bool shouldSignExtend(QualType Ty) const;
+
+  /// 判断参数类型是否需要 zeroext（x86_64: 无符号小整数 i1/i8/i16）
+  bool shouldZeroExtend(QualType Ty) const;
+
 private:
   //===------------------------------------------------------------------===//
   // 内部类型转换分派

@@ -18,6 +18,7 @@
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Expr.h"
 #include "blocktype/AST/Type.h"
+#include "blocktype/Basic/Builtins.h"
 
 #include "llvm/Support/Casting.h"
 
@@ -71,6 +72,15 @@ ExprResult Sema::ActOnCXXNullPtrLiteral(SourceLocation Loc) {
 
 ExprResult Sema::ActOnDeclRefExpr(SourceLocation Loc, ValueDecl *D,
                                    llvm::StringRef Name) {
+  // ★ __builtin_ prefix → implicit FunctionDecl for builtin functions
+  if (Name.startswith("__builtin_") && Builtins::isBuiltin(Name)) {
+    BuiltinID ID = Builtins::lookup(Name);
+    auto *FD = Context.createImplicitBuiltinDecl(ID, Name);
+    auto *DRE = Context.create<DeclRefExpr>(Loc, FD, Name);
+    if (FD)
+      FD->setUsed();
+    return ExprResult(DRE);
+  }
   auto *DRE = Context.create<DeclRefExpr>(Loc, D, Name);
   // Mark the declaration as used (for warn_unused_variable/function diagnostics)
   if (D)
@@ -600,6 +610,15 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
   if (!Fn)
     return ExprResult::getInvalid();
 
+  // ★ Check if callee is a builtin function
+  bool IsBuiltin = false;
+  if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(Fn)) {
+    llvm::StringRef Name = DRE->getName();
+    if (Name.startswith("__builtin_") && Builtins::isBuiltin(Name)) {
+      IsBuiltin = true;
+    }
+  }
+
   // P7.1.5 Phase 2: Handle lambda expression calls
   // Case 1: Direct lambda expression: [](){}()
   if (auto *LE = llvm::dyn_cast<LambdaExpr>(Fn)) {
@@ -718,6 +737,8 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
     // During incremental migration, fall back to creating a CallExpr
     // without full resolution.
     auto *CE = Context.create<CallExpr>(LParenLoc, Fn, Args);
+    if (IsBuiltin)
+      CE->setIsBuiltinCall(true);
     return ExprResult(CE);
   }
 
@@ -727,6 +748,9 @@ ExprResult Sema::ActOnCallExpr(Expr *Fn, llvm::ArrayRef<Expr *> Args,
 
   // Create the CallExpr
   auto *CE = Context.create<CallExpr>(LParenLoc, Fn, Args);
+  // ★ Mark builtin calls
+  if (IsBuiltin)
+    CE->setIsBuiltinCall(true);
   // Set return type from resolved FunctionDecl
   if (FD) {
     QualType FnType = FD->getType();

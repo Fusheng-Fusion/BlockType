@@ -1265,7 +1265,9 @@ llvm::Value *CGCXX::EmitVirtualCall(CodeGenFunction &CGF, CXXMethodDecl *MD,
 
   // 6. 间接调用
   llvm::FunctionType *FnTy = CGM.getTypes().GetFunctionTypeForDecl(MD);
-  return CGF.getBuilder().CreateCall(FnTy, FuncPtr, CallArgs, "vcall");
+  auto *Call = CGF.getBuilder().CreateCall(FnTy, FuncPtr, CallArgs, "vcall");
+  Call->setCallingConv(llvm::CallingConv::C);
+  return Call;
 }
 
 void CGCXX::InitializeVTablePtr(CodeGenFunction &CGF, llvm::Value *This,

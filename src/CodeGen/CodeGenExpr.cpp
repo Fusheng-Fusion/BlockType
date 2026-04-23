@@ -16,9 +16,11 @@
 #include "blocktype/AST/Attr.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/AST/Type.h"
+#include "blocktype/Basic/Builtins.h"
 
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/Casting.h"
 
 using namespace blocktype;
@@ -761,6 +763,16 @@ CodeGenFunction::emitDefaultArgPromotion(llvm::Value *Arg, QualType ArgType) {
 llvm::Value *CodeGenFunction::EmitCallExpr(CallExpr *CallExpression) {
   if (!CallExpression) {
     return nullptr;
+  }
+
+  // ★ Builtin function call: emit via LLVM intrinsics
+  if (CallExpression->isBuiltinCall()) {
+    if (auto *DRE = llvm::dyn_cast<DeclRefExpr>(CallExpression->getCallee())) {
+      llvm::StringRef BuiltinName = DRE->getName();
+      if (auto *V = EmitBuiltinCall(CallExpression, BuiltinName))
+        return V;
+    }
+    // Fallback: if EmitBuiltinCall returns null, continue to normal path
   }
 
   // 获取被调用函数声明
@@ -2582,4 +2594,138 @@ llvm::Value *CodeGenFunction::EmitCXXFoldExpr(CXXFoldExpr *FE) {
   }
   
   return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
+// Task 8.2.1 — Builtin function call
+//===----------------------------------------------------------------------===//
+
+llvm::Value *CodeGenFunction::EmitBuiltinCall(const CallExpr *CE,
+                                               llvm::StringRef BuiltinName) {
+  BuiltinID ID = Builtins::lookup(BuiltinName);
+  if (ID == BuiltinID::NotBuiltin) return nullptr;
+
+  llvm::SmallVector<llvm::Value *, 8> Args;
+  for (unsigned I = 0; I < CE->getNumArgs(); ++I)
+    Args.push_back(EmitExpr(CE->getArgs()[I]));
+
+  auto &Ctx = CGM.getLLVMContext();
+
+  switch (ID) {
+  case BuiltinID::__builtin_trap:
+    Builder.CreateCall(llvm::Intrinsic::getDeclaration(
+        CGM.getModule(), llvm::Intrinsic::trap));
+    Builder.CreateUnreachable();
+    return nullptr;
+
+  case BuiltinID::__builtin_unreachable:
+    Builder.CreateUnreachable();
+    return nullptr;
+
+  case BuiltinID::__builtin_abs: {
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+                                               llvm::Intrinsic::abs,
+                                               {Args[0]->getType()});
+    auto *IsPoison = llvm::ConstantInt::get(llvm::Type::getInt1Ty(Ctx), 0);
+    return Builder.CreateCall(F, {Args[0], IsPoison});
+  }
+
+  case BuiltinID::__builtin_ctz:
+  case BuiltinID::__builtin_ctzl:
+  case BuiltinID::__builtin_ctzll: {
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+        llvm::Intrinsic::cttz, {Args[0]->getType()});
+    auto *IsPoison = llvm::ConstantInt::get(llvm::Type::getInt1Ty(Ctx), 0);
+    return Builder.CreateCall(F, {Args[0], IsPoison});
+  }
+
+  case BuiltinID::__builtin_clz:
+  case BuiltinID::__builtin_clzl:
+  case BuiltinID::__builtin_clzll: {
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+        llvm::Intrinsic::ctlz, {Args[0]->getType()});
+    auto *IsPoison = llvm::ConstantInt::get(llvm::Type::getInt1Ty(Ctx), 0);
+    return Builder.CreateCall(F, {Args[0], IsPoison});
+  }
+
+  case BuiltinID::__builtin_popcount:
+  case BuiltinID::__builtin_popcountl:
+  case BuiltinID::__builtin_popcountll: {
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+        llvm::Intrinsic::ctpop, {Args[0]->getType()});
+    return Builder.CreateCall(F, {Args[0]});
+  }
+
+  case BuiltinID::__builtin_bswap16:
+  case BuiltinID::__builtin_bswap32:
+  case BuiltinID::__builtin_bswap64: {
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+        llvm::Intrinsic::bswap, {Args[0]->getType()});
+    return Builder.CreateCall(F, {Args[0]});
+  }
+
+  case BuiltinID::__builtin_expect: {
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+        llvm::Intrinsic::expect, {Args[0]->getType()});
+    return Builder.CreateCall(F, {Args[0], Args[1]});
+  }
+
+  case BuiltinID::__builtin_is_constant_evaluated:
+    // TODO: 在 constexpr/consteval 上下文中应返回 true。
+    // 当前 BlockType 没有 constexpr 求值器，所以始终返回 false。
+    return llvm::ConstantInt::getFalse(llvm::Type::getInt1Ty(Ctx));
+
+  case BuiltinID::__builtin_memcpy: {
+    // llvm.memcpy.p0.p0.i64(dst, src, len, false)
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+        llvm::Intrinsic::memcpy,
+        {Args[0]->getType(), Args[1]->getType(), Args[2]->getType()});
+    auto *IsVolatile = llvm::ConstantInt::getFalse(llvm::Type::getInt1Ty(Ctx));
+    return Builder.CreateCall(F, {Args[0], Args[1], Args[2], IsVolatile});
+  }
+
+  case BuiltinID::__builtin_memset: {
+    // llvm.memset.p0.i64(dst, val, len, false)
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+        llvm::Intrinsic::memset,
+        {Args[0]->getType(), Args[2]->getType()});
+    auto *IsVolatile = llvm::ConstantInt::getFalse(llvm::Type::getInt1Ty(Ctx));
+    return Builder.CreateCall(F, {Args[0], Args[1], Args[2], IsVolatile});
+  }
+
+  case BuiltinID::__builtin_memmove: {
+    // llvm.memmove.p0.p0.i64(dst, src, len, false)
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+        llvm::Intrinsic::memmove,
+        {Args[0]->getType(), Args[1]->getType(), Args[2]->getType()});
+    auto *IsVolatile = llvm::ConstantInt::getFalse(llvm::Type::getInt1Ty(Ctx));
+    return Builder.CreateCall(F, {Args[0], Args[1], Args[2], IsVolatile});
+  }
+
+  case BuiltinID::__builtin_strlen: {
+    // strlen → call external strlen function
+    llvm::FunctionType *FT = llvm::FunctionType::get(
+        llvm::Type::getInt64Ty(Ctx),
+        {llvm::PointerType::get(Ctx, 0)}, false);
+    auto Callee = CGM.getModule()->getOrInsertFunction("strlen", FT);
+    return Builder.CreateCall(Callee, {Args[0]}, "strlen");
+  }
+
+  case BuiltinID::__builtin_labs: {
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+        llvm::Intrinsic::abs, {Args[0]->getType()});
+    auto *IsPoison = llvm::ConstantInt::get(llvm::Type::getInt1Ty(Ctx), 0);
+    return Builder.CreateCall(F, {Args[0], IsPoison});
+  }
+
+  case BuiltinID::__builtin_llabs: {
+    auto *F = llvm::Intrinsic::getDeclaration(CGM.getModule(),
+        llvm::Intrinsic::abs, {Args[0]->getType()});
+    auto *IsPoison = llvm::ConstantInt::get(llvm::Type::getInt1Ty(Ctx), 0);
+    return Builder.CreateCall(F, {Args[0], IsPoison});
+  }
+
+  default:
+    return nullptr; // Not yet implemented → fallback to normal function call
+  }
 }

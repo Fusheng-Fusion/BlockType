@@ -713,6 +713,7 @@ public:
 class CallExpr : public Expr {
   Expr *Callee;
   llvm::SmallVector<Expr *, 4> Args;
+  bool IsBuiltinCall = false;
 
 public:
   CallExpr(SourceLocation Loc, Expr *Callee, llvm::ArrayRef<Expr *> Args)
@@ -721,6 +722,10 @@ public:
   Expr *getCallee() const { return Callee; }
   llvm::ArrayRef<Expr *> getArgs() const { return Args; }
   unsigned getNumArgs() const { return Args.size(); }
+
+  /// Whether this call is to a builtin function (__builtin_*).
+  bool isBuiltinCall() const { return IsBuiltinCall; }
+  void setIsBuiltinCall(bool V = true) { IsBuiltinCall = V; }
 
   NodeKind getKind() const override { return NodeKind::CallExprKind; }
 
