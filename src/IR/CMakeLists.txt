@@ -1,7 +1,10 @@
 add_library(blocktype-ir
+  IRConstant.cpp
   IRContext.cpp
+  IRInstruction.cpp
   IRType.cpp
   IRTypeContext.cpp
+  IRValue.cpp
   TargetLayout.cpp
 )
 

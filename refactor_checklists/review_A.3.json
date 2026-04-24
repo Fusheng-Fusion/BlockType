@@ -2,6 +2,7 @@
   "task": "A.3",
   "type": "review",
   "description": "审查代码 checklist",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {
       "id": "R.01",
@@ -144,11 +145,17 @@
     {
       "id": "R.24",
       "status": "pending",
+      "category": "严禁简化",
+      "item": "对照文档逐项核查：APInt/APFloat/Use-Def chain/布局算法等是否完整实现所有参数和算法，严禁简化"
+    },
+    {
+      "id": "R.25",
+      "status": "pending",
       "category": "Git",
       "item": "确认 Git 提交信息格式正确 feat(<phase>): 完成 <Task编号> — <Task标题>"
     },
     {
-      "id": "R.25",
+      "id": "R.26",
       "status": "pending",
       "category": "Git",
       "item": "确认已推送到远端 git push origin HEAD"

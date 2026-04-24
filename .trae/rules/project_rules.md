@@ -12,6 +12,7 @@
 5. **不依赖 LLVM**：IR 层代码（`include/blocktype/IR/` 和 `src/IR/`）不得直接 `#include` 任何 `llvm/` 头文件。使用标准 C++ 类型替代 LLVM 类型。
 6. **严格按文档签名实现**：接口签名必须与任务流文档一致，类型映射关系：`StringRef → std::string`/`std::string_view`，`SmallVector → std::vector`，`DenseMap → std::unordered_map`。
 7. **不在代码中添加注释**，除非用户明确要求。
+11. **严禁简化实现**：必须完整实现文档中定义的所有参数、算法和数据结构。包括但不限于：APInt 必须支持完整的位运算/算术/比较/截断扩展；APFloat 必须支持多种精度（Half/Float/Double/x87Extended/Quad）；Use-Def chain 必须双向正确维护。任何"先简化，后续完善"的做法都是被禁止的。
 
 ## 任务执行规则
 

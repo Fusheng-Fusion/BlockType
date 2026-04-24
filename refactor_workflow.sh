@@ -143,6 +143,7 @@ generate_dev_checklist() {
   "task": "A.1",
   "type": "dev",
   "description": "IRType 体系 + IRTypeContext",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.1.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.1 全部内容，包括接口签名、实现约束、验收标准"},
     {"id": "A.1.D.02", "status": "pending", "category": "前提", "item": "阅读执行规则（文档开头7条规则）"},
@@ -185,6 +186,7 @@ CHECKLISTEOF
   "task": "A.1.1",
   "type": "dev",
   "description": "IRContext + BumpPtrAllocator 内存管理",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.1.1.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.1.1 全部内容"},
     {"id": "A.1.1.D.02", "status": "pending", "category": "前提", "item": "确认 A.1 已完成（依赖）"},
@@ -212,6 +214,7 @@ CHECKLISTEOF
   "task": "A.1.2",
   "type": "dev",
   "description": "IRThreadingMode 枚举 + seal 接口",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.1.2.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.1.2 全部内容"},
     {"id": "A.1.2.D.02", "status": "pending", "category": "前提", "item": "确认 A.1.1 已完成（依赖）"},
@@ -235,6 +238,7 @@ CHECKLISTEOF
   "task": "A.2",
   "type": "dev",
   "description": "TargetLayout（独立于 LLVM DataLayout）",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.2.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.2 全部内容"},
     {"id": "A.2.D.02", "status": "pending", "category": "前提", "item": "确认 A.1 已完成（依赖）"},
@@ -268,6 +272,7 @@ CHECKLISTEOF
   "task": "A.3",
   "type": "dev",
   "description": "IRValue + IRConstant + Use/User 体系",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.3.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.3 全部内容"},
     {"id": "A.3.D.02", "status": "pending", "category": "前提", "item": "确认 A.1 + A.2 已完成（依赖）"},
@@ -286,15 +291,18 @@ CHECKLISTEOF
     {"id": "A.3.D.15", "status": "pending", "category": "实现", "item": "实现 User（Operands列表+getOperand/setOperand/addOperand）"},
     {"id": "A.3.D.16", "status": "pending", "category": "实现", "item": "实现 IRInstruction（Opcode+DialectID+Parent+isTerminator/isBinaryOp/isCast/isMemoryOp/isComparison+eraseFromParent+print）"},
     {"id": "A.3.D.17", "status": "pending", "category": "实现", "item": "实现 IRConstant 系列（IRConstantInt/IRConstantFP/IRConstantNull/IRConstantUndef/IRConstantAggregateZero/IRConstantStruct/IRConstantArray/IRConstantFunctionRef/IRConstantGlobalRef）"},
-    {"id": "A.3.D.18", "status": "pending", "category": "约束", "item": "验证：Use-Def chain 双向正确（Use::set 更新 def-use 链）"},
-    {"id": "A.3.D.19", "status": "pending", "category": "约束", "item": "验证：IRConstant 子类不可变（immutable）"},
-    {"id": "A.3.D.20", "status": "pending", "category": "约束", "item": "验证：IRConstantUndef 缓存（同一类型返回同一指针）"},
-    {"id": "A.3.D.21", "status": "pending", "category": "验收", "item": "V1: 常量整数值 assert(CI->getZExtValue()==42)"},
-    {"id": "A.3.D.22", "status": "pending", "category": "验收", "item": "V2: Use/User 双向链接 getUser()->getOperand(0)==V1"},
-    {"id": "A.3.D.23", "status": "pending", "category": "验收", "item": "V3: IRConstantUndef 缓存（同类型返回同一指针）"},
-    {"id": "A.3.D.24", "status": "pending", "category": "动作", "item": "编译通过"},
-    {"id": "A.3.D.25", "status": "pending", "category": "动作", "item": "Git 提交并推送"},
-    {"id": "A.3.D.26", "status": "pending", "category": "动作", "item": "执行审查 checklist"}
+    {"id": "A.3.D.18", "status": "pending", "category": "约束", "item": "验证：APInt 完整实现（位运算/算术/比较/截断扩展/toString），不得简化"},
+    {"id": "A.3.D.19", "status": "pending", "category": "约束", "item": "验证：APFloat 完整实现（多精度 Semantics/算术/比较/bitcast），不得简化"},
+    {"id": "A.3.D.20", "status": "pending", "category": "约束", "item": "验证：Use-Def chain 双向正确（Use::set 更新 def-use 链）"},
+    {"id": "A.3.D.21", "status": "pending", "category": "约束", "item": "验证：IRConstant 子类不可变（immutable）"},
+    {"id": "A.3.D.22", "status": "pending", "category": "约束", "item": "验证：IRConstantUndef 缓存（同一类型返回同一指针）"},
+    {"id": "A.3.D.23", "status": "pending", "category": "约束", "item": "验证：所有文档中定义的方法签名均已完整实现，无遗漏无简化"},
+    {"id": "A.3.D.24", "status": "pending", "category": "验收", "item": "V1: 常量整数值 assert(CI->getZExtValue()==42)"},
+    {"id": "A.3.D.25", "status": "pending", "category": "验收", "item": "V2: Use/User 双向链接 getUser()->getOperand(0)==V1"},
+    {"id": "A.3.D.26", "status": "pending", "category": "验收", "item": "V3: IRConstantUndef 缓存（同类型返回同一指针）"},
+    {"id": "A.3.D.27", "status": "pending", "category": "动作", "item": "编译通过"},
+    {"id": "A.3.D.28", "status": "pending", "category": "动作", "item": "Git 提交并推送"},
+    {"id": "A.3.D.29", "status": "pending", "category": "动作", "item": "执行审查 checklist"}
   ]
 }
 CHECKLISTEOF
@@ -305,6 +313,7 @@ CHECKLISTEOF
   "task": "A.3.1",
   "type": "dev",
   "description": "IRFormatVersion + IRFileHeader",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.3.1.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.3.1 全部内容"},
     {"id": "A.3.1.D.02", "status": "pending", "category": "前提", "item": "确认 A.1 已完成（依赖）"},
@@ -332,6 +341,7 @@ CHECKLISTEOF
   "task": "A.4",
   "type": "dev",
   "description": "IRModule / IRFunction / IRBasicBlock / IRFunctionDecl",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.4.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.4 全部内容"},
     {"id": "A.4.D.02", "status": "pending", "category": "前提", "item": "确认 A.1 + A.3 已完成（依赖）"},
@@ -368,6 +378,7 @@ CHECKLISTEOF
   "task": "A.5",
   "type": "dev",
   "description": "IRBuilder（含常量工厂）",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.5.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.5 全部内容"},
     {"id": "A.5.D.02", "status": "pending", "category": "前提", "item": "确认 A.3 + A.4 已完成（依赖）"},
@@ -402,6 +413,7 @@ CHECKLISTEOF
   "task": "A.6",
   "type": "dev",
   "description": "IRVerifier",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.6.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.6 全部内容"},
     {"id": "A.6.D.02", "status": "pending", "category": "前提", "item": "确认 A.4 + A.5 已完成（依赖）"},
@@ -430,6 +442,7 @@ CHECKLISTEOF
   "task": "A.7",
   "type": "dev",
   "description": "IRSerializer（文本 + 二进制格式）",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.7.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.7 全部内容，包括文本格式规范"},
     {"id": "A.7.D.02", "status": "pending", "category": "前提", "item": "确认 A.4 + A.3.1 已完成（依赖）"},
@@ -460,6 +473,7 @@ CHECKLISTEOF
   "task": "A.8",
   "type": "dev",
   "description": "CMake 集成 + 单元测试",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.8.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.8 全部内容"},
     {"id": "A.8.D.02", "status": "pending", "category": "前提", "item": "确认 A.1~A.7 全部完成（依赖）"},
@@ -496,6 +510,7 @@ CHECKLISTEOF
   "task": "A.F1",
   "type": "dev",
   "description": "DialectCapability + DialectLoweringPass",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "A.F1.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task A.F1 全部内容，包括降级规则表和后端能力声明"},
     {"id": "A.F1.D.02", "status": "pending", "category": "前提", "item": "确认 A.1 + A.3 已完成（依赖）"},
@@ -537,6 +552,7 @@ CHECKLISTEOF
   "task": "$task",
   "type": "dev",
   "description": "$desc",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "${task}.D.01", "status": "pending", "category": "前提", "item": "阅读任务流文档 Task $task 全部内容"},
     {"id": "${task}.D.02", "status": "pending", "category": "前提", "item": "确认依赖任务已完成"},
@@ -574,6 +590,7 @@ generate_review_checklist() {
   "task": "TEMPLATE",
   "type": "review",
   "description": "审查代码 checklist",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
   "items": [
     {"id": "R.01", "status": "pending", "category": "接口签名", "item": "逐项对标任务流文档中的 class/struct/enum/函数签名，确认完全一致"},
     {"id": "R.02", "status": "pending", "category": "接口签名", "item": "核对构造函数参数（含默认参数），确认与文档一致"},
@@ -598,8 +615,9 @@ generate_review_checklist() {
     {"id": "R.21", "status": "pending", "category": "完整性", "item": "确认所有产出文件已创建（对照文档中的产出文件表）"},
     {"id": "R.22", "status": "pending", "category": "完整性", "item": "确认所有枚举值已定义（对照文档中的枚举定义）"},
     {"id": "R.23", "status": "pending", "category": "完整性", "item": "确认所有方法已实现（对照文档中的接口签名）"},
-    {"id": "R.24", "status": "pending", "category": "Git", "item": "确认 Git 提交信息格式正确 feat(<phase>): 完成 <Task编号> — <Task标题>"},
-    {"id": "R.25", "status": "pending", "category": "Git", "item": "确认已推送到远端 git push origin HEAD"}
+    {"id": "R.24", "status": "pending", "category": "严禁简化", "item": "对照文档逐项核查：APInt/APFloat/Use-Def chain/布局算法等是否完整实现所有参数和算法，严禁简化"},
+    {"id": "R.25", "status": "pending", "category": "Git", "item": "确认 Git 提交信息格式正确 feat(<phase>): 完成 <Task编号> — <Task标题>"},
+    {"id": "R.26", "status": "pending", "category": "Git", "item": "确认已推送到远端 git push origin HEAD"}
   ]
 }
 CHECKLISTEOF
