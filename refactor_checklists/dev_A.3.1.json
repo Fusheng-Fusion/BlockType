@@ -1,0 +1,104 @@
+{
+  "task": "A.3.1",
+  "type": "dev",
+  "description": "IRFormatVersion + IRFileHeader",
+  "warning": "严格按照文档要点，完全实现。禁止简化参数、函数、算法。",
+  "items": [
+    {
+      "id": "A.3.1.D.01",
+      "status": "done",
+      "category": "前提",
+      "item": "阅读任务流文档 Task A.3.1 全部内容"
+    },
+    {
+      "id": "A.3.1.D.02",
+      "status": "done",
+      "category": "前提",
+      "item": "确认 A.1 已完成（依赖）"
+    },
+    {
+      "id": "A.3.1.D.03",
+      "status": "done",
+      "category": "产出",
+      "item": "新增 include/blocktype/IR/IRFormatVersion.h"
+    },
+    {
+      "id": "A.3.1.D.04",
+      "status": "done",
+      "category": "产出",
+      "item": "新增 src/IR/IRFormatVersion.cpp"
+    },
+    {
+      "id": "A.3.1.D.05",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRFormatVersion（Major/Minor/Patch + Current()+isCompatibleWith()+toString()）"
+    },
+    {
+      "id": "A.3.1.D.06",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRFileHeader（Magic=BTIR + Version + Flags + ModuleOffset + StringTableOffset + StringTableSize）"
+    },
+    {
+      "id": "A.3.1.D.07",
+      "status": "done",
+      "category": "约束",
+      "item": "验证：版本号独立于编译器版本"
+    },
+    {
+      "id": "A.3.1.D.08",
+      "status": "done",
+      "category": "约束",
+      "item": "验证：魔数 BTIR"
+    },
+    {
+      "id": "A.3.1.D.09",
+      "status": "done",
+      "category": "约束",
+      "item": "验证：isCompatibleWith 语义（Major相等，Reader Minor>=File Minor）"
+    },
+    {
+      "id": "A.3.1.D.10",
+      "status": "done",
+      "category": "约束",
+      "item": "验证：sizeof(IRFileHeader) 为常量"
+    },
+    {
+      "id": "A.3.1.D.11",
+      "status": "done",
+      "category": "验收",
+      "item": "V1: 当前版本 assert(Current().Major==1)"
+    },
+    {
+      "id": "A.3.1.D.12",
+      "status": "done",
+      "category": "验收",
+      "item": "V2: 兼容性判断"
+    },
+    {
+      "id": "A.3.1.D.13",
+      "status": "done",
+      "category": "验收",
+      "item": "V3: IRFileHeader 大小固定 static_assert"
+    },
+    {
+      "id": "A.3.1.D.14",
+      "status": "done",
+      "category": "动作",
+      "item": "编译通过"
+    },
+    {
+      "id": "A.3.1.D.15",
+      "status": "done",
+      "category": "动作",
+      "item": "执行审查 checklist"
+    },
+    {
+      "id": "A.3.1.D.16",
+      "status": "pending",
+      "category": "动作",
+      "item": "Git 提交并推送"
+    }
+  ]
+}

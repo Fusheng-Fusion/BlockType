@@ -504,3 +504,41 @@
 [2026-04-24T17:12:42Z] [INFO] ✅ Checklist 项 A.3.D.29 已标记为完成
 [2026-04-24T17:12:42Z] [INFO] 当前状态: Phase=A Task=A.3 Status=in_progress 已完成=4
 [2026-04-24T17:12:47Z] [INFO] 当前状态: Phase=A Task=A.3 Status=in_progress 已完成=4
+[2026-04-24T17:22:31Z] [INFO] === 标记任务开始: A.3.1 ===
+[2026-04-24T17:22:31Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:22:31Z] [INFO] 生成开发 checklist: Task A.3.1
+[2026-04-24T17:22:31Z] [INFO] 开发 checklist 已生成: refactor_checklists/dev_A.3.1.json (16 项)
+[2026-04-24T17:22:31Z] [INFO] 生成审查 checklist: Task A.3.1
+[2026-04-24T17:22:31Z] [INFO] 审查 checklist 已生成: refactor_checklists/review_A.3.1.json (26 项)
+[2026-04-24T17:22:31Z] [INFO] 任务 A.3.1 已标记为 in_progress
+[2026-04-24T17:22:31Z] [INFO] ⚠️  请按照开发 checklist 逐项执行，每完成一项使用 check <id> 标记
+[2026-04-24T17:22:42Z] [INFO] ✅ Checklist 项 A.3.1.D.01 已标记为完成
+[2026-04-24T17:22:42Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:22:42Z] [INFO] ✅ Checklist 项 A.3.1.D.02 已标记为完成
+[2026-04-24T17:22:42Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:23:46Z] [INFO] ✅ Checklist 项 A.3.1.D.03 已标记为完成
+[2026-04-24T17:23:46Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:23:46Z] [INFO] ✅ Checklist 项 A.3.1.D.04 已标记为完成
+[2026-04-24T17:23:46Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:23:57Z] [INFO] ✅ Checklist 项 A.3.1.D.05 已标记为完成
+[2026-04-24T17:23:57Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:23:57Z] [INFO] ✅ Checklist 项 A.3.1.D.06 已标记为完成
+[2026-04-24T17:23:57Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:23:57Z] [INFO] ✅ Checklist 项 A.3.1.D.07 已标记为完成
+[2026-04-24T17:23:57Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:24:06Z] [INFO] ✅ Checklist 项 A.3.1.D.08 已标记为完成
+[2026-04-24T17:24:06Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:24:06Z] [INFO] ✅ Checklist 项 A.3.1.D.09 已标记为完成
+[2026-04-24T17:24:06Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:24:06Z] [INFO] ✅ Checklist 项 A.3.1.D.10 已标记为完成
+[2026-04-24T17:24:06Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:24:06Z] [INFO] ✅ Checklist 项 A.3.1.D.11 已标记为完成
+[2026-04-24T17:24:06Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:24:17Z] [INFO] ✅ Checklist 项 A.3.1.D.12 已标记为完成
+[2026-04-24T17:24:17Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:24:17Z] [INFO] ✅ Checklist 项 A.3.1.D.13 已标记为完成
+[2026-04-24T17:24:17Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:24:18Z] [INFO] ✅ Checklist 项 A.3.1.D.14 已标记为完成
+[2026-04-24T17:24:18Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
+[2026-04-24T17:24:28Z] [INFO] ✅ Checklist 项 A.3.1.D.15 已标记为完成
+[2026-04-24T17:24:28Z] [INFO] 当前状态: Phase=A Task=A.3.1 Status=in_progress 已完成=5
