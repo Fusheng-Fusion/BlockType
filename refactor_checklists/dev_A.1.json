@@ -1,0 +1,193 @@
+{
+  "task": "A.1",
+  "type": "dev",
+  "description": "IRType 体系 + IRTypeContext",
+  "items": [
+    {
+      "id": "A.1.D.01",
+      "status": "done",
+      "category": "前提",
+      "item": "阅读任务流文档 Task A.1 全部内容，包括接口签名、实现约束、验收标准"
+    },
+    {
+      "id": "A.1.D.02",
+      "status": "done",
+      "category": "前提",
+      "item": "阅读执行规则（文档开头7条规则）"
+    },
+    {
+      "id": "A.1.D.03",
+      "status": "done",
+      "category": "前提",
+      "item": "阅读接口关联关系（持有关系、调用关系、生命周期约束、内存管理规则）"
+    },
+    {
+      "id": "A.1.D.04",
+      "status": "done",
+      "category": "产出",
+      "item": "新增 include/blocktype/IR/IRType.h"
+    },
+    {
+      "id": "A.1.D.05",
+      "status": "done",
+      "category": "产出",
+      "item": "新增 include/blocktype/IR/IRTypeContext.h"
+    },
+    {
+      "id": "A.1.D.06",
+      "status": "done",
+      "category": "产出",
+      "item": "新增 src/IR/IRType.cpp"
+    },
+    {
+      "id": "A.1.D.07",
+      "status": "done",
+      "category": "产出",
+      "item": "新增 src/IR/IRTypeContext.cpp"
+    },
+    {
+      "id": "A.1.D.08",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 DialectID 枚举（Core=0,Cpp=1,Target=2,Debug=3,Metadata=4）"
+    },
+    {
+      "id": "A.1.D.09",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRType 基类（Kind枚举10种、getDialect、equals、toString、getSizeInBits、getAlignInBits、isXxx判断方法、classof）"
+    },
+    {
+      "id": "A.1.D.10",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRVoidType（equals/toString/getSizeInBits/getAlignInBits/classof）"
+    },
+    {
+      "id": "A.1.D.11",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRIntegerType（BitWidth断言1/8/16/32/64/128、equals/toString/getSizeInBits/getAlignInBits/classof）"
+    },
+    {
+      "id": "A.1.D.12",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRFloatType（BitWidth断言16/32/64/80/128、equals/toString/getSizeInBits/getAlignInBits/classof）"
+    },
+    {
+      "id": "A.1.D.13",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRPointerType（PointeeType+AddressSpace、equals/toString/getSizeInBits/getAlignInBits/classof）"
+    },
+    {
+      "id": "A.1.D.14",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRArrayType（NumElements+ElementType、equals/toString/getSizeInBits/getAlignInBits/classof）"
+    },
+    {
+      "id": "A.1.D.15",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRStructType（Name+FieldTypes+IsPacked+FieldOffsets缓存、getFieldOffset/equals/toString/getSizeInBits/getAlignInBits/classof）"
+    },
+    {
+      "id": "A.1.D.16",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRFunctionType（ReturnType+ParamTypes+IsVarArg、equals/toString/getSizeInBits/getAlignInBits/classof）"
+    },
+    {
+      "id": "A.1.D.17",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRVectorType（NumElements+ElementType、断言2/4/8/16/32/64、equals/toString/getSizeInBits/getAlignInBits/classof）"
+    },
+    {
+      "id": "A.1.D.18",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IROpaqueType（Name、equals/toString/getSizeInBits触发assert/getAlignInBits触发assert/classof）"
+    },
+    {
+      "id": "A.1.D.19",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRStructType 布局计算算法（非packed按ABI对齐+尾部padding，packed紧密排列，结果缓存）"
+    },
+    {
+      "id": "A.1.D.20",
+      "status": "done",
+      "category": "实现",
+      "item": "实现 IRTypeContext（DenseMap/FoldingSet/StringMap缓存、所有get*Type方法、唯一化语义、getNumTypesCreated/getMemoryUsage）"
+    },
+    {
+      "id": "A.1.D.21",
+      "status": "done",
+      "category": "约束",
+      "item": "验证：不依赖 LLVM（不 #include 任何 llvm/ 头文件）"
+    },
+    {
+      "id": "A.1.D.22",
+      "status": "done",
+      "category": "约束",
+      "item": "验证：IRType 必须虚析构"
+    },
+    {
+      "id": "A.1.D.23",
+      "status": "done",
+      "category": "约束",
+      "item": "验证：getSizeInBits 必须 const"
+    },
+    {
+      "id": "A.1.D.24",
+      "status": "done",
+      "category": "约束",
+      "item": "验证：所有子类不可拷贝"
+    },
+    {
+      "id": "A.1.D.25",
+      "status": "done",
+      "category": "约束",
+      "item": "验证：IRTypeContext 唯一化语义（相同参数返回相同指针）"
+    },
+    {
+      "id": "A.1.D.26",
+      "status": "done",
+      "category": "验收",
+      "item": "V1: 整数类型大小 assert(IRIntegerType(32).getSizeInBits(Layout)==32)"
+    },
+    {
+      "id": "A.1.D.27",
+      "status": "done",
+      "category": "验收",
+      "item": "V2: IRTypeContext 唯一化 assert(Int32_1==Int32_2)"
+    },
+    {
+      "id": "A.1.D.28",
+      "status": "done",
+      "category": "验收",
+      "item": "V3: 指针类型唯一化 assert(PtrI8_1==PtrI8_2)"
+    },
+    {
+      "id": "A.1.D.29",
+      "status": "done",
+      "category": "动作",
+      "item": "编译通过：cmake --build build --target blocktype-ir 退出码==0"
+    },
+    {
+      "id": "A.1.D.30",
+      "status": "pending",
+      "category": "动作",
+      "item": "Git 提交并推送：git add -A && git commit -m 'feat(A): 完成 A.1 — IRType 体系 + IRTypeContext' && git push origin HEAD"
+    },
+    {
+      "id": "A.1.D.31",
+      "status": "pending",
+      "category": "动作",
+      "item": "执行审查 checklist：./refactor_workflow.sh review"
+    }
+  ]
+}

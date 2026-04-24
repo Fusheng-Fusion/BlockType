@@ -1,0 +1,429 @@
+#!/bin/bash
+# refactor_workflow.sh - AI coder 任务提醒与状态管理脚本
+#
+# 用法:
+#   ./refactor_workflow.sh              # 默认：显示当前任务提醒
+#   ./refactor_workflow.sh start        # 标记当前任务开始执行
+#   ./refactor_workflow.sh done         # 标记当前任务完成，推进到下一任务
+#   ./refactor_workflow.sh recover      # 断线恢复：检测状态，给出恢复指令
+#   ./refactor_workflow.sh heartbeat    # 更新心跳时间戳（AI coder 定期调用）
+#   ./refactor_workflow.sh status       # 查看当前详细状态
+#   ./refactor_workflow.sh reset <task> # 重置到指定任务（慎用）
+
+STATE_FILE="refactor_state.json"
+HEARTBEAT_FILE="refactor_heartbeat"
+LOG_DIR="refactor_logs"
+MAX_RETRIES=3
+HEARTBEAT_TIMEOUT_SECONDS=600
+
+mkdir -p "$LOG_DIR"
+
+log() {
+    local level=$1
+    local message=$2
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    echo "[$timestamp] [$level] $message"
+    echo "[$timestamp] [$level] $message" >> "$LOG_DIR/$(date +%Y-%m-%d).log"
+}
+
+print_workflow_rules() {
+    log "INFO" "===================================="
+    log "INFO" "🚨 任务流总体规则提醒 🚨"
+    log "INFO" "1. 严格按照 11-15 AI coder 任务流文档执行"
+    log "INFO" "2. 每个 Task 完成后必须执行 Git 提交并推送"
+    log "INFO" "3. 遵循 Phase 文档中的总体要求和约束"
+    log "INFO" "4. 确保接口签名与 01-04 文档一致"
+    log "INFO" "5. 执行验收标准中的测试用例"
+    log "INFO" "6. 注意接口间的关联关系（holding/calling）"
+    log "INFO" "7. 遇到问题优先参考任务流文档中的解决方案"
+    log "INFO" "===================================="
+}
+
+get_next_task() {
+    local task=$1
+    case "$task" in
+        "A.1")   echo "A.2"   ;;
+        "A.2")   echo "A.3"   ;;
+        "A.3")   echo "A.4"   ;;
+        "A.4")   echo "A.5"   ;;
+        "A.5")   echo "A.6"   ;;
+        "A.6")   echo "A.7"   ;;
+        "A.7")   echo "A.8"   ;;
+        "A.8")   echo "A.F1"  ;;
+        "A.F1")  echo "A.F2"  ;;
+        "A.F2")  echo "A.F3"  ;;
+        "A.F3")  echo "A.F4"  ;;
+        "A.F4")  echo "A.F5"  ;;
+        "A.F5")  echo "A.F6"  ;;
+        "A.F6")  echo "A.F7"  ;;
+        "A.F7")  echo "A.F8"  ;;
+        "A.F8")  echo "A.F9"  ;;
+        "A.F9")  echo "A.F10" ;;
+        "A.F10") echo "A.F11" ;;
+        "A.F11") echo "A.F12" ;;
+        "A.F12") echo "A.F13" ;;
+        "A.F13") echo "B.1"   ;;
+        "B.1")   echo "B.2"   ;;
+        *)       echo "$task" ;;
+    esac
+}
+
+get_task_description() {
+    local task=$1
+    case "$task" in
+        "A.1")   echo "IRType 体系 + IRTypeContext - 定义完整的类型体系" ;;
+        "A.2")   echo "IRValue/Use/User + IRInstruction - 实现值和指令系统" ;;
+        "A.3")   echo "IRConstant 体系 + IRModule/IRFunction/IRBasicBlock - 构建模块和函数" ;;
+        "A.4")   echo "IRBuilder + IRVerifier - 提供构建和验证工具" ;;
+        "A.5")   echo "IRSerializer + IRFormatVersion - 实现序列化功能" ;;
+        "A.6")   echo "TargetLayout - 目标平台布局支持" ;;
+        "A.7")   echo "IR层头文件和CMake构建 - 项目结构调整" ;;
+        "A.8")   echo "IR层测试套件 - 确保功能正确性" ;;
+        "A.F1")  echo "DialectCapability + DialectLoweringPass - 方言支持" ;;
+        "A.F2")  echo "IRFeature + BackendCapability - 后端能力管理" ;;
+        "A.F3")  echo "TelemetryCollector + PhaseGuard - 编译遥测" ;;
+        "A.F4")  echo "IRInstruction DbgInfo - 调试信息支持" ;;
+        "A.F5")  echo "基础调试信息 + 升级调试信息 - 完整调试体系" ;;
+        "A.F6")  echo "StructuredDiagnostic - 结构化诊断系统" ;;
+        "A.F7")  echo "CacheKey/CacheEntry/CompilationCacheManager - 编译缓存" ;;
+        "A.F8")  echo "IRIntegrityChecksum + IRSigner - 可重现构建" ;;
+        "A.F9")  echo "IRConversionResult + IRVerificationResult - 错误处理" ;;
+        "A.F10") echo "IRErrorCode 枚举 - 错误码体系" ;;
+        "A.F11") echo "DeadFunctionEliminationPass + 其他优化 Pass - 优化管道" ;;
+        "A.F12") echo "FFITypeMapper/FFIFunctionDecl/FFIModule - FFI 支持" ;;
+        "A.F13") echo "IR层头文件依赖图 + CMake子库拆分 - 项目结构优化" ;;
+        "B.1")   echo "FrontendBase + FrontendOptions + FrontendRegistry - 前端抽象" ;;
+        *)       echo "执行 Task $task" ;;
+    esac
+}
+
+get_phase_doc() {
+    local phase=$1
+    case "$phase" in
+        "A") echo "11-AI-Coder-任务流-PhaseA.md" ;;
+        "B") echo "12-AI-Coder-任务流-PhaseB.md" ;;
+        "C"|"D"|"E") echo "13-AI-Coder-任务流-PhaseCDE.md" ;;
+        "F"|"G"|"H") echo "14-AI-Coder-任务流-PhaseFGH.md" ;;
+        *) echo "未知 Phase" ;;
+    esac
+}
+
+init_state() {
+    if [ ! -f "$STATE_FILE" ]; then
+        log "INFO" "初始化状态文件"
+        local now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        cat > "$STATE_FILE" << STATEEOF
+{
+  "current_phase": "A",
+  "current_task": "A.1",
+  "task_status": "pending",
+  "completed_tasks": [],
+  "task_started_at": null,
+  "task_completed_at": null,
+  "last_heartbeat": null,
+  "retry_count": 0,
+  "last_executed": "$now"
+}
+STATEEOF
+    fi
+}
+
+read_state() {
+    if [ ! -f "$STATE_FILE" ]; then
+        init_state
+    fi
+
+    CURRENT_PHASE=$(jq -r '.current_phase' "$STATE_FILE")
+    CURRENT_TASK=$(jq -r '.current_task' "$STATE_FILE")
+    TASK_STATUS=$(jq -r '.task_status // "pending"' "$STATE_FILE")
+    TASK_STARTED_AT=$(jq -r '.task_started_at // "null"' "$STATE_FILE")
+    RETRY_COUNT=$(jq -r '.retry_count' "$STATE_FILE")
+    COMPLETED_COUNT=$(jq -r '.completed_tasks | length' "$STATE_FILE")
+    COMPLETED_TASKS=$(jq -r '.completed_tasks | join(", ")' "$STATE_FILE")
+
+    log "INFO" "当前状态: Phase=$CURRENT_PHASE Task=$CURRENT_TASK Status=$TASK_STATUS 已完成=$COMPLETED_COUNT"
+}
+
+write_state() {
+    local phase="$1"
+    local task="$2"
+    local status="$3"
+    local completed_json="$4"
+    local started_at="$5"
+    local retry="$6"
+
+    local now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local completed_at="null"
+    if [ "$status" = "done" ]; then
+        completed_at="\"$now\""
+    fi
+
+    local started_json="null"
+    if [ "$started_at" != "" ] && [ "$started_at" != "null" ]; then
+        started_json="\"$started_at\""
+    fi
+
+    cat > "$STATE_FILE.tmp" << STATEEOF
+{
+  "current_phase": "$phase",
+  "current_task": "$task",
+  "task_status": "$status",
+  "completed_tasks": $completed_json,
+  "task_started_at": $started_json,
+  "task_completed_at": $completed_at,
+  "last_heartbeat": null,
+  "retry_count": $retry,
+  "last_executed": "$now"
+}
+STATEEOF
+
+    mv "$STATE_FILE.tmp" "$STATE_FILE"
+}
+
+check_environment() {
+    log "INFO" "检测环境状态..."
+    if git rev-parse --git-dir > /dev/null 2>&1; then
+        log "INFO" "Git仓库状态正常"
+    else
+        log "WARNING" "Git仓库状态检查失败"
+    fi
+    log "INFO" "环境检查完成"
+    return 0
+}
+
+generate_task_reminder() {
+    local task=$1
+    local status=$2
+    local description=$(get_task_description "$task")
+    local phase=$3
+    local doc=$(get_phase_doc "$phase")
+
+    cat << EOF
+
+================================================================================
+📢 AI CODER 任务提醒 📢
+
+当前任务: Task $task [$status]
+任务描述: $description
+
+🔍 执行要求:
+1. 参考文档: docs/plan/多前端后端重构方案/$doc
+2. 遵循 Phase $phase 文档中的总体要求
+3. 严格按照任务流中的接口签名和实现约束
+4. 完成后执行: ./refactor_workflow.sh done
+5. 执行验收标准中的测试用例
+6. 完成后 Git 提交并推送
+
+⚠️  注意事项:
+- 保持接口签名与 01-04 文档一致
+- 注意接口间的关联关系（holding/calling）
+- 遇到问题参考任务流文档中的解决方案
+- 确保代码符合项目的编码规范
+- 工作期间定期执行: ./refactor_workflow.sh heartbeat
+================================================================================
+
+EOF
+}
+
+cmd_default() {
+    log "INFO" "=== 显示当前任务 ==="
+    print_workflow_rules
+    read_state
+    check_environment
+    generate_task_reminder "$CURRENT_TASK" "$TASK_STATUS" "$CURRENT_PHASE"
+}
+
+cmd_start() {
+    log "INFO" "=== 标记任务开始: $(jq -r '.current_task' "$STATE_FILE") ==="
+    read_state
+
+    if [ "$TASK_STATUS" = "done" ]; then
+        log "WARNING" "Task $CURRENT_TASK 已完成，不应重新开始"
+        log "INFO" "如需重做，请先执行: $0 reset $CURRENT_TASK"
+        return 1
+    fi
+
+    local completed_json=$(jq -c '.completed_tasks' "$STATE_FILE")
+    local now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local retry=$(jq -r '.retry_count' "$STATE_FILE")
+
+    write_state "$CURRENT_PHASE" "$CURRENT_TASK" "in_progress" "$completed_json" "$now" "$retry"
+
+    touch "$HEARTBEAT_FILE"
+
+    log "INFO" "任务 $CURRENT_TASK 已标记为 in_progress"
+    generate_task_reminder "$CURRENT_TASK" "in_progress" "$CURRENT_PHASE"
+}
+
+cmd_done() {
+    log "INFO" "=== 标记任务完成: $(jq -r '.current_task' "$STATE_FILE") ==="
+    read_state
+
+    if [ "$TASK_STATUS" = "done" ]; then
+        log "WARNING" "Task $CURRENT_TASK 已经是完成状态"
+        return 0
+    fi
+
+    local completed_json=$(jq -c ".completed_tasks + [\"$CURRENT_TASK\"]" "$STATE_FILE")
+    local next_task=$(get_next_task "$CURRENT_TASK")
+    local next_phase="$CURRENT_PHASE"
+
+    if [[ "$next_task" == B.* ]] && [ "$CURRENT_PHASE" = "A" ]; then
+        next_phase="B"
+    fi
+
+    write_state "$next_phase" "$next_task" "pending" "$completed_json" "null" "0"
+
+    rm -f "$HEARTBEAT_FILE"
+
+    log "INFO" "✅ Task $CURRENT_TASK 完成！推进到 Task $next_task"
+    log "INFO" "📋 下一个任务: $next_task - $(get_task_description "$next_task")"
+    log "INFO" "📖 参考文档: docs/plan/多前端后端重构方案/$(get_phase_doc "$next_phase")"
+}
+
+cmd_heartbeat() {
+    local now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    touch "$HEARTBEAT_FILE"
+    local tmp=$(mktemp)
+    jq --arg ts "$now" '.last_heartbeat = $ts' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+    log "INFO" "💓 心跳更新: $now"
+}
+
+cmd_recover() {
+    log "INFO" "=== 🔧 断线恢复检测 ==="
+    read_state
+
+    local now_epoch=$(date +%s)
+    local hb_status="无心跳"
+
+    if [ -f "$HEARTBEAT_FILE" ]; then
+        local hb_epoch=$(stat -f %m "$HEARTBEAT_FILE" 2>/dev/null || echo 0)
+        local diff=$((now_epoch - hb_epoch))
+        if [ "$diff" -lt "$HEARTBEAT_TIMEOUT_SECONDS" ]; then
+            hb_status="存活 (最后心跳 ${diff}s 前)"
+        else
+            hb_status="超时 (最后心跳 ${diff}s 前，超时阈值 ${HEARTBEAT_TIMEOUT_SECONDS}s)"
+        fi
+    fi
+
+    local started_info="未开始"
+    if [ "$TASK_STARTED_AT" != "null" ] && [ "$TASK_STARTED_AT" != "" ]; then
+        started_info="开始于 $TASK_STARTED_AT"
+    fi
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║              🔧 断线恢复报告                                ║"
+    echo "╠══════════════════════════════════════════════════════════════╣"
+    echo "║  当前 Phase:  $CURRENT_PHASE"
+    echo "║  当前 Task:   $CURRENT_TASK"
+    echo "║  任务状态:    $TASK_STATUS"
+    echo "║  开始时间:    $started_info"
+    echo "║  心跳状态:    $hb_status"
+    echo "║  已完成任务:  $COMPLETED_TASKS"
+    echo "║  任务描述:    $(get_task_description "$CURRENT_TASK")"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    case "$TASK_STATUS" in
+        "pending")
+            log "INFO" "📌 状态=pending: 任务尚未开始，应执行: $0 start"
+            log "INFO" "然后开始实现 $CURRENT_TASK"
+            ;;
+        "in_progress")
+            log "WARNING" "⚠️  状态=in_progress: 任务执行中，可能因中断未完成"
+            log "INFO" "恢复步骤:"
+            log "INFO" "  1. 检查 Git 工作区是否有未提交的变更: git status"
+            log "INFO" "  2. 检查是否有未完成的代码修改"
+            log "INFO" "  3a. 如果代码完整且测试通过 → 执行: $0 done"
+            log "INFO" "  3b. 如果代码不完整 → 继续完成实现，完成后: $0 done"
+            log "INFO" "  3c. 如果需要重做 → 执行: $0 reset $CURRENT_TASK"
+            ;;
+        "done")
+            log "INFO" "✅ 状态=done: 任务已完成"
+            local next_task=$(get_next_task "$CURRENT_TASK")
+            log "INFO" "下一个任务: $next_task - $(get_task_description "$next_task")"
+            log "INFO" "执行: $0 start 开始下一个任务"
+            ;;
+        *)
+            log "ERROR" "未知状态: $TASK_STATUS，建议执行: $0 reset $CURRENT_TASK"
+            ;;
+    esac
+
+    log "INFO" "参考文档: docs/plan/多前端后端重构方案/$(get_phase_doc "$CURRENT_PHASE")"
+}
+
+cmd_status() {
+    read_state
+    echo ""
+    echo "当前状态:"
+    echo "  Phase:         $CURRENT_PHASE"
+    echo "  Task:          $CURRENT_TASK"
+    echo "  Status:        $TASK_STATUS"
+    echo "  开始时间:      $TASK_STARTED_AT"
+    echo "  描述:          $(get_task_description "$CURRENT_TASK")"
+    echo "  已完成任务数:  $(jq '.completed_tasks | length' "$STATE_FILE")"
+    echo "  已完成列表:    $COMPLETED_TASKS"
+
+    if [ -f "$HEARTBEAT_FILE" ]; then
+        local hb_epoch=$(stat -f %m "$HEARTBEAT_FILE" 2>/dev/null || echo 0)
+        local now_epoch=$(date +%s)
+        local diff=$((now_epoch - hb_epoch))
+        echo "  心跳:          ${diff}s 前"
+    else
+        echo "  心跳:          无"
+    fi
+    echo "  参考文档:      docs/plan/多前端后端重构方案/$(get_phase_doc "$CURRENT_PHASE")"
+    echo ""
+}
+
+cmd_reset() {
+    local target_task="${2:-A.1}"
+    local target_phase="${target_task%%.*}"
+
+    log "WARNING" "⚠️  重置状态到 Task $target_task (Phase $target_phase)"
+
+    local completed_json="[]"
+
+    cat > "$STATE_FILE" << STATEEOF
+{
+  "current_phase": "$target_phase",
+  "current_task": "$target_task",
+  "task_status": "pending",
+  "completed_tasks": $completed_json,
+  "task_started_at": null,
+  "task_completed_at": null,
+  "last_heartbeat": null,
+  "retry_count": 0,
+  "last_executed": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+STATEEOF
+
+    rm -f "$HEARTBEAT_FILE"
+
+    log "INFO" "状态已重置。执行: $0 start 开始任务"
+}
+
+case "${1:-}" in
+    start)
+        cmd_start
+        ;;
+    done)
+        cmd_done
+        ;;
+    heartbeat)
+        cmd_heartbeat
+        ;;
+    recover)
+        cmd_recover
+        ;;
+    status)
+        cmd_status
+        ;;
+    reset)
+        cmd_reset "$@"
+        ;;
+    *)
+        cmd_default
+        ;;
+esac

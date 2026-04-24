@@ -51,6 +51,7 @@ add_subdirectory(third_party/utf8proc)
 
 # 添加子目录
 add_subdirectory(src/Basic)
+add_subdirectory(src/IR)
 add_subdirectory(src/Unicode)
 add_subdirectory(src/Lex)
 add_subdirectory(src/Parse)

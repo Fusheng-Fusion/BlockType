@@ -1,0 +1,181 @@
+{
+  "task": "A.F1",
+  "type": "dev",
+  "description": "DialectCapability + DialectLoweringPass",
+  "items": [
+    {
+      "id": "A.F1.D.01",
+      "status": "done",
+      "category": "前提",
+      "item": "阅读任务流文档 Task A.F1 全部内容，包括降级规则表和后端能力声明"
+    },
+    {
+      "id": "A.F1.D.02",
+      "status": "pending",
+      "category": "前提",
+      "item": "确认 A.1 + A.3 已完成（依赖）"
+    },
+    {
+      "id": "A.F1.D.03",
+      "status": "pending",
+      "category": "产出",
+      "item": "修改 include/blocktype/IR/IRType.h（确认 DialectID 字段已集成）"
+    },
+    {
+      "id": "A.F1.D.04",
+      "status": "pending",
+      "category": "产出",
+      "item": "修改 include/blocktype/IR/IRInstruction.h（确认 DialectID 字段已集成）"
+    },
+    {
+      "id": "A.F1.D.05",
+      "status": "pending",
+      "category": "产出",
+      "item": "新增 include/blocktype/IR/IRDialect.h"
+    },
+    {
+      "id": "A.F1.D.06",
+      "status": "pending",
+      "category": "产出",
+      "item": "新增 src/IR/IRDialect.cpp"
+    },
+    {
+      "id": "A.F1.D.07",
+      "status": "pending",
+      "category": "产出",
+      "item": "新增 include/blocktype/IR/DialectLoweringPass.h"
+    },
+    {
+      "id": "A.F1.D.08",
+      "status": "pending",
+      "category": "产出",
+      "item": "新增 src/IR/DialectLoweringPass.cpp"
+    },
+    {
+      "id": "A.F1.D.09",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现 DialectCapability（位掩码 declareDialect/hasDialect/supportsAll/getUnsupported/getSupportedMask）"
+    },
+    {
+      "id": "A.F1.D.10",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现 DialectLoweringPass（Pass基类+getName+run+LoweringRule+LoweringRules静态表）"
+    },
+    {
+      "id": "A.F1.D.11",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现降级规则1：bt_cpp Invoke → bt_core call+landingpad布局"
+    },
+    {
+      "id": "A.F1.D.12",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现降级规则2：bt_cpp Resume → bt_core unreachable"
+    },
+    {
+      "id": "A.F1.D.13",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现降级规则3：bt_cpp dynamic_cast → bt_core call @__dynamic_cast"
+    },
+    {
+      "id": "A.F1.D.14",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现降级规则4：bt_cpp vtable.dispatch → bt_core load vptr+gep idx+indirect_call"
+    },
+    {
+      "id": "A.F1.D.15",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现降级规则5：bt_cpp RTTI.typeid → bt_core call @__typeid"
+    },
+    {
+      "id": "A.F1.D.16",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现降级规则6：bt_target target.intrinsic → bt_core 目标特定函数调用"
+    },
+    {
+      "id": "A.F1.D.17",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现降级规则7：bt_meta meta.inline.always → bt_core 附加AlwaysInline属性"
+    },
+    {
+      "id": "A.F1.D.18",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现降级规则8：bt_meta meta.inline.never → bt_core 附加NoInline属性"
+    },
+    {
+      "id": "A.F1.D.19",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现降级规则9：bt_meta meta.hot → bt_core 附加Hot属性"
+    },
+    {
+      "id": "A.F1.D.20",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现降级规则10：bt_meta meta.cold → bt_core 附加Cold属性"
+    },
+    {
+      "id": "A.F1.D.21",
+      "status": "pending",
+      "category": "实现",
+      "item": "实现各后端 Dialect 能力声明（LLVM:0x1F, Cranelift:0x09）"
+    },
+    {
+      "id": "A.F1.D.22",
+      "status": "pending",
+      "category": "约束",
+      "item": "验证：DialectID 作为 IRType/IRInstruction 的附加字段，不改变现有接口"
+    },
+    {
+      "id": "A.F1.D.23",
+      "status": "pending",
+      "category": "约束",
+      "item": "验证：现有指令默认属于 bt_core"
+    },
+    {
+      "id": "A.F1.D.24",
+      "status": "pending",
+      "category": "约束",
+      "item": "验证：DialectCapability 使用位掩码，与 BackendCapability 正交"
+    },
+    {
+      "id": "A.F1.D.25",
+      "status": "pending",
+      "category": "验收",
+      "item": "V1: DialectCapability 位掩码 assert(Cap.hasDialect(Core) && Cap.hasDialect(Cpp) && !Cap.hasDialect(Debug))"
+    },
+    {
+      "id": "A.F1.D.26",
+      "status": "pending",
+      "category": "验收",
+      "item": "V2: DialectLoweringPass 可运行（构建含 bt_cpp Invoke 的 IRModule，Pass.run 返回 true）"
+    },
+    {
+      "id": "A.F1.D.27",
+      "status": "pending",
+      "category": "动作",
+      "item": "编译通过"
+    },
+    {
+      "id": "A.F1.D.28",
+      "status": "pending",
+      "category": "动作",
+      "item": "Git 提交并推送"
+    },
+    {
+      "id": "A.F1.D.29",
+      "status": "pending",
+      "category": "动作",
+      "item": "执行审查 checklist"
+    }
+  ]
+}
