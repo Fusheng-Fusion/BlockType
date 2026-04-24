@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -48,13 +49,13 @@ public:
   IRPointerType* getPointerType(IRType* Pointee, unsigned AddressSpace = 0);
   IRArrayType* getArrayType(IRType* Element, uint64_t Count);
   IRVectorType* getVectorType(IRType* Element, unsigned Count);
-  IRStructType* getStructType(const std::string& Name, std::vector<IRType*> Elems, bool Packed = false);
+  IRStructType* getStructType(std::string_view Name, std::vector<IRType*> Elems, bool Packed = false);
   IRStructType* getAnonStructType(std::vector<IRType*> Elems, bool Packed = false);
   bool setStructBody(IRStructType* S, std::vector<IRType*> Elems, bool Packed = false);
   IRFunctionType* getFunctionType(IRType* Ret, std::vector<IRType*> Params, bool VarArg = false);
-  IROpaqueType* getOpaqueType(const std::string& Name);
-  IRStructType* getStructTypeByName(const std::string& Name) const;
-  IROpaqueType* getOpaqueTypeByName(const std::string& Name) const;
+  IROpaqueType* getOpaqueType(std::string_view Name);
+  IRStructType* getStructTypeByName(std::string_view Name) const;
+  IROpaqueType* getOpaqueTypeByName(std::string_view Name) const;
   unsigned getNumTypesCreated() const { return NumTypesCreated; }
   size_t getMemoryUsage() const;
 };

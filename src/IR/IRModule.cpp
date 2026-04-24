@@ -30,6 +30,7 @@ IRFunction* IRModule::getFunction(std::string_view FuncName) const {
 }
 
 IRFunction* IRModule::getOrInsertFunction(std::string_view FuncName, IRFunctionType* FTy) {
+  assert(!IsSealed && "Cannot modify sealed module");
   for (auto& F : Functions) {
     if (F->getName() == FuncName) {
       if (F->getFunctionType() == FTy) return F.get();
@@ -43,6 +44,7 @@ IRFunction* IRModule::getOrInsertFunction(std::string_view FuncName, IRFunctionT
 }
 
 void IRModule::addFunction(std::unique_ptr<IRFunction> F) {
+  assert(!IsSealed && "Cannot modify sealed module");
   F->Parent = this;
   Functions.push_back(std::move(F));
 }
@@ -55,6 +57,7 @@ IRFunctionDecl* IRModule::getFunctionDecl(std::string_view DeclName) const {
 }
 
 void IRModule::addFunctionDecl(std::unique_ptr<IRFunctionDecl> D) {
+  assert(!IsSealed && "Cannot modify sealed module");
   FunctionDecls.push_back(std::move(D));
 }
 
@@ -66,6 +69,7 @@ IRGlobalVariable* IRModule::getGlobalVariable(std::string_view GlobalName) const
 }
 
 IRGlobalVariable* IRModule::getOrInsertGlobal(std::string_view GlobalName, IRType* Ty) {
+  assert(!IsSealed && "Cannot modify sealed module");
   for (auto& GV : Globals) {
     if (GV->getName() == GlobalName) {
       if (GV->getType() == Ty) return GV.get();
@@ -79,14 +83,17 @@ IRGlobalVariable* IRModule::getOrInsertGlobal(std::string_view GlobalName, IRTyp
 }
 
 void IRModule::addGlobal(std::unique_ptr<IRGlobalVariable> GV) {
+  assert(!IsSealed && "Cannot modify sealed module");
   Globals.push_back(std::move(GV));
 }
 
 void IRModule::addAlias(std::unique_ptr<IRGlobalAlias> A) {
+  assert(!IsSealed && "Cannot modify sealed module");
   Aliases.push_back(std::move(A));
 }
 
 void IRModule::addMetadata(std::unique_ptr<IRMetadata> M) {
+  assert(!IsSealed && "Cannot modify sealed module");
   Metadata.push_back(std::move(M));
 }
 

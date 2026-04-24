@@ -2,7 +2,7 @@ add_library(blocktype-ir
   IRBasicBlock.cpp
   IRConstant.cpp
   IRContext.cpp
-  IRFormat.cpp
+  IRFormatVersion.cpp
   IRFunction.cpp
   IRInstruction.cpp
   IRModule.cpp

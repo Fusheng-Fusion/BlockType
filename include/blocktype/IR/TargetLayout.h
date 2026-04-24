@@ -19,14 +19,14 @@ class TargetLayout {
   bool IsLittleEndian, IsLinux, IsMacOS;
 
 public:
-  explicit TargetLayout(const std::string& TargetTriple);
+  explicit TargetLayout(std::string_view TargetTriple);
 
   uint64_t getTypeSizeInBits(IRType* T) const;
   uint64_t getTypeAlignInBits(IRType* T) const;
   uint64_t getPointerSizeInBits() const { return PointerSize * 8; }
   bool isLittleEndian() const { return IsLittleEndian; }
 
-  static std::unique_ptr<TargetLayout> Create(const std::string& Triple);
+  static std::unique_ptr<TargetLayout> Create(std::string_view Triple);
 };
 
 } // namespace ir

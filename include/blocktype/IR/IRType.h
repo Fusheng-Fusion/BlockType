@@ -142,19 +142,26 @@ public:
 };
 
 class IRStructType : public IRType {
+  friend class IRTypeContext;
   std::string Name;
   std::vector<IRType*> FieldTypes;
   bool IsPacked;
   mutable bool IsLayoutComputed = false;
   mutable std::vector<uint64_t> FieldOffsets;
 public:
-  IRStructType(const std::string& N, std::vector<IRType*> F, bool P = false)
+  IRStructType(std::string_view N, std::vector<IRType*> F, bool P = false)
     : IRType(Struct), Name(N), FieldTypes(std::move(F)), IsPacked(P) {}
-  const std::string& getName() const { return Name; }
+  std::string_view getName() const { return Name; }
   const std::vector<IRType*>& getElements() const { return FieldTypes; }
   unsigned getNumFields() const { return static_cast<unsigned>(FieldTypes.size()); }
   IRType* getFieldType(unsigned i) const { return FieldTypes[i]; }
   bool isPacked() const { return IsPacked; }
+  void setBody(std::vector<IRType*> Elems, bool Packed = false) {
+    FieldTypes = std::move(Elems);
+    IsPacked = Packed;
+    IsLayoutComputed = false;
+    FieldOffsets.clear();
+  }
   uint64_t getFieldOffset(unsigned i, const TargetLayout& Layout) const;
   bool equals(const IRType* Other) const override;
   std::string toString() const override;
@@ -206,9 +213,9 @@ public:
 class IROpaqueType : public IRType {
   std::string Name;
 public:
-  explicit IROpaqueType(const std::string& N)
+  explicit IROpaqueType(std::string_view N)
     : IRType(Opaque), Name(N) {}
-  const std::string& getName() const { return Name; }
+  std::string_view getName() const { return Name; }
   bool equals(const IRType* Other) const override;
   std::string toString() const override;
   uint64_t getSizeInBits(const TargetLayout&) const override;

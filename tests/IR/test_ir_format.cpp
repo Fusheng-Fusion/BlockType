@@ -1,7 +1,7 @@
 #include <cassert>
 #include <cstdint>
 
-#include "blocktype/IR/IRFormat.h"
+#include "blocktype/IR/IRFormatVersion.h"
 
 using namespace blocktype::ir;
 

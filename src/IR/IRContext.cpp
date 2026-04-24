@@ -1,5 +1,7 @@
 #include "blocktype/IR/IRContext.h"
 
+#include "blocktype/IR/IRModule.h"
+
 namespace blocktype {
 namespace ir {
 
@@ -12,6 +14,7 @@ std::string_view IRContext::saveString(std::string_view Str) {
 }
 
 void IRContext::sealModule(IRModule& M) {
+  M.seal();
 }
 
 } // namespace ir

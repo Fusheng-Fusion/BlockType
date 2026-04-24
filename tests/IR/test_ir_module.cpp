@@ -86,7 +86,7 @@ int main() {
   Mod.setReproducible(true);
   assert(Mod.isReproducible());
 
-  Mod.addRequiredFeature(IRFeature::Exceptions);
+  Mod.addRequiredFeature(IRFeature::ExceptionHandling);
   assert(Mod.getRequiredFeatures() != 0);
 
   return 0;

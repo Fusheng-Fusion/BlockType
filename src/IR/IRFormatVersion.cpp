@@ -1,4 +1,4 @@
-#include "blocktype/IR/IRFormat.h"
+#include "blocktype/IR/IRFormatVersion.h"
 
 #include <sstream>
 

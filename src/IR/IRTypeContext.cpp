@@ -66,14 +66,15 @@ IRVectorType* IRTypeContext::getVectorType(IRType* Element, unsigned Count) {
   return Ptr;
 }
 
-IRStructType* IRTypeContext::getStructType(const std::string& Name,
+IRStructType* IRTypeContext::getStructType(std::string_view Name,
                                             std::vector<IRType*> Elems,
                                             bool Packed) {
-  auto It = NamedStructTypes.find(Name);
+  std::string Key(Name);
+  auto It = NamedStructTypes.find(Key);
   if (It != NamedStructTypes.end()) return It->second.get();
   auto T = std::make_unique<IRStructType>(Name, std::move(Elems), Packed);
   auto* Ptr = T.get();
-  NamedStructTypes[Name] = std::move(T);
+  NamedStructTypes[Key] = std::move(T);
   ++NumTypesCreated;
   return Ptr;
 }
@@ -88,6 +89,7 @@ bool IRTypeContext::setStructBody(IRStructType* S,
                                    std::vector<IRType*> Elems,
                                    bool Packed) {
   assert(S && "StructType cannot be null");
+  S->setBody(std::move(Elems), Packed);
   return true;
 }
 
@@ -112,23 +114,24 @@ IRFunctionType* IRTypeContext::getFunctionType(IRType* Ret,
   return Ptr;
 }
 
-IROpaqueType* IRTypeContext::getOpaqueType(const std::string& Name) {
-  auto It = OpaqueTypes.find(Name);
+IROpaqueType* IRTypeContext::getOpaqueType(std::string_view Name) {
+  std::string Key(Name);
+  auto It = OpaqueTypes.find(Key);
   if (It != OpaqueTypes.end()) return It->second.get();
   auto T = std::make_unique<IROpaqueType>(Name);
   auto* Ptr = T.get();
-  OpaqueTypes[Name] = std::move(T);
+  OpaqueTypes[Key] = std::move(T);
   ++NumTypesCreated;
   return Ptr;
 }
 
-IRStructType* IRTypeContext::getStructTypeByName(const std::string& Name) const {
-  auto It = NamedStructTypes.find(Name);
+IRStructType* IRTypeContext::getStructTypeByName(std::string_view Name) const {
+  auto It = NamedStructTypes.find(std::string(Name));
   return It != NamedStructTypes.end() ? It->second.get() : nullptr;
 }
 
-IROpaqueType* IRTypeContext::getOpaqueTypeByName(const std::string& Name) const {
-  auto It = OpaqueTypes.find(Name);
+IROpaqueType* IRTypeContext::getOpaqueTypeByName(std::string_view Name) const {
+  auto It = OpaqueTypes.find(std::string(Name));
   return It != OpaqueTypes.end() ? It->second.get() : nullptr;
 }
 

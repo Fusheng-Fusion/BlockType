@@ -16,10 +16,18 @@ namespace blocktype {
 namespace ir {
 
 enum class IRFeature : uint32_t {
-  None = 0,
-  Exceptions = 1 << 0,
-  Threads = 1 << 1,
-  SIMD = 1 << 2,
+  IntegerArithmetic  = 1 << 0,
+  FloatArithmetic    = 1 << 1,
+  VectorOperations   = 1 << 2,
+  AtomicOperations   = 1 << 3,
+  ExceptionHandling  = 1 << 4,
+  DebugInfo          = 1 << 5,
+  VarArg             = 1 << 6,
+  SeparateFloatInt   = 1 << 7,
+  StructReturn       = 1 << 8,
+  DynamicCast        = 1 << 9,
+  VirtualDispatch    = 1 << 10,
+  Coroutines         = 1 << 11,
 };
 
 class IRMetadata {
@@ -95,6 +103,7 @@ class IRModule {
   std::vector<std::unique_ptr<IRGlobalAlias>> Aliases;
   std::vector<std::unique_ptr<IRMetadata>> Metadata;
   bool IsReproducible = false;
+  bool IsSealed = false;
   uint32_t RequiredFeatures = 0;
 
 public:
@@ -105,6 +114,9 @@ public:
   std::string_view getTargetTriple() const { return TargetTriple; }
   void setTargetTriple(std::string_view T) { TargetTriple = T; }
   IRTypeContext& getTypeContext() const { return TypeCtx; }
+
+  bool isSealed() const { return IsSealed; }
+  void seal() { IsSealed = true; }
 
   IRFunction* getFunction(std::string_view Name) const;
   IRFunction* getOrInsertFunction(std::string_view Name, IRFunctionType* Ty);

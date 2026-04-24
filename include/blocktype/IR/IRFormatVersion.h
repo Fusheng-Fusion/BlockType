@@ -1,5 +1,5 @@
-#ifndef BLOCKTYPE_IR_IRFORMAT_H
-#define BLOCKTYPE_IR_IRFORMAT_H
+#ifndef BLOCKTYPE_IR_IRFORMATVERSION_H
+#define BLOCKTYPE_IR_IRFORMATVERSION_H
 
 #include <cstdint>
 #include <string>
@@ -34,7 +34,10 @@ struct IRFileHeader {
 };
 #pragma pack(pop)
 
+static_assert(sizeof(IRFileHeader) == 4 + 6 + 4 + 4 + 4 + 4,
+              "IRFileHeader size must be 26 bytes");
+
 } // namespace ir
 } // namespace blocktype
 
-#endif // BLOCKTYPE_IR_IRFORMAT_H
+#endif // BLOCKTYPE_IR_IRFORMATVERSION_H
