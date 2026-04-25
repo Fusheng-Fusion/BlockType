@@ -27,6 +27,8 @@ add_library(blocktype-ir
   IRIntegrity.cpp
   IRConversionResult.cpp
   IRErrorCode.cpp
+  IRPasses.cpp
+  IRContract.cpp
 )
 
 target_include_directories(blocktype-ir

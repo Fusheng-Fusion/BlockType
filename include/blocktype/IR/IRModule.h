@@ -122,6 +122,7 @@ public:
   IRFunction* getOrInsertFunction(StringRef Name, IRFunctionType* Ty);
   void addFunction(std::unique_ptr<IRFunction> F);
   auto& getFunctions() { return Functions; }
+  const auto& getFunctions() const { return Functions; }
   unsigned getNumFunctions() const { return static_cast<unsigned>(Functions.size()); }
 
   IRFunctionDecl* getFunctionDecl(StringRef Name) const;
@@ -131,6 +132,7 @@ public:
   IRGlobalVariable* getOrInsertGlobal(StringRef Name, IRType* Ty);
   void addGlobal(std::unique_ptr<IRGlobalVariable> GV);
   auto& getGlobals() { return Globals; }
+  const auto& getGlobals() const { return Globals; }
 
   void addAlias(std::unique_ptr<IRGlobalAlias> A);
   void addMetadata(std::unique_ptr<IRMetadata> M);
