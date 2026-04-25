@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "blocktype/IR/IRBasicBlock.h"
+
 namespace blocktype {
 namespace ir {
 
@@ -31,6 +33,10 @@ void IRValue::removeUse(Use* U) {
 
 void User::addOperand(IRValue* V) {
   Operands.emplace_back(V, this);
+}
+
+void IRBasicBlockRef::print(raw_ostream& OS) const {
+  OS << "label %" << (BB ? BB->getName() : "<null>");
 }
 
 } // namespace ir

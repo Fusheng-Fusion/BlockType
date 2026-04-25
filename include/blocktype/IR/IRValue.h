@@ -137,6 +137,17 @@ public:
   IRType* getOperandType(unsigned i) const { return Operands[i].get()->getType(); }
 };
 
+class IRBasicBlockRef : public IRValue {
+  IRBasicBlock* BB;
+
+public:
+  explicit IRBasicBlockRef(IRBasicBlock* B)
+    : IRValue(ValueKind::BasicBlockRef, nullptr, 0), BB(B) {}
+  IRBasicBlock* getBasicBlock() const { return BB; }
+  static bool classof(const IRValue* V) { return V->getValueKind() == ValueKind::BasicBlockRef; }
+  void print(raw_ostream& OS) const override;
+};
+
 } // namespace ir
 } // namespace blocktype
 

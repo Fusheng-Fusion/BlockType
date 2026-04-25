@@ -39,6 +39,9 @@ add_subdirectory(Module)
 # CodeGen 单元测试
 add_subdirectory(CodeGen)
 
+# IR 单元测试
+add_subdirectory(IR)
+
 # Frontend 单元测试
 add_subdirectory(Frontend)
 
