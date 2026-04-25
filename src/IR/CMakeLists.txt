@@ -1,3 +1,4 @@
+# libblocktype-ir — IR 核心库（无 LLVM 依赖）
 add_library(blocktype-ir
   APInt.cpp
   IRBasicBlock.cpp
@@ -17,13 +18,11 @@ add_library(blocktype-ir
   BackendCapability.cpp
   DialectLoweringPass.cpp
   IRDialect.cpp
-  IRTelemetry.cpp
   IRDebugMetadata.cpp
   IRDebugInfo.cpp
   TargetLayout.cpp
   raw_ostream.cpp
   IRDiagnostic.cpp
-  IRCache.cpp
   IRIntegrity.cpp
   IRConversionResult.cpp
   IRErrorCode.cpp
@@ -51,3 +50,7 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/blocktype/IR
   DESTINATION include/blocktype
   FILES_MATCHING PATTERN "*.h"
 )
+
+# 子库
+add_subdirectory(Cache)
+add_subdirectory(Telemetry)

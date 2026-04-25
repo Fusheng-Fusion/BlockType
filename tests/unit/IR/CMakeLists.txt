@@ -19,6 +19,8 @@ add_executable(blocktype-ir-test
 target_link_libraries(blocktype-ir-test
   PRIVATE
     blocktype-ir
+    blocktype-ir-cache
+    blocktype-ir-telemetry
     gtest
     gtest_main
 )
