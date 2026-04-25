@@ -26,6 +26,7 @@ add_library(blocktype-ir
   IRCache.cpp
   IRIntegrity.cpp
   IRConversionResult.cpp
+  IRErrorCode.cpp
 )
 
 target_include_directories(blocktype-ir
