@@ -100,7 +100,7 @@ protected:
   IRType* Ty;
   unsigned ValueID;
   std::string Name;
-  std::vector<Use*> UseList;
+  SmallVector<Use*, 4> UseList;
 
 public:
   IRValue(ValueKind K, IRType* T, unsigned ID, StringRef N = "")

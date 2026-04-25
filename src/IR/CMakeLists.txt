@@ -1,4 +1,5 @@
 add_library(blocktype-ir
+  APInt.cpp
   IRBasicBlock.cpp
   IRConstant.cpp
   IRContext.cpp

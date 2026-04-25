@@ -1,6 +1,8 @@
 #ifndef BLOCKTYPE_IR_ADT_H
 #define BLOCKTYPE_IR_ADT_H
 
+#include "blocktype/IR/ADT/APInt.h"
+#include "blocktype/IR/ADT/APFloat.h"
 #include "blocktype/IR/ADT/ArrayRef.h"
 #include "blocktype/IR/ADT/BumpPtrAllocator.h"
 #include "blocktype/IR/ADT/DenseMap.h"
