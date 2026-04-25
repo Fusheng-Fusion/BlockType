@@ -1,9 +1,10 @@
-# Frontend library (CompilerInstance, CompilerInvocation, FrontendBase)
+# Frontend library (CompilerInstance, CompilerInvocation, FrontendBase, FrontendRegistry)
 
 add_library(blocktypeFrontend
   CompilerInvocation.cpp
   CompilerInstance.cpp
   FrontendBase.cpp
+  FrontendRegistry.cpp
 )
 
 target_include_directories(blocktypeFrontend

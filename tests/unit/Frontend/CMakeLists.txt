@@ -47,3 +47,26 @@ target_include_directories(FrontendBaseTest
 )
 
 gtest_discover_tests(FrontendBaseTest)
+
+# FrontendRegistry unit test (GTest)
+
+add_executable(FrontendRegistryTest
+  FrontendRegistryTest.cpp
+)
+
+target_link_libraries(FrontendRegistryTest
+  PRIVATE
+    blocktypeFrontend
+    blocktype-basic
+    blocktype-ir
+    ${LLVM_LIBS}
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(FrontendRegistryTest
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+gtest_discover_tests(FrontendRegistryTest)
