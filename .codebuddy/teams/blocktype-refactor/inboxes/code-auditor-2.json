@@ -1,0 +1,11 @@
+[
+  {
+    "id": "msg-1777095390393-h4awoi",
+    "from": "team-lead",
+    "to": "code-auditor-2",
+    "type": "message",
+    "content": "## 审查任务：A-F3 TelemetryCollector 质量修复\n\n### 背景\ntask-planner 对 A-F3 代码进行审查，发现 6 个质量问题（P1-P6）。dev-tester-2 已修复其中 4 个（P1/P2/P3/P6）+ 1 个优化（P5），P4 不修。请对照以下修复清单逐项审查。\n\n### 红线 Checklist\n(1) 架构优先 — 仅修改内部实现，未改变组件架构\n(2) 多前端多后端自由组合 — 未引入耦合\n(3) 渐进式改造 — 仅修改现有文件内部实现\n(4) 现有功能不退化 — 所有测试必须通过\n(5) 接口抽象优先 — 公共接口不变（仅添加 public static 工具方法）\n(6) IR 中间层解耦 — 仅涉及 IR 层\n\n### 修复清单\n\n**P2 [中]：PhaseGuard 禁用拷贝构造/赋值**\n- 添加 `PhaseGuard(const PhaseGuard&) = delete;`\n- 添加 `PhaseGuard& operator=(const PhaseGuard&) = delete;`\n- 添加移动构造函数，移动时设置 `Other.MovedFrom_ = true`\n- 添加 `PhaseGuard& operator=(PhaseGuard&&) = delete;`\n\n**P3 [中]：PhaseGuard 移动后源对象析构保护**\n- 添加 `bool MovedFrom_ = false;` 字段\n- 析构函数条件从 `if (Collector.Enabled)` 改为 `if (Collector.Enabled && !MovedFrom_)`\n- 移动构造函数中设置 `Other.MovedFrom_ = true;`\n\n**P1 [低]：CompilationStartNs 初始化**\n- `CompilationStartNs` 添加 `= 0` 初始化\n- `enable()` 中增加 `CompilationStartNs = getCurrentTimeNs();`\n- `getCurrentTimeNs()` 和 `getCurrentMemoryUsage()` 提升为 TelemetryCollector 的 public static 方法\n\n**P6 [中]：JSON 字符串转义**\n- 添加 `jsonEscape()` 静态辅助函数，转义 `\"`, `\\`, `\\n`, `\\r`, `\\t`\n- `writeChromeTrace()` 和 `writeJSONReport()` 中所有 `E.Detail` 输出改为 `jsonEscape(E.Detail)`\n\n**P5 [低]：macOS 内存统计优化**\n- 将 `#include <malloc/malloc.h>` 替换为 `#include <mach/mach.h>`\n- macOS 实现从 `malloc_zone_statistics` 改为 `task_info(mach_task_self(), TASK_BASIC_INFO, ...)` 获取 `resident_size`\n\n**P4 [低]：不修改** — Linux sscanf %zu 格式可接受\n\n### 需审查文件（3 个）\n\n1. **`/Users/yuan/Documents/BlockType/include/blocktype/IR/IRTelemetry.h`**（85 行）— 类型定义 + 接口\n2. **`/Users/yuan/Documents/BlockType/src/IR/IRTelemetry.cpp`**（174 行）— 完整实现\n3. **`/Users/yuan/Documents/BlockType/tests/unit/IR/IRTelemetryTest.cpp`**（107 行）— 7 个测试\n\n### 参考文档\n- `/Users/yuan/Documents/BlockType/docs/plan/多前端后端重构方案/16-AI-Coder-任务流-PhaseA-AF3-优化版.md`\n\n### 审查要求\n1. 逐项验证 P1/P2/P3/P5/P6 是否正确修复\n2. 检查是否引入新问题\n3. 检查测试覆盖是否充分（特别是移动语义和 JSON 转义）\n4. 输出结构化审查报告（通过/不通过，逐项问题清单）\n\ndev-tester-2 报告编译零错误、7 个 Telemetry 测试全部通过。",
+    "timestamp": "2026-04-25T05:36:30.393Z",
+    "read": true
+  }
+]

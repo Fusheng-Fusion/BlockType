@@ -17,6 +17,7 @@ add_library(blocktype-ir
   BackendCapability.cpp
   DialectLoweringPass.cpp
   IRDialect.cpp
+  IRTelemetry.cpp
   TargetLayout.cpp
   raw_ostream.cpp
 )

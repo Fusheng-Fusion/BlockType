@@ -1,0 +1,33 @@
+{
+  "name": "blocktype-refactor",
+  "leadAgentId": "4fa99a30a62948a096ebf002abe92a11",
+  "workspacePath": "/Users/yuan/Documents/BlockType",
+  "createdAt": "2026-04-25T01:38:20.024Z",
+  "options": {
+    "workspacePath": "/Users/yuan/Documents/BlockType",
+    "isAutoTeam": false
+  },
+  "members": [
+    {
+      "memberId": "team-lead@blocktype-refactor",
+      "name": "team-lead",
+      "role": "Team Lead - coordinates the team and interacts with the user"
+    },
+    {
+      "memberId": "task-planner@blocktype-refactor",
+      "name": "task-planner",
+      "role": "开发规划策划工程师"
+    },
+    {
+      "memberId": "dev-tester-2@blocktype-refactor",
+      "name": "dev-tester-2",
+      "role": "开发与测试工程师"
+    },
+    {
+      "memberId": "code-auditor-2@blocktype-refactor",
+      "name": "code-auditor-2",
+      "role": "代码审查纠察专员"
+    }
+  ],
+  "isAutoTeam": false
+}

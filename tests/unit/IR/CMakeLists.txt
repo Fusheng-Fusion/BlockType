@@ -3,6 +3,7 @@ add_executable(blocktype-ir-test
   IRBuilderTest.cpp
   IRDialectTest.cpp
   IRSerializerTest.cpp
+  IRTelemetryTest.cpp
   IRVerifierTest.cpp
 )
 
