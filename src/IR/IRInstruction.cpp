@@ -112,7 +112,13 @@ void IRInstruction::print(raw_ostream& OS) const {
     "", "", "", "", "", "", "", "", "", "", "", "", "",
     "ffi_call", "ffi_check", "ffi_coerce", "ffi_unwind",
     "", "", "", "", "", "", "", "", "", "", "", "",
-    "atomic_load", "atomic_store", "atomic_rmw", "atomic_cmpxchg", "fence"
+    "atomic_load", "atomic_store", "atomic_rmw", "atomic_cmpxchg", "fence",
+    "", "", "", "", "", "", "", "", "", "", "",
+    "dynamic_cast", "vtable_dispatch", "rtti_typeid",
+    "", "", "",
+    "target_intrinsic",
+    "", "", "", "", "", "", "",
+    "meta_inline_always", "meta_inline_never", "meta_hot", "meta_cold"
   };
 
   auto Idx = static_cast<size_t>(Op);

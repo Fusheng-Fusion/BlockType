@@ -44,6 +44,20 @@ enum class Opcode : uint16_t {
   DbgDeclare = 144, DbgValue = 145, DbgLabel = 146,
   FFICall = 160, FFICheck = 161, FFICoerce = 162, FFIUnwind = 163,
   AtomicLoad = 176, AtomicStore = 177, AtomicRMW = 178, AtomicCmpXchg = 179, Fence = 180,
+
+  // Cpp Dialect instructions (192-199)
+  DynamicCast    = 192,
+  VtableDispatch = 193,
+  RTTITypeid     = 194,
+
+  // Target Dialect instructions (200-207)
+  TargetIntrinsic = 200,
+
+  // Metadata Dialect instructions (208-215)
+  MetaInlineAlways = 208,
+  MetaInlineNever  = 209,
+  MetaHot          = 210,
+  MetaCold         = 211,
 };
 
 enum class ICmpPred : uint8_t {
@@ -71,6 +85,7 @@ enum class FunctionAttr : uint32_t {
   ReadNone = 1 << 4, NoInline = 1 << 5, AlwaysInline = 1 << 6, NoUnwind = 1 << 7,
   Pure = 1 << 8, Const = 1 << 9, Naked = 1 << 10, NoRecurse = 1 << 11,
   WillReturn = 1 << 12, MustProgress = 1 << 13,
+  Hot = 1 << 14, Cold = 1 << 15,
 };
 using FunctionAttrs = uint32_t;
 
