@@ -161,6 +161,13 @@ public:
   void setStatic(bool S) { IsStatic = S; }
   bool isConstexpr() const { return IsConstexpr; }
   void setConstexpr(bool C = true) { IsConstexpr = C; }
+
+  /// Whether this variable has global storage (file-scope or static local).
+  /// A variable at namespace scope without 'static' has external linkage = global.
+  /// A variable with 'static' at namespace scope also has global storage.
+  bool hasGlobalStorage() const { return true; }
+  // Note: This is a simplified version. When BlockType adds function-scope VarDecls,
+  // this should check DeclContext (namespace scope vs function scope).
   
   /// Get the attribute list for this variable declaration.
   class AttributeListDecl *getAttrs() const { return Attrs; }
@@ -719,6 +726,10 @@ public:
   // P7.1.5: Lambda support
   bool isLambda() const { return IsLambda; }
   void setIsLambda(bool V) { IsLambda = V; }
+
+  /// Whether this class has a vtable (requires virtual methods).
+  /// Stub: checks Methods for virtual methods. B.9 (IREmitCXX) will implement properly.
+  bool hasVTable() const;
 
   /// Check if this class is derived from the given base class.
   /// Performs a recursive search through the inheritance hierarchy.

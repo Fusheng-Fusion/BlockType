@@ -374,6 +374,13 @@ bool CXXRecordDecl::isDerivedFrom(const CXXRecordDecl *Base) const {
   return false;
 }
 
+bool CXXRecordDecl::hasVTable() const {
+  for (auto* M : Methods) {
+    if (M->isVirtual()) return true;
+  }
+  return false;
+}
+
 void CXXRecordDecl::dump(raw_ostream &OS, unsigned Indent) const {
   printIndent(OS, Indent);
   OS << (isClass() ? "CXXRecordDecl " : "RecordDecl ") << getName() << "\n";

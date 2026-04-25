@@ -94,3 +94,27 @@ target_include_directories(IRTypeMapperTest
 )
 
 gtest_discover_tests(IRTypeMapperTest)
+
+# ASTToIRConverter unit test (GTest)
+
+add_executable(ASTToIRConverterTest
+  ASTToIRConverterTest.cpp
+)
+
+target_link_libraries(ASTToIRConverterTest
+  PRIVATE
+    blocktypeFrontend
+    blocktype-basic
+    blocktype-ir
+    blocktype-ast
+    ${LLVM_LIBS}
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(ASTToIRConverterTest
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+gtest_discover_tests(ASTToIRConverterTest)

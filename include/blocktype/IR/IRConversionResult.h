@@ -39,6 +39,15 @@ public:
   bool isUsable() const { return Module_ != nullptr && !Invalid_; }
   std::unique_ptr<IRModule> takeModule() { return std::move(Module_); }
   unsigned getNumErrors() const { return NumErrors_; }
+
+  /// Record a conversion error. Increments error count and marks as invalid.
+  void addError() {
+    ++NumErrors_;
+    Invalid_ = true;
+  }
+
+  /// Get the module pointer (does not transfer ownership).
+  IRModule* getModule() const { return Module_.get(); }
 };
 
 // ============================================================

@@ -443,4 +443,38 @@ DIAG(warn_pack_index_runtime, Warning, \
   "runtime pack indexing may generate less efficient code", \
   "运行时包索引可能生成效率较低的代码")
 
+//===--- IR Conversion Diagnostics (Phase B) ---===//
+
+DIAG(err_ir_type_mapping_failed, Error, \
+  "failed to map AST type to IR type", \
+  "AST 类型到 IR 类型映射失败")
+
+DIAG(err_ir_expr_conversion_failed, Error, \
+  "failed to convert expression to IR", \
+  "表达式到 IR 转换失败")
+
+DIAG(err_ir_stmt_conversion_failed, Error, \
+  "failed to convert statement to IR", \
+  "语句到 IR 转换失败")
+
+DIAG(err_ir_function_conversion_failed, Error, \
+  "failed to convert function body to IR", \
+  "函数体到 IR 转换失败")
+
+DIAG(err_ir_globalvar_init_failed, Error, \
+  "failed to convert global variable initializer to IR", \
+  "全局变量初始化器到 IR 转换失败")
+
+DIAG(err_ir_cxx_semantic_failed, Error, \
+  "failed to convert C++ construct to IR", \
+  "C++ 构造到 IR 转换失败")
+
+DIAG(err_ir_vtable_generation_failed, Error, \
+  "failed to generate vtable", \
+  "vtable 生成失败")
+
+DIAG(err_ir_rtti_generation_failed, Error, \
+  "failed to generate RTTI information", \
+  "RTTI 信息生成失败")
+
 #undef DIAG

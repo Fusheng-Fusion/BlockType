@@ -34,6 +34,9 @@ public:
   uint64_t getLongDoubleSizeInBits() const { return LongDoubleSize * 8; }
   bool isLittleEndian() const { return IsLittleEndian; }
 
+  /// Get the target triple string.
+  StringRef getTriple() const { return TripleStr; }
+
   static std::unique_ptr<TargetLayout> Create(StringRef Triple);
 };
 
