@@ -299,3 +299,32 @@ TEST(IRBuilderTest, InsertPointMaintenance) {
   Builder.createAdd(One, One, "b");
   EXPECT_EQ(Entry->size(), 2u);
 }
+
+TEST(IRBuilderTest, DebugInfoField) {
+  IRContext IRCtx;
+  IRTypeContext& Ctx = IRCtx.getTypeContext();
+  IRModule Mod("test", Ctx);
+  auto* FTy = Ctx.getFunctionType(Ctx.getInt32Ty(), {});
+  auto* F = Mod.getOrInsertFunction("dbg_test", FTy);
+  auto* Entry = F->addBasicBlock("entry");
+  IRBuilder Builder(IRCtx);
+  Builder.setInsertPoint(Entry);
+  auto* One = Builder.getInt32(1);
+  auto* Two = Builder.getInt32(2);
+  auto* Add = Builder.createAdd(One, Two, "sum");
+
+  // V1: 默认无调试信息
+  EXPECT_FALSE(Add->hasDebugInfo());
+  EXPECT_EQ(Add->getDebugInfo(), nullptr);
+
+  // V2: 设置/获取调试信息
+  debug::IRInstructionDebugInfo DI;
+  Add->setDebugInfo(DI);
+  EXPECT_TRUE(Add->hasDebugInfo());
+  EXPECT_NE(Add->getDebugInfo(), nullptr);
+
+  // V3: 清除调试信息
+  Add->clearDebugInfo();
+  EXPECT_FALSE(Add->hasDebugInfo());
+  EXPECT_EQ(Add->getDebugInfo(), nullptr);
+}

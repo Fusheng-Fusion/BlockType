@@ -2,10 +2,12 @@
 #define BLOCKTYPE_IR_IRINSTRUCTION_H
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
 #include "blocktype/IR/ADT.h"
+#include "blocktype/IR/IRDebugFwd.h"
 #include "blocktype/IR/IRType.h"
 #include "blocktype/IR/IRValue.h"
 
@@ -17,6 +19,7 @@ class IRInstruction : public User {
   dialect::DialectID DialectID_;
   uint8_t Pred_ = 0;    // ICmpPred 或 FCmpPred 的原始值；非比较指令为 0
   IRBasicBlock* Parent;
+  std::optional<debug::IRInstructionDebugInfo> DbgInfo;
 
 public:
   IRInstruction(Opcode O, IRType* Ty, unsigned ID,
@@ -44,6 +47,17 @@ public:
   ICmpPred getICmpPredicate() const { return static_cast<ICmpPred>(Pred_); }
   /// 获取 FCmp predicate（仅对 Opcode::FCmp 有效）。
   FCmpPred getFCmpPredicate() const { return static_cast<FCmpPred>(Pred_); }
+
+  /// 设置调试信息
+  void setDebugInfo(const debug::IRInstructionDebugInfo& DI) { DbgInfo = DI; }
+  /// 获取调试信息（无调试信息时返回 nullptr）
+  const debug::IRInstructionDebugInfo* getDebugInfo() const {
+    return DbgInfo ? &*DbgInfo : nullptr;
+  }
+  /// 查询是否有调试信息
+  bool hasDebugInfo() const { return DbgInfo.has_value(); }
+  /// 清除调试信息
+  void clearDebugInfo() { DbgInfo.reset(); }
 };
 
 } // namespace ir
