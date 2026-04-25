@@ -24,6 +24,7 @@ add_library(blocktype-ir
   raw_ostream.cpp
   IRDiagnostic.cpp
   IRCache.cpp
+  IRIntegrity.cpp
 )
 
 target_include_directories(blocktype-ir

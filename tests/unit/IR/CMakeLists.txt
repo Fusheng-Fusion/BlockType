@@ -8,6 +8,7 @@ add_executable(blocktype-ir-test
   IRVerifierTest.cpp
   IRDiagnosticTest.cpp
   IRCacheTest.cpp
+  IRIntegrityTest.cpp
 )
 
 target_link_libraries(blocktype-ir-test
