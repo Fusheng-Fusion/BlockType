@@ -7,6 +7,7 @@ add_executable(blocktype-ir-test
   IRDebugInfoTest.cpp
   IRVerifierTest.cpp
   IRDiagnosticTest.cpp
+  IRCacheTest.cpp
 )
 
 target_link_libraries(blocktype-ir-test

@@ -23,6 +23,7 @@ add_library(blocktype-ir
   TargetLayout.cpp
   raw_ostream.cpp
   IRDiagnostic.cpp
+  IRCache.cpp
 )
 
 target_include_directories(blocktype-ir
