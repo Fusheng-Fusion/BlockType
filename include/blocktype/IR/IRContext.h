@@ -17,6 +17,7 @@ namespace blocktype {
 namespace ir {
 
 class IRModule;
+class IRConstantUndef;
 
 enum class IRThreadingMode {
   SingleThread,
@@ -29,6 +30,7 @@ class IRContext {
   std::vector<std::function<void()>> Cleanups;
   IRTypeContext TypeCtx;
   IRThreadingMode ThreadingMode = IRThreadingMode::SingleThread;
+  DenseMap<IRType*, IRConstantUndef*> UndefCache;
 
 public:
   template <typename T, typename... Args>
@@ -48,6 +50,7 @@ public:
   void setThreadingMode(IRThreadingMode Mode) { ThreadingMode = Mode; }
   IRThreadingMode getThreadingMode() const { return ThreadingMode; }
   void sealModule(IRModule& M);
+  IRConstantUndef* getUndef(IRType* Ty);
 
   ~IRContext() {
     for (auto It = Cleanups.rbegin(); It != Cleanups.rend(); ++It)

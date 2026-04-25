@@ -18,6 +18,8 @@
 namespace blocktype {
 namespace ir {
 
+class IRContext;
+
 class APInt {
   uint64_t Val;
   unsigned BitWidth;
@@ -296,21 +298,11 @@ public:
 };
 
 class IRConstantUndef : public IRConstant {
-  static std::unordered_map<IRType*, IRConstantUndef*>& getCache() {
-    static std::unordered_map<IRType*, IRConstantUndef*> Cache;
-    return Cache;
-  }
+  friend class IRContext;
 
 public:
   explicit IRConstantUndef(IRType* Ty) : IRConstant(ValueKind::ConstantUndef, Ty, 0) {}
-  static IRConstantUndef* get(IRType* Ty) {
-    auto& Cache = getCache();
-    auto It = Cache.find(Ty);
-    if (It != Cache.end()) return It->second;
-    auto* U = new IRConstantUndef(Ty);
-    Cache[Ty] = U;
-    return U;
-  }
+  static IRConstantUndef* get(IRContext& Ctx, IRType* Ty);
   static bool classof(const IRValue* V) { return V->getValueKind() == ValueKind::ConstantUndef; }
   void print(std::ostream& OS) const override;
 };

@@ -1,6 +1,7 @@
 #include <cassert>
 
 #include "blocktype/IR/IRConstant.h"
+#include "blocktype/IR/IRContext.h"
 #include "blocktype/IR/IRInstruction.h"
 #include "blocktype/IR/IRTypeContext.h"
 #include "blocktype/IR/IRValue.h"
@@ -8,7 +9,8 @@
 using namespace blocktype::ir;
 
 int main() {
-  IRTypeContext Ctx;
+  IRContext IRCtx;
+  IRTypeContext& Ctx = IRCtx.getTypeContext();
   auto* Int32 = Ctx.getInt32Ty();
 
   auto* CI = new IRConstantInt(static_cast<IRIntegerType*>(Int32), 42u);
@@ -29,8 +31,8 @@ int main() {
   assert(Op0Use->get() == V1);
   assert(V1->getNumUses() == 1);
 
-  auto* Undef1 = IRConstantUndef::get(Int32);
-  auto* Undef2 = IRConstantUndef::get(Int32);
+  auto* Undef1 = IRConstantUndef::get(IRCtx, Int32);
+  auto* Undef2 = IRConstantUndef::get(IRCtx, Int32);
   assert(Undef1 == Undef2);
 
   APInt Val64(64, 100);

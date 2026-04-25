@@ -124,7 +124,7 @@ public:
 
 class User : public IRValue {
 protected:
-  std::vector<Use> Operands;
+  SmallVector<Use, 4> Operands;
 
 public:
   User(ValueKind K, IRType* T, unsigned ID, StringRef N = "")
