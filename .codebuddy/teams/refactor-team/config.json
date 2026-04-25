@@ -14,19 +14,19 @@
       "role": "Team Lead - coordinates the team and interacts with the user"
     },
     {
+      "memberId": "auditor@refactor-team",
+      "name": "auditor",
+      "role": "代码审查纠察专员"
+    },
+    {
       "memberId": "planner@refactor-team",
       "name": "planner",
-      "role": "开发规划策划工程师"
+      "role": "新 planner 成员"
     },
     {
       "memberId": "dev-tester@refactor-team",
       "name": "dev-tester",
-      "role": "开发测试工程师"
-    },
-    {
-      "memberId": "auditor@refactor-team",
-      "name": "auditor",
-      "role": "代码审查纠察专员"
+      "role": "新 dev-tester 成员"
     }
   ],
   "isAutoTeam": false

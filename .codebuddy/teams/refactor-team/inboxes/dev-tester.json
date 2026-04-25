@@ -25,5 +25,32 @@
     "content": "## 开发任务：A-F8 IRIntegrityChecksum 基础实现 + IRSigner + 可重现构建\n\n### 规划文档\n`/Users/yuan/Documents/BlockType/docs/plan/多前端后端重构方案/21-AI-Coder-任务流-PhaseA-AF8-优化版.md`\n\n请严格按照文档中的**完整头文件**、**完整实现**、**完整测试**代码执行。文档包含可直接复制的代码。\n\n### 产出文件\n\n| 操作 | 文件路径 |\n|------|----------|\n| 新增 | `include/blocktype/IR/IRIntegrity.h` |\n| 新增 | `src/IR/IRIntegrity.cpp` |\n| 新增 | `tests/unit/IR/IRIntegrityTest.cpp` |\n| 修改 | `src/IR/CMakeLists.txt` — 添加 `IRIntegrity.cpp` |\n| 修改 | `tests/unit/IR/CMakeLists.txt` — 添加 `IRIntegrityTest.cpp` |\n\n### 关键设计决策（planner 结论）\n\n1. **computeChecksum()**：独立 static 方法 `IRIntegrityChecksum::compute()`，不修改 IRModule\n2. **BLAKE3 → FNV-1a**：与 A-F7 一致，封装可零成本替换\n3. **Ed25519 → stub**：sign→全零，verify→true，TODO 注释\n4. **IRModule 数据访问**：仅用公开 API（getFunctions/getGlobals），按名称排序遍历\n5. **可重现构建**：A-F8 仅定义常量 + compute() 中的排序遍历\n6. **命名空间**：`blocktype::ir::security`\n\n### 特别注意\n- `FunctionDecls`/`Aliases`/`Metadata` 无公开 getter，暂不纳入哈希\n- IRSigner stub 的 `verify()` 始终返回 `true`\n- compute() 中 Functions/Globals 按名称排序，保证可重现构建的确定性\n- 可重现构建常量均为 `constexpr`\n\n### 红线 Checklist\n(1) 架构优先 — 完整性校验独立于前端和后端\n(2) 多前端多后端自由组合 — 不引入前后端耦合\n(3) 渐进式改造 — 新增文件为主，不改变现有接口\n(4) 现有功能不退化 — 所有现有测试必须通过\n(5) 接口抽象优先 — IRSigner 提供静态接口\n(6) IR 中间层解耦 — 完整性校验属于 IR 层\n\n### 完成后回报内容\n1. 修改文件清单（含行数）\n2. 编译结果（零错误零警告）\n3. 测试结果（IR 测试全部通过 + 新增测试数量）\n4. 红线 Checklist 逐项确认\n5. 如有设计偏差，详细说明原因",
     "timestamp": "2026-04-25T11:26:23.839Z",
     "read": true
+  },
+  {
+    "id": "msg-1777118183380-7wclel",
+    "from": "team-lead",
+    "to": "dev-tester",
+    "type": "message",
+    "content": "## Task A-F9：IRConversionResult + IRVerificationResult（错误恢复机制）— 开发执行\n\n### 项目红线 Checklist（必须逐项确认）\n(1) 架构优先——功能实现不得妥协架构设计\n(2) 多前端多后端自由组合——不得出现前端与后端的硬耦合\n(3) 渐进式改造——每个阶段必须可编译、可测试\n(4) 现有功能不退化——所有现有功能必须保持等价或更优\n(5) 接口抽象优先——新增代码必须通过抽象接口交互\n(6) IR 中间层解耦——前端产出 IR，后端消费 IR\n\n### 任务要求\n\n严格按照优化版文档执行开发+测试，文档路径：\n`/Users/yuan/Documents/BlockType/docs/plan/多前端后端重构方案/22-AI-Coder-任务流-PhaseA-AF9-优化版.md`\n\n### 产出文件\n\n| 操作 | 文件路径 |\n|------|----------|\n| 新增 | `include/blocktype/IR/IRConversionResult.h` |\n| 新增 | `src/IR/IRConversionResult.cpp` |\n| 新增 | `tests/unit/IR/IRConversionResultTest.cpp` |\n| 修改 | `src/IR/CMakeLists.txt`（+1 行 `IRConversionResult.cpp`）|\n| 修改 | `tests/unit/IR/CMakeLists.txt`（+1 行 `IRConversionResultTest.cpp`）|\n\n### 执行步骤\n1. 阅读优化版文档全文\n2. 按文档创建所有文件\n3. 修改 CMakeLists.txt\n4. 编译项目\n5. 运行新增测试（10 个测试用例 V1-V10）\n6. 运行全量 ctest 确认无退化\n7. 报告结果\n\n### 必读文件列表（绝对路径）\n- `/Users/yuan/Documents/BlockType/docs/plan/多前端后端重构方案/22-AI-Coder-任务流-PhaseA-AF9-优化版.md` — 优化版任务文档\n- `/Users/yuan/Documents/BlockType/src/IR/CMakeLists.txt` — 源文件构建配置\n- `/Users/yuan/Documents/BlockType/tests/unit/IR/CMakeLists.txt` — 测试构建配置\n- `/Users/yuan/Documents/BlockType/include/blocktype/IR/ADT.h` — ADT 头文件入口\n- `/Users/yuan/Documents/BlockType/include/blocktype/IR/IRModule.h` — IRModule 类定义\n- `/Users/yuan/Documents/BlockType/include/blocktype/IR/IRContext.h` — IRContext 类定义\n\n### 预期结果\n- 10 个测试全部通过（V1-V10）\n- 全量 ctest 988 tests，4 pre-existing failures 不相关\n- 编译无 error/warning\n",
+    "timestamp": "2026-04-25T11:56:23.380Z",
+    "read": true
+  },
+  {
+    "id": "shutdown-1777118449366",
+    "from": "team-lead",
+    "to": "dev-tester",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1777118449366\",\"reason\":\"用户要求重置 dev-tester 成员，请立即关闭。\",\"from\":\"team-lead\",\"timestamp\":\"2026-04-25T12:00:49.366Z\"}",
+    "timestamp": "2026-04-25T12:00:49.366Z",
+    "read": true
+  },
+  {
+    "id": "msg-1777118500066-y3ghtz",
+    "from": "team-lead",
+    "to": "dev-tester",
+    "type": "message",
+    "content": "## Task A-F9：IRConversionResult + IRVerificationResult（错误恢复机制）— 开发执行\n\n### 项目红线 Checklist（必须逐项确认）\n(1) 架构优先——功能实现不得妥协架构设计\n(2) 多前端多后端自由组合——不得出现前端与后端的硬耦合\n(3) 渐进式改造——每个阶段必须可编译、可测试\n(4) 现有功能不退化——所有现有功能必须保持等价或更优\n(5) 接口抽象优先——新增代码必须通过抽象接口交互\n(6) IR 中间层解耦——前端产出 IR，后端消费 IR\n\n### 任务要求\n\n严格按照优化版文档执行开发+测试，文档路径：\n`/Users/yuan/Documents/BlockType/docs/plan/多前端后端重构方案/22-AI-Coder-任务流-PhaseA-AF9-优化版.md`\n\n### 产出文件\n\n| 操作 | 文件路径 |\n|------|----------|\n| 新增 | `include/blocktype/IR/IRConversionResult.h` |\n| 新增 | `src/IR/IRConversionResult.cpp` |\n| 新增 | `tests/unit/IR/IRConversionResultTest.cpp` |\n| 修改 | `src/IR/CMakeLists.txt`（+1 行 `IRConversionResult.cpp`）|\n| 修改 | `tests/unit/IR/CMakeLists.txt`（+1 行 `IRConversionResultTest.cpp`）|\n\n### 执行步骤\n1. 阅读优化版文档全文\n2. 按文档创建所有文件（代码直接从文档复制）\n3. 修改 CMakeLists.txt\n4. 编译项目\n5. 运行新增测试（10 个测试用例 V1-V10）\n6. 运行全量 ctest 确认无退化\n7. 通过 send_message 报告结果\n\n### 必读文件列表（绝对路径）\n- `/Users/yuan/Documents/BlockType/docs/plan/多前端后端重构方案/22-AI-Coder-任务流-PhaseA-AF9-优化版.md` — 优化版任务文档（核心）\n- `/Users/yuan/Documents/BlockType/src/IR/CMakeLists.txt` — 源文件构建配置\n- `/Users/yuan/Documents/BlockType/tests/unit/IR/CMakeLists.txt` — 测试构建配置\n\n### 预期结果\n- 10 个测试全部通过（V1-V10）\n- 全量 ctest 988 tests，4 pre-existing failures 不相关\n- 编译无 error/warning\n",
+    "timestamp": "2026-04-25T12:01:40.066Z",
+    "read": true
   }
 ]
