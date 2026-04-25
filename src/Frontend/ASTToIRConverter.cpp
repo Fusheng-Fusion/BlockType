@@ -43,7 +43,7 @@ void ASTToIRConverter::initializeEmitters() {
   ExprEmitter_ = new IREmitExpr(*this);
   StmtEmitter_ = new IREmitStmt(*this);
   CXXEmitter_ = new IREmitCXX(*this);
-  ConstEmitter_ = new IRConstantEmitter(*this);
+  ConstEmitter_ = new IRConstantEmitter(IRCtx_, TypeCtx_);
   Mangler_ = new IRMangler(Layout_);
 }
 
