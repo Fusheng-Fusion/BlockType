@@ -23,6 +23,13 @@
 #include "blocktype/Sema/Sema.h"
 #include "blocktype/AST/Decl.h"
 #include "blocktype/IR/IRTelemetry.h"
+#include "blocktype/IR/IRContext.h"
+#include "blocktype/IR/IRTypeContext.h"
+#include "blocktype/IR/TargetLayout.h"
+#include "blocktype/Frontend/FrontendBase.h"
+#include "blocktype/Frontend/FrontendRegistry.h"
+#include "blocktype/Backend/BackendBase.h"
+#include "blocktype/Backend/BackendRegistry.h"
 #include "llvm/IR/LLVMContext.h"
 #include <memory>
 #include <string>
@@ -73,6 +80,14 @@ class CompilerInstance {
 
   /// Whether the compiler has been initialized.
   bool Initialized = false;
+
+  // === New pipeline components (Phase D) ===
+  std::unique_ptr<frontend::FrontendBase> Frontend;
+  std::unique_ptr<backend::BackendBase> Backend;
+  std::unique_ptr<ir::IRContext> IRCtx;
+  std::unique_ptr<ir::IRTypeContext> IRTypeCtx;
+  std::unique_ptr<ir::TargetLayout> Layout;
+  std::unique_ptr<ir::IRModule> IRModule_;
 
 public:
   CompilerInstance();
@@ -277,6 +292,13 @@ private:
   /// \param Content Output parameter for file content.
   /// \returns true if reading succeeded, false otherwise.
   bool readFileContent(StringRef Filename, std::string &Content);
+
+  // === New pipeline methods (Phase D) ===
+  bool runNewPipeline(StringRef Filename);
+  bool runOldPipeline(StringRef Filename);
+  bool runFrontend(StringRef Filename);
+  bool runIRPipeline();
+  bool runBackend(StringRef OutputPath);
 };
 
 } // namespace blocktype

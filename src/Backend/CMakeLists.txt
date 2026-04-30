@@ -5,6 +5,12 @@ add_library(blocktypeBackend
   BackendRegistry.cpp
   IRToLLVMConverter.cpp
   LLVMBackend.cpp
+  LLVMBackendRegistration.cpp
+  InstructionSelector.cpp
+  RegisterAllocator.cpp
+  GreedyRegAlloc.cpp
+  BasicRegAlloc.cpp
+  DWARF5Emitter.cpp
 )
 
 target_include_directories(blocktypeBackend

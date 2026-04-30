@@ -539,6 +539,19 @@ bool CompilerInstance::compileFile(StringRef Filename) {
     outs() << "Compiling: " << Filename << "\n";
   }
 
+  // Phase D: If frontend or backend is explicitly set, use new pipeline
+  if (Invocation->isFrontendExplicitlySet() || Invocation->isBackendExplicitlySet()) {
+    return runNewPipeline(Filename);
+  }
+
+  // Fall back to old pipeline
+  return runOldPipeline(Filename);
+}
+
+bool CompilerInstance::runOldPipeline(StringRef Filename) {
+  // DEPRECATED: old pipeline — will be removed in Phase E.3
+  // This method preserves the AST→LLVM IR→native code compilation path.
+
   // Load source file
   if (!loadSourceFile(Filename)) {
     return false;
@@ -634,6 +647,161 @@ bool CompilerInstance::compileFile(StringRef Filename) {
 
   if (Invocation->FrontendOpts.Verbose) {
     outs() << "  Compilation successful\n";
+  }
+
+  return true;
+}
+
+//===--------------------------------------------------------------------===//
+// New pipeline (Phase D)
+//===--------------------------------------------------------------------===//
+
+bool CompilerInstance::runNewPipeline(StringRef Filename) {
+  // Ensure diagnostics engine exists
+  if (!Diags) createDiagnostics();
+
+  // Step 1: Run frontend to produce IRModule
+  if (!runFrontend(Filename)) {
+    return false;
+  }
+
+  // Step 2: Run IR pipeline (optimization, etc.)
+  if (!runIRPipeline()) {
+    return false;
+  }
+
+  // Step 3: Determine output path and run backend
+  std::string OutputPath;
+  if (!Invocation->CodeGenOpts.OutputFile.empty()) {
+    OutputPath = Invocation->CodeGenOpts.OutputFile;
+  } else {
+    OutputPath = Filename.str();
+    size_t DotPos = OutputPath.rfind('.');
+    if (DotPos != std::string::npos) {
+      OutputPath = OutputPath.substr(0, DotPos) + ".o";
+    } else {
+      OutputPath += ".o";
+    }
+  }
+
+  if (!runBackend(OutputPath)) {
+    return false;
+  }
+
+  if (Invocation->FrontendOpts.Verbose) {
+    outs() << "  New pipeline compilation successful\n";
+  }
+
+  return true;
+}
+
+bool CompilerInstance::runFrontend(StringRef Filename) {
+  using namespace frontend;
+  using namespace backend;
+
+  // Build FrontendCompileOptions from CompilerInvocation
+  FrontendCompileOptions FEOpts;
+  FEOpts.InputFile = Filename.str();
+  FEOpts.TargetTriple = Invocation->TargetOpts.Triple;
+  FEOpts.OptimizationLevel = Invocation->CodeGenOpts.OptimizationLevel;
+  FEOpts.EmitIR = Invocation->CodeGenOpts.EmitLLVM;
+  FEOpts.IncludePaths = {
+    Invocation->FrontendOpts.IncludePaths.begin(),
+    Invocation->FrontendOpts.IncludePaths.end()
+  };
+
+  // Create frontend via registry
+  StringRef FrontendName = Invocation->getFrontendName();
+  Frontend = FrontendRegistry::instance().create(FrontendName, FEOpts, *Diags);
+  if (!Frontend) {
+    errs() << "Error: Failed to create frontend '" << FrontendName << "'\n";
+    return false;
+  }
+
+  if (Invocation->FrontendOpts.Verbose) {
+    outs() << "  Using frontend: " << FrontendName << "\n";
+  }
+
+  // Create TargetLayout from target triple
+  if (Invocation->TargetOpts.Triple.empty()) {
+    errs() << "Error: Target triple is empty (call setDefaultTargetTriple first)\n";
+    return false;
+  }
+  Layout = ir::TargetLayout::Create(Invocation->TargetOpts.Triple);
+
+  // Create IRContext (which owns IRTypeContext internally)
+  IRCtx = std::make_unique<ir::IRContext>();
+  IRTypeCtx = std::make_unique<ir::IRTypeContext>();
+
+  // Run frontend compile
+  auto IRModule = Frontend->compile(Filename, *IRTypeCtx, *Layout);
+  if (!IRModule) {
+    errs() << "Error: Frontend compilation failed for '" << Filename << "'\n";
+    return false;
+  }
+
+  // Store the IRModule in IRContext (IRContext takes ownership)
+  // The IRModule pointer is stored for later pipeline stages
+  // Note: IRModule ownership transferred to caller, we hold it in IRCtx
+  IRCtx->sealModule(*IRModule);
+  IRModule_ = std::move(IRModule);
+
+  return true;
+}
+
+bool CompilerInstance::runIRPipeline() {
+  if (!IRModule_) {
+    errs() << "Error: No IRModule to process\n";
+    return false;
+  }
+
+  if (Invocation->FrontendOpts.Verbose) {
+    outs() << "  IR pipeline: processing IRModule\n";
+  }
+
+  // Future: add IR optimization passes here
+  // For now, IR pipeline is a pass-through
+
+  return true;
+}
+
+bool CompilerInstance::runBackend(StringRef OutputPath) {
+  using namespace backend;
+
+  if (!IRModule_) {
+    errs() << "Error: No IRModule for backend\n";
+    return false;
+  }
+
+  // Build BackendOptions from CompilerInvocation
+  BackendOptions BOpts;
+  BOpts.TargetTriple = Invocation->TargetOpts.Triple;
+  BOpts.OutputPath = OutputPath.str();
+  BOpts.OptimizationLevel = Invocation->CodeGenOpts.OptimizationLevel;
+  BOpts.EmitAssembly = Invocation->CodeGenOpts.EmitAssembly;
+  BOpts.EmitIR = Invocation->CodeGenOpts.EmitLLVM;
+  BOpts.DebugInfo = Invocation->CodeGenOpts.DebugInfo;
+
+  // Create backend via registry
+  StringRef BackendName = Invocation->getBackendName();
+  Backend = BackendRegistry::instance().create(BackendName, BOpts, *Diags);
+  if (!Backend) {
+    errs() << "Error: Failed to create backend '" << BackendName << "'\n";
+    return false;
+  }
+
+  if (Invocation->FrontendOpts.Verbose) {
+    outs() << "  Using backend: " << BackendName << "\n";
+  }
+
+  // Run backend: emit object file
+  if (!Backend->emitObject(*IRModule_, OutputPath)) {
+    errs() << "Error: Backend code generation failed\n";
+    return false;
+  }
+
+  if (Invocation->FrontendOpts.Verbose) {
+    outs() << "  Object file generated: " << OutputPath << "\n";
   }
 
   return true;

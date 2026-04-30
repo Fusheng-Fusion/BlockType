@@ -328,3 +328,25 @@ target_include_directories(FrontendFuzzerTest
 )
 
 gtest_discover_tests(FrontendFuzzerTest)
+
+# CompilerInvocation unit test (GTest) — Phase D.1
+
+add_executable(CompilerInvocationTest
+  CompilerInvocationTest.cpp
+)
+
+target_link_libraries(CompilerInvocationTest
+  PRIVATE
+    blocktypeFrontend
+    blocktype-basic
+    ${LLVM_LIBS}
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(CompilerInvocationTest
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+gtest_discover_tests(CompilerInvocationTest)

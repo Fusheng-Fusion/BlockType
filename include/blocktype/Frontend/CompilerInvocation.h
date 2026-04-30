@@ -240,6 +240,16 @@ public:
   /// Frontend options.
   FrontendOptions FrontendOpts;
 
+  // === Pipeline options (Phase D) ===
+  /// Frontend name (default "cpp").
+  std::string FrontendName = "cpp";
+  /// Backend name (default "llvm").
+  std::string BackendName = "llvm";
+  /// Whether --frontend was explicitly specified.
+  bool FrontendExplicitlySet = false;
+  /// Whether --backend was explicitly specified.
+  bool BackendExplicitlySet = false;
+
 public:
   CompilerInvocation() = default;
   ~CompilerInvocation() = default;
@@ -279,6 +289,14 @@ public:
   /// \param Str String representation of options.
   /// \returns true if deserialization succeeded, false otherwise.
   bool fromString(const std::string &Str);
+
+  // === Pipeline option accessors (Phase D) ===
+  StringRef getFrontendName() const { return FrontendName; }
+  StringRef getBackendName() const { return BackendName; }
+  void setFrontendName(StringRef N) { FrontendName = N.str(); FrontendExplicitlySet = true; }
+  void setBackendName(StringRef N) { BackendName = N.str(); BackendExplicitlySet = true; }
+  bool isFrontendExplicitlySet() const { return FrontendExplicitlySet; }
+  bool isBackendExplicitlySet() const { return BackendExplicitlySet; }
 };
 
 } // namespace blocktype

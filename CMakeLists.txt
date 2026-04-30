@@ -70,6 +70,7 @@ add_subdirectory(tests/benchmark)
 add_subdirectory(tests/cpp23)
 add_subdirectory(tests/cpp26)
 add_subdirectory(tests/fuzz)
+add_subdirectory(tests/diff)
 
 # 安装配置
 install(DIRECTORY include/blocktype

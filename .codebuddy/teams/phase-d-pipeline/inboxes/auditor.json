@@ -1,0 +1,11 @@
+[
+  {
+    "id": "shutdown-1777542058662",
+    "from": "team-lead",
+    "to": "auditor",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1777542058662\",\"reason\":\"审查报告已确认 APPROVED。感谢工作，请关闭。\",\"from\":\"team-lead\",\"timestamp\":\"2026-04-30T09:40:58.662Z\"}",
+    "timestamp": "2026-04-30T09:40:58.662Z",
+    "read": true
+  }
+]

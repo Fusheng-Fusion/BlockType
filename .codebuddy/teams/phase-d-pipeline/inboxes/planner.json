@@ -1,0 +1,11 @@
+[
+  {
+    "id": "shutdown-1777539819417",
+    "from": "team-lead",
+    "to": "planner",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1777539819417\",\"reason\":\"Planner 工作已完成，报告和优化版文件均已产出。感谢工作，请关闭。\",\"from\":\"team-lead\",\"timestamp\":\"2026-04-30T09:03:39.417Z\"}",
+    "timestamp": "2026-04-30T09:03:39.417Z",
+    "read": true
+  }
+]

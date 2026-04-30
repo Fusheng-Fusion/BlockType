@@ -100,6 +100,16 @@ bool CompilerInvocation::validate() const {
     return true;
   }
 
+  // Phase D: Validate pipeline option names are non-empty
+  if (FrontendName.empty()) {
+    errs() << "Error: Frontend name must not be empty\n";
+    return false;
+  }
+  if (BackendName.empty()) {
+    errs() << "Error: Backend name must not be empty\n";
+    return false;
+  }
+
   return true;
 }
 
@@ -156,6 +166,12 @@ std::string CompilerInvocation::toString() const {
   OS << "  Output File: " << FrontendOpts.OutputFile << "\n";
   OS << "  Dump AST: " << (FrontendOpts.DumpAST ? "enabled" : "disabled") << "\n";
   OS << "  Verbose: " << (FrontendOpts.Verbose ? "enabled" : "disabled") << "\n";
+
+  OS << "\n[Pipeline Options]\n";
+  OS << "  Frontend Name: " << FrontendName << "\n";
+  OS << "  Backend Name: " << BackendName << "\n";
+  OS << "  Frontend Explicitly Set: " << (FrontendExplicitlySet ? "yes" : "no") << "\n";
+  OS << "  Backend Explicitly Set: " << (BackendExplicitlySet ? "yes" : "no") << "\n";
 
   return OS.str();
 }
@@ -365,6 +381,23 @@ bool CompilerInvocation::parseCommandLine(int Argc, const char *const *Argv) {
     }
     if (Arg == "-E") {
       CodeGenOpts.PreprocessOnly = true;
+      continue;
+    }
+
+    // Phase D: --frontend=<name> and --backend=<name>
+    if (Arg.startswith("--frontend=")) {
+      setFrontendName(Arg.substr(11));
+      continue;
+    }
+    if (Arg.startswith("--backend=")) {
+      setBackendName(Arg.substr(10));
+      continue;
+    }
+    // Phase D: --use-new-pipeline (force new pipeline without explicit --frontend/--backend)
+    if (Arg == "--use-new-pipeline") {
+      // Mark both as explicitly set to trigger new pipeline routing
+      if (!FrontendExplicitlySet) FrontendExplicitlySet = true;
+      if (!BackendExplicitlySet) BackendExplicitlySet = true;
       continue;
     }
 
