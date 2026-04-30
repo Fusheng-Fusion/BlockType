@@ -68,6 +68,7 @@ public:
   IRBasicBlock* addBasicBlock(StringRef Name);
   IRBasicBlock* getEntryBlock();
   auto& getBasicBlocks() { return BasicBlocks; }
+  const auto& getBasicBlocks() const { return BasicBlocks; }
   unsigned getNumBasicBlocks() const { return static_cast<unsigned>(BasicBlocks.size()); }
 
   IRType* getReturnType() const { return Ty->getReturnType(); }

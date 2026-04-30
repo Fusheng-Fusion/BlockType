@@ -93,8 +93,8 @@ bool IREquivalenceChecker::isStructurallyEquivalent(
   if (A.getNumBasicBlocks() != B.getNumBasicBlocks()) return false;
 
   // Compare each basic block
-  auto& BBsA = const_cast<IRFunction&>(A).getBasicBlocks();
-  auto& BBsB = const_cast<IRFunction&>(B).getBasicBlocks();
+  auto& BBsA = A.getBasicBlocks();
+  auto& BBsB = B.getBasicBlocks();
   auto ItA = BBsA.begin();
   auto ItB = BBsB.begin();
   for (; ItA != BBsA.end() && ItB != BBsB.end(); ++ItA, ++ItB) {
@@ -143,8 +143,8 @@ IREquivalenceChecker::check(const IRModule& A, const IRModule& B) {
   }
 
   // 3. Compare global variable count
-  auto& GVsA = const_cast<IRModule&>(A).getGlobals();
-  auto& GVsB = const_cast<IRModule&>(B).getGlobals();
+  auto& GVsA = A.getGlobals();
+  auto& GVsB = B.getGlobals();
   if (GVsA.size() != GVsB.size()) {
     Result.Differences.push_back(
       "Global variable count mismatch: " + std::to_string(GVsA.size()) +
@@ -167,8 +167,8 @@ IREquivalenceChecker::check(const IRModule& A, const IRModule& B) {
   }
 
   // 4. Compare function count
-  auto& FAs = const_cast<IRModule&>(A).getFunctions();
-  auto& FBs = const_cast<IRModule&>(B).getFunctions();
+  auto& FAs = A.getFunctions();
+  auto& FBs = B.getFunctions();
   if (FAs.size() != FBs.size()) {
     Result.Differences.push_back(
       "Function count mismatch: " + std::to_string(FAs.size()) +
