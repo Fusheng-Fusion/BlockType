@@ -740,10 +740,10 @@ bool CompilerInstance::runFrontend(StringRef Filename) {
     return false;
   }
 
-  // Store the IRModule in IRContext (IRContext takes ownership)
-  // The IRModule pointer is stored for later pipeline stages
-  // Note: IRModule ownership transferred to caller, we hold it in IRCtx
+  // Store the IRModule in IRContext for later pipeline stages.
+  // sealModule reads IRModule content for verification/optimization, does NOT transfer ownership.
   IRCtx->sealModule(*IRModule);
+  // IRModule_ takes sole ownership of the IRModule.
   IRModule_ = std::move(IRModule);
 
   return true;
@@ -809,6 +809,17 @@ bool CompilerInstance::runBackend(StringRef OutputPath) {
 
 bool CompilerInstance::compileAllFiles() {
   bool AllSucceeded = true;
+
+  // Phase D: If frontend or backend is explicitly set, route each file
+  // through compileFile() which already contains new pipeline logic.
+  // This ensures --frontend/--backend takes effect for multi-file builds.
+  if (Invocation->isFrontendExplicitlySet() || Invocation->isBackendExplicitlySet()) {
+    for (const auto &File : Invocation->FrontendOpts.InputFiles) {
+      if (!compileFile(File))
+        return false;
+    }
+    return true;
+  }
 
   // P0-2: 在循环外创建共享基础设施
   // 这些组件在多文件编译时应该共享，以支持跨文件符号解析

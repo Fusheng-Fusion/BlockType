@@ -109,3 +109,41 @@ TEST(CompilerInvocationPipelineTest, UseNewPipelineFlag) {
   EXPECT_EQ(CI.getFrontendName(), "cpp");
   EXPECT_EQ(CI.getBackendName(), "llvm");
 }
+
+// ============================================================
+// T8: toString -> fromString round-trip for Pipeline Options
+// ============================================================
+
+TEST(CompilerInvocationPipelineTest, FromStringRoundTrip) {
+  // Set up a CompilerInvocation with known Pipeline Options
+  CompilerInvocation Original;
+  Original.setFrontendName("bt");
+  Original.setBackendName("cranelift");
+
+  // Serialize
+  std::string Serialized = Original.toString();
+
+  // Deserialize into a fresh instance
+  CompilerInvocation Restored;
+  EXPECT_TRUE(Restored.fromString(Serialized));
+
+  // Verify Pipeline Options round-trip correctly
+  EXPECT_EQ(Restored.getFrontendName(), "bt");
+  EXPECT_EQ(Restored.getBackendName(), "cranelift");
+  EXPECT_TRUE(Restored.isFrontendExplicitlySet());
+  EXPECT_TRUE(Restored.isBackendExplicitlySet());
+}
+
+TEST(CompilerInvocationPipelineTest, FromStringRoundTripDefaults) {
+  // Round-trip with default values
+  CompilerInvocation Original;
+  std::string Serialized = Original.toString();
+
+  CompilerInvocation Restored;
+  EXPECT_TRUE(Restored.fromString(Serialized));
+
+  EXPECT_EQ(Restored.getFrontendName(), "cpp");
+  EXPECT_EQ(Restored.getBackendName(), "llvm");
+  EXPECT_FALSE(Restored.isFrontendExplicitlySet());
+  EXPECT_FALSE(Restored.isBackendExplicitlySet());
+}

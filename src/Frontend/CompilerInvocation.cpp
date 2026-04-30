@@ -15,6 +15,7 @@
 #include "llvm/TargetParser/Host.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/StringSwitch.h"
+#include <sstream>
 
 using namespace llvm;
 using namespace blocktype;
@@ -177,10 +178,37 @@ std::string CompilerInvocation::toString() const {
 }
 
 bool CompilerInvocation::fromString(const std::string &Str) {
-  // TODO: Implement deserialization from string
-  // For now, this is a placeholder for future implementation
-  errs() << "Warning: fromString() not yet implemented\n";
-  return false;
+  // Parse Pipeline Options from the serialized string format.
+  // The format produced by toString() uses lines like:
+  //   "  Frontend Name: bt"
+  //   "  Backend Name: cranelift"
+  //   "  Frontend Explicitly Set: yes"
+  //   "  Backend Explicitly Set: no"
+
+  std::istringstream ISS(Str);
+  std::string Line;
+  while (std::getline(ISS, Line)) {
+    // Trim leading/trailing whitespace
+    size_t Start = Line.find_first_not_of(" \t");
+    size_t End = Line.find_last_not_of(" \t\r\n");
+    if (Start == std::string::npos || End == std::string::npos)
+      continue;
+    std::string Trimmed = Line.substr(Start, End - Start + 1);
+
+    if (Trimmed.rfind("Frontend Name: ", 0) == 0) {
+      FrontendName = Trimmed.substr(15);
+    } else if (Trimmed.rfind("Backend Name: ", 0) == 0) {
+      BackendName = Trimmed.substr(14);
+    } else if (Trimmed.rfind("Frontend Explicitly Set: ", 0) == 0) {
+      std::string Val = Trimmed.substr(25);
+      FrontendExplicitlySet = (Val == "yes");
+    } else if (Trimmed.rfind("Backend Explicitly Set: ", 0) == 0) {
+      std::string Val = Trimmed.substr(24);
+      BackendExplicitlySet = (Val == "yes");
+    }
+  }
+
+  return true;
 }
 
 void CompilerInvocation::parseFromCommandLine() {

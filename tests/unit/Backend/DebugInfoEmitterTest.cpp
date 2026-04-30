@@ -5,9 +5,12 @@
 #include <gtest/gtest.h>
 
 #include "blocktype/Backend/DebugInfoEmitter.h"
+#include "blocktype/IR/IRModule.h"
+#include "blocktype/IR/IRTypeContext.h"
 
 using namespace blocktype;
 using namespace blocktype::backend;
+using namespace blocktype::ir;
 
 // ============================================================
 // T1: DWARF5Emitter can be created
@@ -23,13 +26,12 @@ TEST(DebugInfoEmitterTest, DWARF5EmitterCreation) {
 // ============================================================
 
 TEST(DebugInfoEmitterTest, DWARF5EmitterEmitStub) {
+  IRTypeContext TypeCtx;
+  IRModule Mod("test", TypeCtx);
   DWARF5Emitter Emitter;
-  // Create a null module test - emit returns true for stub
-  // Note: a real IRModule would be needed for full testing
   std::string Buf;
-  ir::raw_string_ostream OS(Buf);
-  // Stub implementation accepts nullptr module
-  // Actual test requires constructing a valid IRModule
+  raw_string_ostream OS(Buf);
+  EXPECT_TRUE(Emitter.emit(Mod, OS));
 }
 
 // ============================================================
@@ -37,9 +39,12 @@ TEST(DebugInfoEmitterTest, DWARF5EmitterEmitStub) {
 // ============================================================
 
 TEST(DebugInfoEmitterTest, DWARF5EmitterDWARF4NotSupported) {
+  IRTypeContext TypeCtx;
+  IRModule Mod("test", TypeCtx);
   DWARF5Emitter Emitter;
-  // DWARF4 is not supported by DWARF5Emitter
-  // Stub returns false for non-implemented formats
+  std::string Buf;
+  raw_string_ostream OS(Buf);
+  EXPECT_FALSE(Emitter.emitDWARF4(Mod, OS));
 }
 
 // ============================================================

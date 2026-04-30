@@ -240,7 +240,10 @@ public:
   /// Frontend options.
   FrontendOptions FrontendOpts;
 
-  // === Pipeline options (Phase D) ===
+  // === Pipeline Options (Phase D) ===
+  // These fields control the pluggable frontend/backend pipeline.
+  // Grouped here for clarity; may be refactored into a PipelineOptions
+  // struct in a future phase without changing public API.
   /// Frontend name (default "cpp").
   std::string FrontendName = "cpp";
   /// Backend name (default "llvm").
