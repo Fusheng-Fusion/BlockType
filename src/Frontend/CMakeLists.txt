@@ -18,6 +18,8 @@ add_library(blocktypeFrontend
   IRConstantEmitter.cpp
   CppFrontend.cpp
   CppFrontendRegistration.cpp
+  PluginManager.cpp
+  StructuredDiagnostic.cpp
 )
 
 target_include_directories(blocktypeFrontend

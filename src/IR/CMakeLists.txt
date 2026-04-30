@@ -29,6 +29,7 @@ add_library(blocktype-ir
   IRPasses.cpp
   IRContract.cpp
   IRFFI.cpp
+  IREquivalenceChecker.cpp
 )
 
 target_include_directories(blocktype-ir

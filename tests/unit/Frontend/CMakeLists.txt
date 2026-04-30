@@ -262,3 +262,69 @@ target_include_directories(CppFrontendTest
 )
 
 gtest_discover_tests(CppFrontendTest)
+
+# PluginManager unit test (GTest)
+
+add_executable(PluginManagerTest
+  PluginManagerTest.cpp
+)
+
+target_link_libraries(PluginManagerTest
+  PRIVATE
+    blocktypeFrontend
+    blocktype-basic
+    blocktype-ir
+    ${LLVM_LIBS}
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(PluginManagerTest
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+gtest_discover_tests(PluginManagerTest)
+
+# StructuredDiagnostic unit test (GTest)
+
+add_executable(StructuredDiagnosticTest
+  StructuredDiagnosticTest.cpp
+)
+
+target_link_libraries(StructuredDiagnosticTest
+  PRIVATE
+    blocktypeFrontend
+    blocktype-basic
+    blocktype-ir
+    ${LLVM_LIBS}
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(StructuredDiagnosticTest
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+gtest_discover_tests(StructuredDiagnosticTest)
+
+# FrontendFuzzer unit test (GTest)
+
+add_executable(FrontendFuzzerTest
+  FrontendFuzzerTest.cpp
+)
+
+target_link_libraries(FrontendFuzzerTest
+  PRIVATE
+    blocktype-fuzz
+    blocktype-ir
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(FrontendFuzzerTest
+  PRIVATE ${CMAKE_SOURCE_DIR}/include
+)
+
+gtest_discover_tests(FrontendFuzzerTest)
