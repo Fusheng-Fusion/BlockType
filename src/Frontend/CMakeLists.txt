@@ -36,6 +36,7 @@ target_link_libraries(blocktypeFrontend
     blocktype-sema
     blocktype-ast
     blocktype-codegen
+    blocktype-ir-telemetry
     ${LLVM_LIBS}
 )
 

@@ -22,6 +22,7 @@
 #include "blocktype/Parse/Parser.h"
 #include "blocktype/Sema/Sema.h"
 #include "blocktype/AST/Decl.h"
+#include "blocktype/IR/IRTelemetry.h"
 #include "llvm/IR/LLVMContext.h"
 #include <memory>
 #include <string>
@@ -60,6 +61,9 @@ class CompilerInstance {
 
   /// The LLVM context (for code generation).
   std::unique_ptr<llvm::LLVMContext> LLVMCtx;
+
+  /// The telemetry collector (optional, for performance profiling).
+  std::unique_ptr<telemetry::TelemetryCollector> Telemetry;
 
   /// The current translation unit being compiled.
   TranslationUnitDecl *CurrentTU = nullptr;
@@ -156,6 +160,20 @@ public:
 
   /// Create all components in the correct order.
   void createAllComponents();
+
+  //===--------------------------------------------------------------------===//
+  // Telemetry interface
+  //===--------------------------------------------------------------------===//
+
+  /// Create the telemetry collector.
+  void createTelemetry();
+
+  /// Get the telemetry collector (may be null if not created).
+  telemetry::TelemetryCollector* getTelemetry() { return Telemetry.get(); }
+  const telemetry::TelemetryCollector* getTelemetry() const { return Telemetry.get(); }
+
+  /// Check if telemetry is enabled.
+  bool hasTelemetry() const { return Telemetry != nullptr; }
 
   //===--------------------------------------------------------------------===//
   // Compilation actions

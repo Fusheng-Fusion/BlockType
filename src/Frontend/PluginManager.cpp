@@ -18,21 +18,25 @@ bool PluginManager::unregisterPlugin(ir::StringRef Name) {
 
 CompilerPlugin* PluginManager::getPlugin(ir::StringRef Name) const {
   auto It = LoadedPlugins.find(Name.str());
-  return It != LoadedPlugins.end() ? It->second.get() : nullptr;
+  return It != LoadedPlugins.end() ? (*It).second.get() : nullptr;
 }
 
 void PluginManager::registerPluginPasses(CompilerInstance& CI) {
-  for (auto& [Name, Plugin] : LoadedPlugins) {
-    Plugin->initialize(CI);
+  for (auto It = LoadedPlugins.begin(); It != LoadedPlugins.end(); ++It) {
+    auto& Plugin = (*It).second;
+    if (Plugin) Plugin->initialize(CI);
   }
 }
 
 void PluginManager::listPlugins(ir::raw_ostream& OS) const {
-  for (auto& [Name, Plugin] : LoadedPlugins) {
-    auto Info = Plugin->getInfo();
-    OS << Info.Name << " v" << Info.Version
-       << " [" << static_cast<unsigned>(Info.Type) << "]"
-       << " - " << Info.Description << "\n";
+  for (auto It = LoadedPlugins.begin(); It != LoadedPlugins.end(); ++It) {
+    auto& Plugin = (*It).second;
+    if (Plugin) {
+      auto Info = Plugin->getInfo();
+      OS << Info.Name << " v" << Info.Version
+         << " [" << static_cast<unsigned>(Info.Type) << "]"
+         << " - " << Info.Description << "\n";
+    }
   }
 }
 

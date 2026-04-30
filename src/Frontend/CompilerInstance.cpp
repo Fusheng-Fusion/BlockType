@@ -99,6 +99,17 @@ void CompilerInstance::createLLVMContext() {
   }
 }
 
+void CompilerInstance::createTelemetry() {
+  if (Telemetry) return;  // 已创建
+  
+  Telemetry = std::make_unique<telemetry::TelemetryCollector>();
+  
+  // 根据编译选项决定是否启用
+  if (Invocation && Invocation->FrontendOpts.TimeReport) {
+    Telemetry->enable();
+  }
+}
+
 void CompilerInstance::createAllComponents() {
   createSourceManager();
   createDiagnostics();

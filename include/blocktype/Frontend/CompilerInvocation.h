@@ -199,6 +199,18 @@ struct FrontendOptions {
 
   /// P7.3.2.3: Whether contracts are enabled (-fcontracts / -fno-contracts).
   bool ContractsEnabled = true;
+
+  /// Enable time report (--ftime-report)
+  bool TimeReport = false;
+
+  /// Enable time report in JSON format (--ftime-report=json)
+  bool TimeReportJSON = false;
+
+  /// Enable Chrome trace output (--ftrace-compilation)
+  bool TraceCompilation = false;
+
+  /// Enable memory report (--fmemory-report)
+  bool MemoryReport = false;
 };
 
 /// CompilerInvocation - Encapsulates all compiler options.

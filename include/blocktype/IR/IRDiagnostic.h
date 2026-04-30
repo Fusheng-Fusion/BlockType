@@ -87,6 +87,9 @@ struct StructuredDiagnostic {
   ir::SourceLocation Loc;
   ir::SmallVector<std::string, 4> Notes;
 
+  // 虚析构函数，使结构体成为多态类型，支持 dynamic_cast
+  virtual ~StructuredDiagnostic() = default;
+
   DiagnosticLevel getLevel() const { return Level; }
   DiagnosticGroup getGroup() const { return Group; }
   DiagnosticCode  getCode()  const { return Code;  }
