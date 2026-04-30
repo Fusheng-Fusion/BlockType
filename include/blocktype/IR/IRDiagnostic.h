@@ -76,6 +76,9 @@ enum class DiagnosticCode : uint32_t {
 const char* getDiagnosticCodeName(DiagnosticCode C);
 DiagnosticGroup getGroupForCode(DiagnosticCode C);
 
+/// 解析诊断组名称（用于命令行选项）
+DiagnosticGroup parseDiagnosticGroup(ir::StringRef Name);
+
 // ============================================================
 // StructuredDiagnostic — 单条结构化诊断
 // ============================================================

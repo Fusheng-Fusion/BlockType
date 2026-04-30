@@ -63,6 +63,20 @@ DiagnosticGroup getGroupForCode(DiagnosticCode C) {
 }
 
 // ============================================================
+// 诊断组解析
+// ============================================================
+
+DiagnosticGroup parseDiagnosticGroup(ir::StringRef Name) {
+  if (Name == "type-mapping") return DiagnosticGroup::TypeMapping;
+  if (Name == "instruction-validation") return DiagnosticGroup::InstructionValidation;
+  if (Name == "ir-verification") return DiagnosticGroup::IRVerification;
+  if (Name == "backend-codegen") return DiagnosticGroup::BackendCodegen;
+  if (Name == "ffi-binding") return DiagnosticGroup::FFIBinding;
+  if (Name == "serialization") return DiagnosticGroup::Serialization;
+  return DiagnosticGroup::TypeMapping;  // 默认
+}
+
+// ============================================================
 // JSON 转义辅助
 // ============================================================
 
