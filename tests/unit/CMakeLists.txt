@@ -36,9 +36,6 @@ add_subdirectory(Sema)
 # Module 单元测试
 add_subdirectory(Module)
 
-# CodeGen 单元测试
-add_subdirectory(CodeGen)
-
 # IR 单元测试
 add_subdirectory(IR)
 

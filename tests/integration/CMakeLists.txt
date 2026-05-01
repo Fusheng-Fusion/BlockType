@@ -4,6 +4,7 @@ add_executable(blocktype-integration-tests
   pipeline/D2PipelineTest.cpp
   pipeline/D3FallbackTest.cpp
   pipeline/D4RegistrationTest.cpp
+  e2e/E2ECompileTest.cpp
 )
 
 target_link_libraries(blocktype-integration-tests

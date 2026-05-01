@@ -12,7 +12,6 @@ target_link_libraries(InfrastructureSharingTest
     blocktype-parse
     blocktype-ast
     blocktype-sema
-    blocktype-codegen
     ${LLVM_LIBS}
 )
 

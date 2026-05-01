@@ -10,7 +10,6 @@ target_link_libraries(blocktype PRIVATE
   blocktype-lex
   blocktype-parse
   blocktype-ast
-  blocktype-codegen
   blocktype-ai
   ${LLVM_LIBS}
 )

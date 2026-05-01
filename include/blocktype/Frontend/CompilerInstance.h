@@ -221,25 +221,6 @@ public:
   /// \returns true if preprocessing succeeded, false otherwise.
   bool performPreprocessing();
 
-  /// Generate LLVM IR for the current translation unit.
-  ///
-  /// \param ModuleName The module name.
-  /// \returns The LLVM module, or nullptr on error.
-  std::unique_ptr<llvm::Module> generateLLVMIR(StringRef ModuleName);
-
-  /// Run optimization passes on the LLVM module.
-  ///
-  /// \param Module The LLVM module to optimize.
-  /// \returns true if optimization succeeded, false otherwise.
-  bool runOptimizationPasses(llvm::Module &Module);
-
-  /// Generate object file (.o) from LLVM module.
-  ///
-  /// \param Module The LLVM module.
-  /// \param OutputPath The output file path.
-  /// \returns true if code generation succeeded, false otherwise.
-  bool generateObjectFile(llvm::Module &Module, StringRef OutputPath);
-
   /// Link object files into executable.
   ///
   /// \param ObjectFiles List of object file paths.
