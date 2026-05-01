@@ -2,11 +2,13 @@
 #define BLOCKTYPE_FRONTEND_PLUGINMANAGER_H
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "blocktype/IR/ADT.h"
+#include "blocktype/IR/IRPasses.h"
 #include "blocktype/Frontend/CompilerInstance.h"
 
 namespace blocktype {
@@ -50,6 +52,12 @@ public:
 };
 
 // ============================================================
+// PassCreatorFn — Pass 工厂函数类型
+// ============================================================
+
+using PassCreatorFn = std::function<std::unique_ptr<ir::Pass>()>;
+
+// ============================================================
 // PluginManager — 插件管理器（内存注册模式）
 // ============================================================
 
@@ -57,6 +65,10 @@ class PluginManager {
   // NOTE: Using std::string as key because ir::StringRef is non-owning
   // and cannot be safely stored as a DenseMap key (no std::hash, dangling risk).
   ir::DenseMap<std::string, std::unique_ptr<CompilerPlugin>> LoadedPlugins;
+
+  // === IR Pass 插件注册扩展 ===
+  ir::PassManager* PM_ = nullptr;
+  ir::DenseMap<std::string, PassCreatorFn> PassCreators_;
 
 public:
   /// 注册一个插件（接管所有权）。成功返回 true，重名返回 false。
@@ -76,6 +88,21 @@ public:
 
   /// 返回已注册插件数量。
   size_t getPluginCount() const;
+
+  // === IR Pass 插件注册方法 ===
+
+  /// 设置 PassManager 指针，用于后续 createAndRegisterPasses()。
+  void setPassManager(ir::PassManager* PM) { PM_ = PM; }
+
+  /// 注册一个 Pass 工厂函数。重名返回 false。
+  bool registerPassCreator(ir::StringRef PassName, PassCreatorFn Creator);
+
+  /// 按名称查找 Pass 工厂函数。未找到返回 nullptr。
+  const PassCreatorFn* getPassCreator(ir::StringRef PassName) const;
+
+  /// 遍历所有已注册的 PassCreator，生成 Pass 实例并添加到 PassManager。
+  /// 返回成功注册的 Pass 数量。
+  unsigned createAndRegisterPasses();
 };
 
 } // namespace plugin

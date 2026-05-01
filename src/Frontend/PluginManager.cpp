@@ -44,5 +44,35 @@ size_t PluginManager::getPluginCount() const {
   return LoadedPlugins.size();
 }
 
+// === IR Pass 插件注册实现 ===
+
+bool PluginManager::registerPassCreator(ir::StringRef PassName, PassCreatorFn Creator) {
+  std::string Key = PassName.str();
+  if (PassCreators_.contains(Key)) return false;
+  PassCreators_[Key] = std::move(Creator);
+  return true;
+}
+
+const PassCreatorFn* PluginManager::getPassCreator(ir::StringRef PassName) const {
+  auto It = PassCreators_.find(PassName.str());
+  return It != PassCreators_.end() ? &(*It).second : nullptr;
+}
+
+unsigned PluginManager::createAndRegisterPasses() {
+  if (!PM_) return 0;
+  unsigned Count = 0;
+  for (auto It = PassCreators_.begin(); It != PassCreators_.end(); ++It) {
+    auto& Creator = (*It).second;
+    if (Creator) {
+      auto P = Creator();
+      if (P) {
+        PM_->addPassPtr(std::move(P));
+        ++Count;
+      }
+    }
+  }
+  return Count;
+}
+
 } // namespace plugin
 } // namespace blocktype

@@ -31,6 +31,9 @@ public:
   /// 顺序执行所有 Pass。返回 true 如果任意 Pass 返回 true（即修改了 IR）。
   bool runAll(IRModule& M);
 
+  /// 通过 unique_ptr 直接添加一个 Pass 到管线末尾（用于插件动态注册场景）。
+  void addPassPtr(std::unique_ptr<Pass> P) { Passes_.push_back(std::move(P)); }
+
   /// 返回管线中的 Pass 数量。
   size_t size() const { return Passes_.size(); }
 };

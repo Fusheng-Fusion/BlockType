@@ -35,6 +35,8 @@ add_library(blocktype-ir
   QueryContext.cpp
   IRStatistics.cpp
   AIAutoTuner.cpp
+  IRRemoteCacheClient.cpp
+  IRFuzzer.cpp
 )
 
 target_include_directories(blocktype-ir
