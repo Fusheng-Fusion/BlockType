@@ -34,14 +34,15 @@ blocktype-next/
 │   ├── bt-proc-macro/                 # 过程宏加载/执行
 │   ├── bt-std-bridge/                 # 标准库链接（rustup sysroot）
 │   │
-│   │  ─── Layer 2: TypeScript 前端 ───
-│   ├── bt-frontend-common/            # Frontend trait + Registry
-│   ├── bt-frontend-ts/                # TS 前端桥接 (Deno 进程池 + 健康检查)
+│   │  ─── Layer 2: TypeScript 前端（ts2rs 转译） ───
+│   ├── bt-ts2rs/                      # TS→Rust 转译器（核心：复用官方 TS 编译器 API）
+│   ├── blocktype-ts-runtime/          # TS 运行时兼容库（Rust 函数层，非 VM）
 │   │
 │   │  ─── Layer 2: 后端层 ───
-│   ├── bt-backend-common/             # Backend trait + Registry
+│   ├── bt-backend-common/             # Backend trait + Registry（inkwell/cranelift 用）
 │   ├── bt-backend-llvm/               # LLVM 后端 (inkwell)
 │   ├── bt-backend-cranelift/          # Cranelift 后端
+│   ├── bt-backend-rustc/              # rustc 原生 LLVM 后端（100% 兼容，不实现 Backend trait）
 │   │
 │   │  ─── Layer 2: AI 服务 ───
 │   ├── bt-ai/                         # AI 编排器 + Provider + 预算 + 缓存
@@ -52,16 +53,9 @@ blocktype-next/
 │   │  ─── CLI 入口 ───
 │   └── bt-cli/                        # CLI (clap) + 服务器启动
 │
-├── ts-frontend/                       # TypeScript 前端 (Deno)
-│   ├── deno.json
-│   ├── src/
-│   │   ├── main.ts                    # JSON-RPC 入口
-│   │   ├── lexer.ts
-│   │   ├── parser.ts
-│   │   ├── type_checker.ts
-│   │   ├── type_narrower.ts
-│   │   └── ir_emitter.ts              # 输出 JSON IR
-│   └── tests/
+├── ts2rs-rules/                       # 转译规则集（TypeScript AST → Rust AST 映射规则）
+│   ├── rules/                         # 按语法类别分组的转译规则
+│   └── tests/                         # 转译测试（源 TS → 期望 Rust 代码）
 │
 ├── plugin-sdk/                        # 插件开发 SDK (WIT 定义)
 │   ├── wit/
@@ -70,7 +64,6 @@ blocktype-next/
 │   └── examples/                      # Rust/Go/C 插件示例
 │
 ├── runtime/
-│   ├── ts-runtime/                    # TypeScript 运行时
 │   └── rust-runtime/                  # Rust 运行时 stub
 │
 ├── dashboard/                         # Web 监控仪表盘 (可选)
@@ -128,11 +121,13 @@ bt-cli
  │    ├── bt-telemetry
  │    │    └── bt-core
  │    └── axum + tower + tokio (LSP 适配器内置于此 crate)
- ├── bt-frontend-ts                   # TypeScript 前端
- │    ├── bt-frontend-common
- │    ├── bt-ir
- │    └── bt-dialect-ts
- ├── bt-backend-llvm
+├── bt-ts2rs                          # TS→Rust 转译器
+│    ├── Deno 进程（执行官方 TS 编译器）
+│    ├── bt-ir                          # 引用 IRType（用于类型映射）
+│    └── syn + quote                    # Rust AST 生成
+├── blocktype-ts-runtime               # TS 运行时兼容库（Rust 函数层，非 VM）
+│    └── bt-core
+├── bt-backend-llvm
  │    ├── bt-backend-common
  │    │    └── bt-core
  │    ├── bt-ir
@@ -141,10 +136,9 @@ bt-cli
  │    ├── bt-backend-common
  │    ├── bt-ir
  │    └── cranelift
- ├── bt-passes
- │    ├── bt-ir
- │    ├── bt-ir-verifier
- │    └── bt-dialect-core
+├── bt-backend-rustc                   # rustc 原生 LLVM（不实现 Backend trait）
+│    └── [sysroot] rustc_codegen_ssa   # rustc 内部 codegen
+├── bt-passes
  ├── bt-dialect-rust
  │    ├── bt-ir
  │    └── bt-dialect-core
@@ -167,32 +161,58 @@ bt-cli
 > **注意**：`bt-rustc-bridge` 是 BlockType 与 rustc 的唯一接口（bt build 模式），负责 MIR → BTIR 转换。
 > `bt-clippy-integration` 是 Clippy 整合的唯一入口（bt clippy 模式），复用 Clippy 700+ 规则并叠加 AI 增强。
 > Rust 前端全部复用 rustc，不再有自有 Rust 前端 crate。
+> **TypeScript 前端通过 ts2rs 转译**：TS 源码→官方 TS 编译器（100% 兼容）→ ts2rs 转译器→ Rust 源码→
+> bt-rustc-bridge 走完整 Rust 编译链路。详见本文件 §4.3。
 >
 > **Sysroot 依赖说明**：`[sysroot]` 标记的 rustc crate 通过 `#![feature(rustc_private)]` + `extern crate`
 > 从 sysroot 引入，**不在 Cargo.toml 中声明**。`rust-toolchain.toml` 锁定 nightly 版本。
 > Clippy lint 规则通过 `clippy_lints` crate（crates.io）正常依赖。
 > 详见 [08-Rust-Ecosystem-Integration.md §8.4](./08-Rust-Ecosystem-Integration.md) 和 [§8.12](./08-Rust-Ecosystem-Integration.md)。
 
-## 4.3 TypeScript 前端桥接（架构概览）
+## 4.3 TypeScript 前端 — ts2rs 转译方案
 
-> **📝 结构优化备注**：§4.3.1 JSON-RPC 协议规范已迁移到 **[05-Unified-API.md §2.11](./05-Unified-API.md)** 统一管理。
-> 本节保留桥接架构概览图。
+> **核心思路**：不自建 TypeScript 编译器。通过 **ts2rs 转译**将 TypeScript 源码映射为等价的 Rust 源码，
+> 然后复用 `bt-rustc-bridge` 走完整 Rust 编译链路。这与 Rust 前端"复用 rustc"的策略一致。
 
 ```
-┌──────────────────────┐     JSON-RPC      ┌──────────────────────┐
-│  Rust 进程 (bt-cli)   │ ◀──────────────▶ │  Deno 进程池 (TS前端) │
-│                      │   stdin/stdout    │                      │
-│  bt-frontend-ts:     │                   │  ts-frontend/:       │
-│  - Worker 进程池     │  ──{method:"compile"}──────────────────▶ │
-│  - 健康检查/心跳     │                   │  Lexer→Parser→      │
-│  - 超时/重启策略     │  ◀──{result:{ir_module}}─────────────── │
-│  - 负载均衡          │                   │  TypeCheck→Narrower │
-│  - 协议版本协商      │                   │  → IR JSON 输出      │
-└──────────────────────┘                   └──────────────────────┘
+.ts source
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────┐
+│                  bt-ts2rs 转译器                                │
+│                                                              │
+│  1. [Deno 进程] 调用官方 TypeScript 编译器 API                 │
+│     ts.createProgram() + checker.getTypeAtLocation()          │
+│     → 获取 100% 兼容的 AST + 完整类型信息                      │
+│                                                              │
+│  2. TypeScript AST → Rust AST（syn crate 的 File 类型）       │
+│     ├── function → fn                                         │
+│     ├── interface → struct + trait                            │
+│     ├── class → struct + impl                                 │
+│     ├── union type → enum                                     │
+│     ├── async/await → async fn + await                        │
+│     └── import/export → use/pub mod                           │
+│                                                              │
+│  3. 类型映射：number→f64, string→String, T|null→Option<T>     │
+│  4. 注入 blocktype-ts-runtime 辅助函数                        │
+│  5. rustfmt 格式化输出 .rs 文件                               │
+└──────────────────────────────────────────────────────────────┘
+    │
+    ▼  生成的 .rs 源码
+┌──────────────────────────────────────────────────────────────┐
+│              完整 Rust 编译管线（100% 复用）                    │
+│                                                              │
+│  bt-rustc-bridge → MIR → BTIR → AI Pass → 优化 → 后端 → 链接 │
+│                                                              │
+│  自动获得：AI 分析 / Clippy / OpenTelemetry / EventStore      │
+│  / 增量编译 / Salsa 查询 / 三后端 / WASM 输出等全部能力       │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-> JSON-RPC 协议详细规范（Method 列表、请求/响应格式、错误码、进程池配置）见
-> **[05-Unified-API.md §2.11](./05-Unified-API.md)**。
+> **关键设计点**：bt-ts2rs 转译器通过单进程 Deno 调用官方 `typescript` npm 包。
+> 不需要进程池/负载均衡/心跳（Deno 仅作为 TS 编译器 API 宿主，非运行时）。
+> 不可映射的 TS 模式（如 `eval()`、原型链继承）拒绝编译并提示替代写法。
+> 完整设计参见 `02-Core-Types.md §7.4`（bt_ts Dialect 标注层）。
 
 ## 4.4 各 Crate 职责
 
@@ -209,20 +229,22 @@ bt-cli
 | `bt-passes` | Pass trait (含依赖声明)、PassManager、优化 Pass | ~3,500 |
 | `bt-dialect-core` | bt_core Dialect 定义 + Dialect trait | ~800 |
 | `bt-dialect-rust` | bt_rust Dialect (运行时注册) + 降级规则 | ~1,500 |
-| `bt-dialect-ts` | bt_ts Dialect (运行时注册) + 降级规则 | ~1,200 |
+| `bt-dialect-ts` | bt_ts Dialect（标注/分析层） + 转译标注规则 | ~1,200 |
 | `bt-cargo` | Cargo 工作空间解析、依赖图、feature gate、构建计划 | ~2,000 |
 | `bt-rustc-bridge` | rustc_driver 集成、MIR→BTIR 转换、类型映射 | ~4,000 |
 | `bt-proc-macro` | 过程宏 .so 加载/执行、沙箱化 | ~1,500 |
 | `bt-std-bridge` | rustup sysroot 检测、标准库链接 | ~500 |
-| `bt-frontend-common` | Frontend trait + Registry | ~500 |
-| `bt-frontend-ts` | Deno 进程池 + 健康检查 + JSON-RPC 桥接 | ~1,500 |
-| `bt-backend-common` | Backend trait + Registry | ~500 |
+| `bt-clippy-integration` | Clippy 700+ 规则整合 + AI 增强层 | ~1,500 |
+| `bt-ts2rs` | TypeScript→Rust 转译器（复用官方 TS 编译器 API） | ~2,500 |
+| `blocktype-ts-runtime` | TS 运行时兼容库（Rust 函数层：console/Math/JSON/Date/Array/String） | ~1,000 |
+| `bt-backend-common` | Backend trait + Registry（inkwell/cranelift 用） | ~500 |
 | `bt-backend-llvm` | inkwell 封装，x86_64/AArch64 | ~3,000 |
 | `bt-backend-cranelift` | Cranelift 封装，WASM 目标 | ~2,000 |
+| `bt-backend-rustc` | **rustc 原生 LLVM 后端**（委托 rustc codegen，不实现 Backend trait） | ~800 |
 | `bt-ai` | AI 编排器 + 多 Provider + 预算 + 缓存 + 规则引擎 | ~3,000 |
 | `bt-plugin-host` | WASM 插件宿主、沙箱隔离、WIT 接口 | ~1,500 |
 | `bt-cli` | CLI 入口 (clap) | ~500 |
-| **Rust 总计** | | **~44,300** |
-| `ts-frontend/` | TypeScript 前端 (Deno) | ~5,000 |
+| **Rust 总计** | | **~48,600** |
+| `ts2rs-rules/` | 转译规则集（TS AST → Rust AST 映射规则） | ~2,000 |
 | `plugin-sdk/` | WIT 定义 + 插件示例 | ~500 |
-| **项目总计** | | **~49,800** |
+| **项目总计** | | **~51,100** |

@@ -1,7 +1,7 @@
 # Phase 5 — 高级特性 + TypeScript 前端
 
 > **目标**：BlockType Rust 全功能可用
-> **估计**：~12 周（60 天）| 5 个 Sprint | 16 个 Task
+> **估计**：~12 周（60 天）| 5 个 Sprint | 15 个 Task
 > **里程碑**：优化 Pass + 插件系统 + 增量编译 + AI 流式 + TS 前端 + 端到端测试
 
 ---
@@ -213,9 +213,9 @@
 
 ---
 
-## Sprint 5-3: TypeScript 前端 — Lexer + Parser（2 周）
+## Sprint 5-3: TypeScript 前端 — ts2rs 核心转译器（2 周）
 
-### T-05-09: ts-frontend — TS Lexer
+### T-05-09: bt-ts2rs — 官方 TS 编译器桥接
 
 - **ID**: `T-05-09`
 - **状态**: TODO
@@ -223,22 +223,27 @@
 - **优先级**: P1
 - **Sprint**: S-05-3
 
-**描述**：实现 TypeScript 词法分析器（Deno）。
+**描述**：实现 bt-ts2rs 的 Deno 进程封装，调用官方 `typescript` npm 包的编译器 API 获取类型信息。
 
 **产出文件**：
-- `ts-frontend/src/lexer.ts`
+- `crates/bt-ts2rs/src/lib.rs` — bt-ts2rs 入口
+- `crates/bt-ts2rs/src/ts_host.rs` — Deno 进程管理 + JSON-RPC 通信
+- `crates/bt-ts2rs/ts-host/main.ts` — Deno 侧 TS 编译器 API 封装脚本
 
-**前置依赖**（DEP）：无（独立 TypeScript 项目）
+**前置依赖**（DEP）：
+- `T-00-02`：bt-core
 
 **验收标准**（TST）：
-- [ ] 支持 TypeScript 全部 token 类型
-- [ ] 处理模板字符串/正则/JSX
-- [ ] 输出 Token 流（JSON 格式）
-- [ ] Deno 测试通过
+- [ ] `TsHost::transpile(source, fileName)` 通过 Deno 子进程调用 `ts.createProgram()`
+- [ ] 返回 `TranspileResult`（类型信息 + AST 摘要 + 诊断）
+- [ ] 100% TypeScript 语法兼容（基于官方编译器）
+- [ ] 错误诊断透传：TS 类型错误原样返回
+- [ ] docker/npm 环境无关（通过 `npm:typescript` 包引用）
+- [ ] `cargo test -p bt-ts2rs` 通过
 
 ---
 
-### T-05-10: ts-frontend — TS Parser
+### T-05-10: bt-ts2rs — TS AST → Rust AST 映射
 
 - **ID**: `T-05-10`
 - **状态**: TODO
@@ -246,24 +251,34 @@
 - **优先级**: P1
 - **Sprint**: S-05-3
 
-**描述**：实现 TypeScript 语法分析器。
+**描述**：实现 TypeScript AST 到 Rust AST（syn crate）的核心映射逻辑。
 
 **产出文件**：
-- `ts-frontend/src/parser.ts`
+- `crates/bt-ts2rs/src/ast_mapper.rs` — AST 映射器
+- `crates/bt-ts2rs/src/type_mapper.rs` — 类型映射器
+- `ts2rs-rules/rules/` — 转译规则定义
 
 **前置依赖**（DEP）：
 - `T-05-09`
 
+**设计规格**（REF）：
+- `04-Project-Structure.md §4.3` — ts2rs 架构
+
 **验收标准**（TST）：
-- [ ] 生成 AST（兼容 estree 格式）
-- [ ] 支持 TypeScript 特有语法（type/interface/generic/decorator）
-- [ ] 错误恢复和友好报错
+- [ ] 函数声明映射：`function add(a: number): number` → `fn add(a: f64) -> f64`
+- [ ] 接口映射：`interface User { name: string }` → `struct User { name: String }`
+- [ ] 联合类型映射：`T | null` → `Option<T>`
+- [ ] 泛型映射：`function id<T>(x: T): T` → `fn id<T>(x: T) -> T`
+- [ ] async/await 映射
+- [ ] import/export 映射为 use/pub mod
+- [ ] 生成的 Rust 代码通过 `syn::parse_file()` 验证和 `rustfmt`
+- [ ] 测试：输入 TS → 输出 Rust → 编译通过（用 rustc check）
 
 ---
 
-## Sprint 5-4: TypeScript 前端 — TypeCheck + IR Emitter（2 周）
+## Sprint 5-4: TypeScript 前端 — 类型映射 + 运行时兼容（2 周）
 
-### T-05-11: ts-frontend — TS Type Checker + Type Narrower
+### T-05-11: bt-ts2rs — 完整类型映射 + 模式覆盖
 
 - **ID**: `T-05-11`
 - **状态**: TODO
@@ -271,107 +286,95 @@
 - **优先级**: P1
 - **Sprint**: S-05-4
 
-**描述**：实现 TypeScript 类型检查和类型缩窄。
+**描述**：覆盖更复杂的 TypeScript 模式到 Rust 的映射。
 
 **产出文件**：
-- `ts-frontend/src/type_checker.ts`
-- `ts-frontend/src/type_narrower.ts`
+- `crates/bt-ts2rs/src/mappers/class.rs` — class 映射
+- `crates/bt-ts2rs/src/mappers/enum.rs` — enum 映射
+- `crates/bt-ts2rs/src/mappers/control_flow.rs` — 控制流映射
+- `crates/bt-ts2rs/src/mappers/pattern.rs` — 模式匹配映射
 
 **前置依赖**（DEP）：
 - `T-05-10`
 
 **验收标准**（TST）：
-- [ ] 类型推断（局部类型推断）
-- [ ] 类型缩窄（typeof/instanceof/判空）
-- [ ] 泛型实例化
-- [ ] 类型错误检测
+- [ ] `class` 映射为 `struct` + `impl`（方法展平）
+- [ ] `class extends` 映射为 trait 组合
+- [ ] TypeScript `enum` 映射为 Rust `enum`
+- [ ] `try/catch` 映射为 `Result<T, E>` + `match`
+- [ ] `for...of` 映射为 `for x in iter`
+- [ ] `?.` 可选链映射为 `if let Some(x) = a?.b()`
+- [ ] `T | U` 联合类型映射为 Rust enum
+- [ ] 不可映射模式（eval/any/原型链继承）拒绝编译并提示替代写法
+- [ ] 100+ 转译测试用例（含边缘情况）
 
 ---
 
-### T-05-12: ts-frontend — IR Emitter (TS → bt_ts IR)
+### T-05-12: blocktype-ts-runtime — TypeScript 运行时兼容库
 
 - **ID**: `T-05-12`
 - **状态**: TODO
-- **估计**: 4 天
+- **估计**: 3 天
+- **优先级**: P2
+- **Sprint**: S-05-4
+
+**描述**：实现 TypeScript 运行时兼容库（Rust 函数层封装，非 JS VM）。
+
+**产出文件**：
+- `crates/blocktype-ts-runtime/src/{lib.rs, console.rs, math.rs, json.rs, date.rs, array_ext.rs, string_ext.rs}`
+
+**设计规格**（REF）：
+- `02-Core-Types.md §7.4` — bt_ts Dialect 标注层
+
+**验收标准**（TST）：
+- [ ] `console.log(msg)` → `println!("{}", msg)`
+- [ ] `Math.floor/random/min/max` → `f64` 原生方法封装
+- [ ] `JSON.parse/stringify` → `serde_json`
+- [ ] `Date.now()` → `std::time::SystemTime`
+- [ ] `Array.push/pop/map/filter/reduce` → `Vec` 扩展 trait
+- [ ] `String.split/trim/startsWith/slice` → `str` 扩展 trait
+- [ ] 所有函数可选 tracing 支持（可观测性）
+- [ ] `cargo test -p blocktype-ts-runtime` 通过
+
+---
+
+### T-05-13: bt-ts2rs — 集成 bt_ts 标注 + CLI 集成
+
+- **ID**: `T-05-13`
+- **状态**: TODO
+- **估计**: 3 天
 - **优先级**: P1
 - **Sprint**: S-05-4
 
-**描述**：将 TypeScript AST 转换为 bt_ts Dialect IR（JSON 格式）。
+**描述**：bt-ts2rs 集成到 bt-cli + bt_ts Dialect 标注生成。
 
 **产出文件**：
-- `ts-frontend/src/ir_emitter.ts`
+- `crates/bt-ts2rs/src/bridge.rs` — ts2rs Frontend trait 实现
+- `crates/bt-ts2rs/src/annotation.rs` — bt_ts 标注生成
 
 **前置依赖**（DEP）：
 - `T-05-11`
 
 **验收标准**（TST）：
-- [ ] 生成 bt_ts Dialect IR（JSON 格式）
-- [ ] 支持 type_narrow/nullish_coalesce/optional_chain 等 TS 特有操作
-- [ ] IR 通过 bt-ir-verifier 验证
-
----
-
-### T-05-13: bt-frontend-ts — Deno 进程池 + JSON-RPC 桥接
-
-- **ID**: `T-05-13`
-- **状态**: TODO
-- **估计**: 4 天
-- **优先级**: P1
-- **Sprint**: S-05-4
-
-**描述**：实现 Rust 侧的 Deno 进程池管理和 JSON-RPC 桥接。
-
-**产出文件**：
-- `crates/bt-frontend-ts/src/{lib.rs, pool.rs, bridge.rs, worker.rs}`
-
-**设计规格**（REF）：
-- `05-Unified-API.md §2.11` — JSON-RPC 协议
-- `04-Project-Structure.md §4.3` — TS 桥接架构
-
-**前置依赖**（DEP）：
-- `T-00-15`：bt-frontend-common
-
-**验收标准**（TST）：
-- [ ] `TsFrontendPool` 管理 Deno 进程
-- [ ] JSON-RPC 2.0 通信：compile/lex/parse/typeCheck/ping
-- [ ] 进程池：min/max 进程数 + 负载均衡
-- [ ] 健康检查：5s 心跳 + 超时重启
-- [ ] `TsFrontend` impl `Frontend` trait
-- [ ] `cargo test -p bt-frontend-ts` 通过
+- [ ] `bt-ts2rs` impl `Frontend` trait
+- [ ] 转译过程中生成 `#[bt_ts_origin(...)]` 标注（bt_ts Dialect 标注层）
+- [ ] 生成的 Rust 文件通过 `bt-rustc-bridge` 编译
+- [ ] `bt build app.ts` 可编译 TypeScript 文件
+- [ ] CLI 隐藏内部转译细节，用户无感知
 
 ---
 
 ## Sprint 5-5: 端到端集成 + 交付（2 周）
 
-### T-05-14: ts-runtime — 最小子集
+### T-05-14: 端到端集成测试 — Rust + TS 双前端
 
 - **ID**: `T-05-14`
-- **状态**: TODO
-- **估计**: 3 天
-- **优先级**: P2
-- **Sprint**: S-05-5
-
-**描述**：TypeScript 运行时最小子集（string/array 基础操作）。
-
-**产出文件**：
-- `runtime/ts-runtime/{lib.rs, string_ops.rs, array_ops.rs}`
-
-**验收标准**（TST）：
-- [ ] String: length/concat/slice/split/trim
-- [ ] Array: push/pop/map/filter/reduce
-- [ ] 可被生成的代码调用
-
----
-
-### T-05-15: 端到端集成测试 — Rust + TS 双前端
-
-- **ID**: `T-05-15`
 - **状态**: TODO
 - **估计**: 5 天
 - **优先级**: P0
 - **Sprint**: S-05-5
 
-**描述**：Rust + TypeScript 双前端的端到端集成测试。
+**描述**：Rust + TypeScript（通过 ts2rs 转译）双前端端到端集成测试。
 
 **产出文件**：
 - `tests/integration/test_dual_frontend.rs`
@@ -382,16 +385,18 @@
 
 **验收标准**（TST）：
 - [ ] Rust 项目编译运行
-- [ ] TypeScript 代码编译运行（通过 bt_ts Dialect）
+- [ ] TypeScript 代码通过 ts2rs 转译 → bt-rustc-bridge 编译运行
+- [ ] TS 转译 → 编译 → 运行结果与预期一致
 - [ ] 双前端结果可对比
 - [ ] API 驱动整个流程
 - [ ] EventStore 记录完整事件链
+- [ ] bt_ts 标注出现在生成的 IR 中（供 AI 分析层使用）
 
 ---
 
-### T-05-16: Phase 5 回归测试 + 最终交付
+### T-05-15: Phase 5 回归测试 + 最终交付
 
-- **ID**: `T-05-16`
+- **ID**: `T-05-15`
 - **状态**: TODO
 - **估计**: 2 天
 - **优先级**: P0
@@ -399,8 +404,210 @@
 
 **验收标准**（TST）：
 - [ ] `cargo build/test/fmt/clippy --workspace` 通过
-- [ ] 全量集成测试通过
+- [ ] 全量集成测试通过（含 TS→Rust 转译 + Rust 编译）
 - [ ] README.md 完整文档
 - [ ] CONTRIBUTING.md 更新
 - [ ] CI 配置完成
 - [ ] BlockType Rust 全功能可用
+
+---
+
+## Phase 5 可选扩展 — 详细 Task 分解
+
+> F03/F04/F07/F10/F12 的 Task 分解见 `DEV-07-Phase6-Tasks.md`。
+
+### T-05-E01: bt-build-cache — Redis 后端实现
+
+- **ID**: `T-05-E01`
+- **来源**: F01 分布式编译缓存
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选（Phase 5 完成后追加）
+
+**描述**：实现 Redis 缓存后端，支持团队共享编译缓存。
+
+**产出文件**：
+- `crates/bt-build-cache/src/redis_backend.rs`
+
+**前置依赖**（DEP）：
+- `T-02-E01`：本地缓存层
+
+**验收标准**（TST）：
+- [ ] `RedisBackend` impl `CacheBackend`
+- [ ] Redis 连接池管理
+- [ ] 缓存条目 TTL 管理
+- [ ] 序列化/反序列化（bincode）
+- [ ] `bt build --cache=redis` CLI 参数
+
+---
+
+### T-05-E02: bt-build-cache — S3 后端实现
+
+- **ID**: `T-05-E02`
+- **来源**: F01 分布式编译缓存
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现 S3 缓存后端，支持 CI 远程缓存。
+
+**产出文件**：
+- `crates/bt-build-cache/src/s3_backend.rs`
+
+**前置依赖**（DEP）：
+- `T-05-E01`
+
+**验收标准**（TST）：
+- [ ] `S3Backend` impl `CacheBackend`
+- [ ] S3 兼容存储（AWS/MinIO）
+- [ ] 批量读写 + 异步上传
+- [ ] `bt build --cache=s3` CLI 参数
+
+---
+
+### T-05-E03: bt-build-cache — 缓存统计 + EventStore 记录
+
+- **ID**: `T-05-E03`
+- **来源**: F01 分布式编译缓存
+- **估计**: 3 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现缓存统计和 Dashboard 可视化。
+
+**产出文件**：
+- `crates/bt-build-cache/src/stats.rs`
+- `crates/bt-event-store/src/events.rs` — 更新
+
+**前置依赖**（DEP）：
+- `T-05-E02`
+
+**验收标准**（TST）：
+- [ ] `CacheStats`：命中率/节省时间/节省带宽
+- [ ] 缓存事件记录到 EventStore
+- [ ] Dashboard 缓存命中/未命中图表
+- [ ] `bt cache stats` CLI 命令
+
+---
+
+### T-05-E04: BackendSelector — 自适应后端选择
+
+- **ID**: `T-05-E04`
+- **来源**: F06 AI 自适应策略
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现基于代码特征的自适应后端选择。
+
+**产出文件**：
+- `crates/bt-ai/src/adaptive/backend_selector.rs`
+
+**前置依赖**（DEP）：
+- `T-04-E05`：规则引擎版调度器
+- `T-04-09`：bt-backend-rustc
+
+**验收标准**（TST）：
+- [ ] `BackendSelector::recommend_backend()` 推荐后端
+- [ ] 规则：小项目→Cranelift，大项目→LLVM
+- [ ] 混合后端模式：热函数 LLVM，冷函数 Cranelift
+- [ ] `bt build --backend=auto` 完整工作流
+
+---
+
+### T-05-E05: ONNX ML 模型推理引擎
+
+- **ID**: `T-05-E05`
+- **来源**: F06 AI 自适应策略
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：集成 ONNX ML 模型推理引擎，实现基于历史编译数据的 Pass 调度学习。
+
+**产出文件**：
+- `crates/bt-ai/src/adaptive/{model.rs, onnx_engine.rs}`
+
+**前置依赖**（DEP）：
+- `T-05-E04`
+
+**验收标准**（TST）：
+- [ ] `PassModelEngine` trait（ONNX/tract/ort）
+- [ ] 特征向量→模型推理 pipeline
+- [ ] 模型推理 < 1ms
+- [ ] 历史数据导出为训练集
+
+---
+
+### T-05-E06: CompileTimeQuery — 编译时 AI 查询
+
+- **ID**: `T-05-E06`
+- **来源**: F11 编译器 LLM 协作
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现编译时"暂停-询问-继续"的 AI 查询机制。
+
+**产出文件**：
+- `crates/bt-ai/src/collaboration/{mod.rs, query.rs}`
+
+**前置依赖**（DEP）：
+- `T-04-02`：AIOrchestrator
+
+**验收标准**（TST）：
+- [ ] `CompileTimeQuery` 数据结构 + LLM 查询
+- [ ] `AmbiguityDetector` 歧义检测（规则引擎 + 不确定性阈值）
+- [ ] 非阻塞查询：LLM 查询期间编译器继续其他任务
+- [ ] 超时机制（默认 5s 超时后使用默认策略）
+- [ ] `bt build --ai=collaborate` CLI 参数
+
+---
+
+### T-05-E07: InteractiveExplain — 对话式错误解释
+
+- **ID**: `T-05-E07`
+- **来源**: F11 编译器 LLM 协作
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现基于编译上下文的对话式错误解释。
+
+**产出文件**：
+- `crates/bt-ai/src/explain/{mod.rs, chat.rs}`
+
+**前置依赖**（DEP）：
+- `T-05-E06`
+
+**验收标准**（TST）：
+- [ ] `InteractiveExplain::chat()` 对话接口
+- [ ] 自动注入编译上下文（前端/目标/诊断/管线状态）
+- [ ] `bt explain --interactive` 对话模式
+- [ ] 支持追问、代码示例生成、修复建议
+- [ ] 所有交互记录到 EventStore（可审计）
+
+---
+
+### T-05-E08: LLM 查询审计 + 预算管理
+
+- **ID**: `T-05-E08`
+- **来源**: F11 编译器 LLM 协作
+- **估计**: 3 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现 LLM 查询的预算管理和审计。
+
+**产出文件**：
+- `crates/bt-ai/src/collaboration/{budget.rs, audit.rs}`
+
+**前置依赖**（DEP）：
+- `T-05-E07`
+
+**验收标准**（TST）：
+- [ ] 每次编译最大 LLM 查询次数限制
+- [ ] 高置信度自动应用（>0.95）
+- [ ] 低置信度等待用户确认
+- [ ] 审计日志：所有 LLM 交互可回放
+- [ ] Dashboard 显示 AI 查询统计

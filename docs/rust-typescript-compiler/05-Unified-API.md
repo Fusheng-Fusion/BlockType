@@ -1,4 +1,4 @@
-# 02 — 统一 RESTful API 设计
+# 05 — 统一 RESTful API 设计
 
 ## 核心思想
 
@@ -22,7 +22,7 @@
 
 ```
 POST   /api/v1/compile                       # 提交完整编译任务
-       Body: { source, frontend, backend, options }
+       Body: { source, frontend, backend: "llvm"|"cranelift"|"rustc"|"auto", options }
        Response: { task_id, status: "queued" }
 
 POST   /api/v1/compile/lex                   # 仅词法分析
@@ -441,135 +441,111 @@ GET /api/v1/ai/budget
 
 ---
 
-## 2.11 TypeScript 前端 JSON-RPC 协议
+## 2.11 TypeScript 前端 — ts2rs 转译协议
 
-> **注**：本节从原 `06-Project-Structure.md` §6.3.1 迁入。JSON-RPC 协议与 REST API 同属接口规范层面，统一管理。
+> **变更 v3.1**：TypeScript 前端不再通过 JSON-RPC 桥接自定义 Lexer/Parser/TypeChecker，
+> 改为 **ts2rs 转译方案**：Deno 进程仅作为官方 `typescript` npm 包的编译器 API 宿主，
+> 接收 TypeScript 源码，返回类型信息 + AST 摘要，供 Rust 侧的 bt-ts2rs 转译器生成 Rust 代码。
 
-TypeScript 前端通过 JSON-RPC 2.0 协议与 Rust 主进程通信（stdin/stdout）。
+### 2.11.1 通信方式
 
-协议版本：`v1`，基于 [JSON-RPC 2.0](https://www.jsonrpc.org/specification)。
+Deno 进程通过 stdin/stdout JSON-RPC 2.0 与 bt-ts2rs 通信。
+协议版本：`v1`。
+与旧方案的区别：
 
-### 2.11.1 通用请求/响应格式
+| 维度 | 旧方案（bt-frontend-ts） | 新方案（bt-ts2rs） |
+|------|------------------------|-------------------|
+| TypeScript 解析 | 自建 Lexer/Parser | 复用 `ts.createSourceFile()` |
+| 类型检查 | 自建 TypeChecker | 复用 `checker.getTypeAtLocation()` |
+| 输出 | bt_ts IR（JSON） | 类型信息 + AST 摘要 |
+| Rust 侧职责 | 管理进程池 + JSON-RPC 桥接 | 将 TS AST → Rust AST |
+| 进程数 | 进程池（1-4） | 单进程（或按需创建） |
+| 运行时 | 自建 ts-runtime | 走 Rust 完整编译链路 |
 
-```json
-// 请求
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "compile",
-  "params": { ... }
-}
-
-// 成功响应
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": { ... }
-}
-
-// 错误响应
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "error": {
-    "code": -32600,
-    "message": "Invalid params",
-    "data": { "detail": "..." }
-  }
-}
-```
-
-### 2.11.2 协议版本协商
-
-```json
-// Rust → TS（首次连接）
-{ "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": { "protocolVersion": 1, "capabilities": {} } }
-
-// TS → Rust
-{ "jsonrpc": "2.0", "id": 0, "result": { "protocolVersion": 1, "capabilities": { "streaming": false } } }
-```
-
-### 2.11.3 Method 列表
+### 2.11.2 Method 列表
 
 | Method | 方向 | 说明 | 请求参数 | 成功结果 |
 |--------|------|------|---------|---------|
 | `initialize` | R→T | 版本协商 | `{ protocolVersion, capabilities }` | `{ protocolVersion, capabilities }` |
+| `transpile` | R→T | 编译 TS 源码，返回类型信息 + AST | `[TranspileParams]` | `TranspileResult` |
 | `shutdown` | R→T | 优雅关闭 | `{}` | `{}` |
-| `compile` | R→T | 完整编译 | `[CompileParams]` | `CompileResult` |
-| `lex` | R→T | 仅词法分析 | `[LexParams]` | `LexResult` |
-| `parse` | R→T | 仅语法分析 | `[ParseParams]` | `ParseResult` |
-| `typeCheck` | R→T | 仅类型检查 | `[TypeCheckParams]` | `TypeCheckResult` |
-| `ping` | R→T | 健康检查 | `{}` | `{ pong: true, uptime_ms: number }` |
 
-### 2.11.4 `compile` Method — 完整编译
+### 2.11.3 `transpile` Method
 
 ```json
-// Rust → TS 请求
+// bt-ts2rs → Deno 请求
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "method": "compile",
+  "method": "transpile",
   "params": {
-    "source": "function add(a: number, b: number): number { return a + b; }",
+    "source": "interface User { name: string; age: number; }\nfunction greet(u: User): string { return `Hello ${u.name}`; }",
     "fileName": "app.ts",
     "options": {
       "target": "es2022",
       "strict": true,
-      "emitIr": true
+      "extractTypeInfo": true,
+      "extractAstSummary": true
     }
   }
 }
 
-// TS → Rust 成功响应
+// Deno → bt-ts2rs 成功响应
 {
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
     "success": true,
-    "irModule": {
-      "id": "550e8400-e29b-41d4-a716-446655440000",
-      "name": "app",
-      "sourceLanguage": "typescript",
-      "functions": [ ... ],
-      "types": [ ... ],
-      "activeDialects": ["bt_ts"]
+    "typeInfo": {
+      "symbols": [
+        {
+          "name": "User",
+          "kind": "interface",
+          "members": [
+            { "name": "name", "type": "string", "optional": false },
+            { "name": "age", "type": "number", "optional": false }
+          ]
+        },
+        {
+          "name": "greet",
+          "kind": "function",
+          "signature": {
+            "params": [
+              { "name": "u", "type": "User" }
+            ],
+            "returnType": "string",
+            "async": false
+          }
+        }
+      ]
+    },
+    "astSummary": {
+      "declarations": [
+        {
+          "kind": "InterfaceDeclaration",
+          "name": "User",
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "kind": "FunctionDeclaration",
+          "name": "greet",
+          "startLine": 5,
+          "endLine": 5
+        }
+      ]
     },
     "diagnostics": [],
-    "hir": { ... },
-    "tokens": [ ... ]
-  }
-}
-
-// TS → Rust 错误响应（编译失败但有诊断信息）
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "success": false,
-    "irModule": null,
-    "diagnostics": [
-      {
-        "severity": "error",
-        "code": "TS2322",
-        "message": "Type 'string' is not assignable to type 'number'.",
-        "location": { "file": "app.ts", "line": 1, "col": 30, "endLine": 1, "endCol": 35 }
-      }
-    ]
+    "dependencies": []
   }
 }
 ```
 
-### 2.11.5 `ping` Method — 健康检查
+> **注意**：bt-ts2rs 接收 `typeInfo` + `astSummary` 后，在 Rust 侧使用 `syn` crate 生成 Rust 源码。
+> 生成的 Rust 代码通过 `bt-rustc-bridge` 走完整 Rust 编译链路。
+> 所有不可映射的 TS 模式在转译阶段报错，提示开发者替换写法。
 
-```json
-// Rust → TS（每 5 秒一次）
-{ "jsonrpc": "2.0", "id": 99, "method": "ping", "params": {} }
-
-// TS → Rust
-{ "jsonrpc": "2.0", "id": 99, "result": { "pong": true, "uptime_ms": 45000 } }
-```
-
-### 2.11.6 JSON-RPC 错误码
+### 2.11.4 JSON-RPC 错误码
 
 | 错误码 | 含义 | 说明 |
 |--------|------|------|
@@ -577,34 +553,15 @@ TypeScript 前端通过 JSON-RPC 2.0 协议与 Rust 主进程通信（stdin/stdo
 | `-32600` | Invalid Request | 请求格式不合法 |
 | `-32601` | Method not found | 不支持的 method |
 | `-32602` | Invalid params | 参数校验失败 |
-| `-32603` | Internal error | TS 前端内部错误 |
-| `-32001` | Compile error | 编译失败（详见 result.diagnostics） |
+| `-32603` | Internal error | TS 编译器内部错误 |
+| `-32001` | Type error | 类型错误（详见 result.diagnostics） |
 | `-32002` | Timeout | 编译超时 |
-| `-32003` | Capacity | 进程池满，拒绝新请求 |
 
-### 2.11.7 进程池管理参数（Rust 侧配置）
+---
 
-```rust
-/// bt-frontend-ts 进程池配置
-pub struct TsFrontendPoolConfig {
-    /// 最小进程数（预热）
-    pub min_processes: usize,          // 默认: 1
-    /// 最大进程数
-    pub max_processes: usize,          // 默认: 4
-    /// 心跳间隔（秒）
-    pub health_check_interval_secs: u64, // 默认: 5
-    /// 单次编译超时（秒）
-    pub compile_timeout_secs: u64,     // 默认: 30
-    /// 进程无响应后重启等待（秒）
-    pub restart_grace_period_secs: u64, // 默认: 10
-    /// 进程启动超时（秒）
-    pub startup_timeout_secs: u64,     // 默认: 15
-    /// 负载均衡策略
-    pub load_balance: LoadBalanceStrategy, // 默认: RoundRobin
-}
+### API 相关前瞻扩展
 
-pub enum LoadBalanceStrategy {
-    RoundRobin,
-    LeastConnections,
-}
-```
+| 扩展 | 关联 | 方案 |
+|------|------|------|
+| **F05 持续编译** | 新增 `/ws/v1/watch` 端点 + DevServer | [F05](./future-extensions/F05-Continuous-Compilation.md) |
+| **F07 Compiler Marketplace** | 新增插件注册表 API + OpenAPI 自动生成 | [F07](./future-extensions/F07-Compiler-Marketplace.md) |

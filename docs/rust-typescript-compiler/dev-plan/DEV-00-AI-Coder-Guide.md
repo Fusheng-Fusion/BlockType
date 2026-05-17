@@ -1,15 +1,15 @@
 # BlockType Next — AI Coder 开发总纲
 
 > **文档版本**：v1.0 | **日期**：2026-05-02 | **用途**：AI Coder 任务领取与执行指南
-> **设计文档根目录**：`docs/plan/rust-typescript-compiler/`
-> **开发方案目录**：`docs/plan/rust-typescript-compiler/dev-plan/`
+> **设计文档根目录**：`docs/rust-typescript-compiler/`
+> **开发方案目录**：`docs/rust-typescript-compiler/dev-plan/`
 
 ---
 
 ## 0. 文档体系结构
 
 ```
-docs/plan/rust-typescript-compiler/
+docs/rust-typescript-compiler/
 ├── 00-Overview.md                 ← 项目总览
 ├── 01-Design-Philosophy.md       ← 设计原则
 ├── 02-Core-Types.md              ← 核心类型定义（Rust 代码级详细）
@@ -104,8 +104,9 @@ docs/plan/rust-typescript-compiler/
 | 插件 | WASM Component Model (WIT) |
 | 序列化 | serde + serde_json + bincode |
 | 构建 | Cargo workspace (nightly) |
+| 代码生成 | **三后端**：inkwell (LLVM) / cranelift (WASM) / rustc 原生 (100% 兼容) |
 | Lint | 整合 Clippy (700+ 规则 + AI 增强) |
-| TS 前端 | Deno (可选) |
+| TS 前端 | **ts2rs 转译** (bt-ts2rs — 复用官方 TS 编译器 API，转译 TS→Rust 走完整 Rust 链路) |
 | 增量编译 | Salsa 风格查询引擎 |
 
 ### 2.3 架构层次
@@ -118,7 +119,7 @@ Layer 2: Compiler Core  — Frontend / IR+Pass / Backend / Query / EventStore
 Layer 1: Infrastructure — bt-core / bt-telemetry / bt-cache / Registry
 ```
 
-### 2.4 Cargo Workspace 结构（24 个 crate）
+### 2.4 Cargo Workspace 结构（26 个 crate）
 
 ```
 blocktype-next/
@@ -140,17 +141,18 @@ blocktype-next/
 │   ├── bt-clippy-integration/ # Clippy 整合
 │   ├── bt-proc-macro/         # 过程宏加载
 │   ├── bt-std-bridge/         # 标准库链接
-│   ├── bt-frontend-common/    # Frontend trait + Registry
-│   ├── bt-frontend-ts/        # TS 前端桥接
+│   ├── bt-ts2rs/             # TS→Rust 转译器（复用官方 TS 编译器 API）
+│   ├── blocktype-ts-runtime/ # TS 运行时兼容库（Rust 函数层）
 │   ├── bt-backend-common/     # Backend trait + Registry
-│   ├── bt-backend-llvm/       # LLVM 后端
+│   ├── bt-backend-llvm/       # LLVM 后端 (inkwell)
 │   ├── bt-backend-cranelift/  # Cranelift 后端
+│   ├── bt-backend-rustc/      # rustc 原生 LLVM 后端 (100% 兼容)
 │   ├── bt-ai/                 # AI 编排器
 │   ├── bt-plugin-host/        # WASM 插件
 │   └── bt-cli/                # CLI 入口
-├── ts-frontend/               # TypeScript 前端 (Deno)
+├── ts2rs-rules/               # 转译规则集（TS AST → Rust AST 映射规则）
 ├── plugin-sdk/                # WIT 定义 + 插件示例
-├── runtime/                   # TS/Rust 运行时
+├── runtime/                   # Rust 运行时 stub
 ├── dashboard/                 # Web 监控仪表盘
 └── tests/                     # 集成测试
 ```

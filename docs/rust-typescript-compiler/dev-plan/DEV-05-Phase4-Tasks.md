@@ -1,8 +1,8 @@
 # Phase 4 — AI 增强 + 可观测性 + LSP
 
-> **目标**：AI 辅助优化 + IDE 集成 + 全链路可观测 + 双后端
-> **估计**：~10 周（50 天）| 4 个 Sprint | 14 个 Task
-> **里程碑**：AI 辅助优化 + 双后端 + IDE 集成 + 实时监控全部可用
+> **目标**：AI 辅助优化 + IDE 集成 + 全链路可观测 + 三后端
+> **估计**：~10 周（50 天）| 4 个 Sprint | 15 个 Task
+> **里程碑**：AI 辅助优化 + 三后端 + IDE 集成 + 实时监控全部可用
 
 ---
 
@@ -243,11 +243,40 @@
 
 ---
 
-## Sprint 4-4: Dashboard + 回归（2 周）
-
-### T-04-09: Dashboard Web 监控仪表盘 + CLI 命令
+### T-04-09: bt-backend-rustc — rustc 原生 LLVM 后端（新增）
 
 - **ID**: `T-04-09`
+- **状态**: TODO
+- **估计**: 3 天
+- **优先级**: P1
+- **Sprint**: S-04-3
+
+**描述**：实现 bt-backend-rustc，支持委托 rustc 原生 LLVM 后端进行代码生成。
+该后端不实现 Backend trait（不消费 IRModule），而是在 CompileService 中
+判断 backend=="rustc" 时不中断 rustc 编译，让其用自己的 LLVM 后端完成 codegen。
+
+**产出文件**：
+- `crates/bt-backend-rustc/src/{lib.rs, selector.rs, config.rs}`
+
+**前置依赖**（DEP）：
+- `T-00-04`：bt-service（CompileService 分叉逻辑）
+- `T-00-09`：bt-rustc-bridge（after_analysis 分叉）
+
+**验收标准**（TST）：
+- [ ] `bt build --backend=rustc` 使用 rustc 原生 LLVM
+- [ ] `bt build --backend=llvm` 使用 inkwell（默认，不变）
+- [ ] `bt build --backend=auto` SmartBackendSelector 自动选择
+- [ ] rustc 后端路径保留所有 BlockType 分析能力（AI、可观测、EventStore）
+- [ ] `SmartBackendSelector` 检测 MIR body 中的不可映射构造 → 自动回退 rustc
+- [ ] 测试：含 `asm!()` 的 crate 在 `--backend=auto` 下自动走 rustc 后端
+
+---
+
+## Sprint 4-4: Dashboard + 回归（2 周）
+
+### T-04-10: Dashboard Web 监控仪表盘 + CLI 命令
+
+- **ID**: `T-04-10`
 - **状态**: TODO
 - **估计**: 5 天
 - **优先级**: P2
@@ -277,9 +306,9 @@
 
 ---
 
-### T-04-10: SSE 流式响应
+### T-04-11: SSE 流式响应
 
-- **ID**: `T-04-10`
+- **ID**: `T-04-11`
 - **状态**: TODO
 - **估计**: 2 天
 - **优先级**: P1
@@ -300,9 +329,9 @@
 
 ---
 
-### T-04-11: bt-api — IR Diff API 实现
+### T-04-12: bt-api — IR Diff API 实现
 
-- **ID**: `T-04-11`
+- **ID**: `T-04-12`
 - **状态**: TODO
 - **估计**: 3 天
 - **优先级**: P1
@@ -326,9 +355,9 @@
 
 ---
 
-### T-04-12: 端到端测试 — AI + 双后端
+### T-04-13: 端到端测试 — AI + 三后端
 
-- **ID**: `T-04-12`
+- **ID**: `T-04-13`
 - **状态**: TODO
 - **估计**: 3 天
 - **优先级**: P0
@@ -343,9 +372,9 @@
 
 ---
 
-### T-04-13: bt-api — 认证中间件完善
+### T-04-14: bt-api — 认证中间件完善
 
-- **ID**: `T-04-13`
+- **ID**: `T-04-14`
 - **状态**: TODO
 - **估计**: 2 天
 - **优先级**: P2
@@ -371,9 +400,9 @@
 
 ---
 
-### T-04-14: Phase 4 回归测试
+### T-04-15: Phase 4 回归测试
 
-- **ID**: `T-04-14`
+- **ID**: `T-04-15`
 - **状态**: TODO
 - **估计**: 1 天
 - **优先级**: P1
@@ -381,4 +410,180 @@
 
 **验收标准**（TST）：
 - [ ] `cargo build/test/fmt/clippy --workspace` 通过
-- [ ] AI + 双后端 + LSP + 可观测性全部可用
+- [ ] AI + 三后端 + LSP + 可观测性全部可用
+
+---
+
+## Phase 4 可选扩展 — 详细 Task 分解
+
+### T-04-E01: bt-watch — FileWatcher + 文件变更检测
+
+- **ID**: `T-04-E01`
+- **来源**: F05 持续编译
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选（Phase 4 完成后追加）
+
+**描述**：实现文件系统监控服务和变更检测。
+
+**产出文件**：
+- `crates/bt-watch/src/{lib.rs, watcher.rs, debounce.rs}`
+
+**前置依赖**（DEP）：
+- `T-04-06`：bt-api WebSocket 端点
+
+**验收标准**（TST）：
+- [ ] `WatchService::new()` + 文件系统监控（基于 notify crate）
+- [ ] 跨平台：inotify/FSEvents/ReadDirectoryChanges
+- [ ] 防抖批处理（100ms 窗口合并多次变更）
+- [ ] `bt watch` 启动持续编译服务
+- [ ] 显示文件变更日志
+
+---
+
+### T-04-E02: bt-watch — IncrementalPipeline + 增量编译集成
+
+- **ID**: `T-04-E02`
+- **来源**: F05 持续编译
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：增量编译管线集成，每次变更只编译受影响的部分。
+
+**产出文件**：
+- `crates/bt-watch/src/pipeline.rs`
+- `crates/bt-service/src/compile_service.rs` — 更新
+
+**前置依赖**（DEP）：
+- `T-04-E01`
+- `T-01-07`：bt-query Salsa 引擎
+
+**验收标准**（TST）：
+- [ ] `IncrementalPipeline::on_file_changed()` 增量编译
+- [ ] Salsa 依赖追踪：仅重编译受影响 crate
+- [ ] 编译结果 WebSocket 实时推送
+- [ ] 增量编译 < 2s（小项目）
+
+---
+
+### T-04-E03: bt-watch — 诊断实时推送 + 编译时间线
+
+- **ID**: `T-04-E03`
+- **来源**: F05 持续编译
+- **估计**: 3 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现诊断实时推送和编译时间线可视化。
+
+**产出文件**：
+- `crates/bt-watch/src/timeline.rs`
+- `crates/bt-api/src/handlers/watch_ws.rs` — 更新
+
+**前置依赖**（DEP）：
+- `T-04-E02`
+
+**验收标准**（TST）：
+- [ ] 诊断结果 WebSocket 实时推送到 LSP/Dashboard
+- [ ] 编译时间线记录（每个文件的变更历史）
+- [ ] Dashboard 显示编译时间线可视化
+- [ ] 异常编译检测（编译时间突增告警）
+- [ ] `bt build --watch` 编译 + 持续监控
+
+---
+
+### T-04-E04: CompileFeatures 提取 + CompileProfileDatabase
+
+- **ID**: `T-04-E04`
+- **来源**: F06 AI 自适应策略
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现编译特征提取和编译档案数据库。
+
+**产出文件**：
+- `crates/bt-ai/src/adaptive/{mod.rs, features.rs, database.rs}`
+
+**前置依赖**（DEP）：
+- `T-04-02`：AIOrchestrator
+
+**验收标准**（TST）：
+- [ ] `CompileFeatures` 提取（~50 维特征向量）
+- [ ] `CompileProfileDatabase` 持久化
+- [ ] 编译档案记录到 EventStore
+- [ ] 可导出为 ML 训练数据（`bt adaptive profile --export`）
+
+---
+
+### T-04-E05: PassRuleEngine + AdaptivePassScheduler
+
+- **ID**: `T-04-E05`
+- **来源**: F06 AI 自适应策略
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现基于规则引擎的 Pass 调度器。
+
+**产出文件**：
+- `crates/bt-ai/src/adaptive/{scheduler.rs, rules.rs}`
+
+**前置依赖**（DEP）：
+- `T-04-E04`
+
+**验收标准**（TST）：
+- [ ] `PassRuleEngine`：20+ 内置调度规则
+- [ ] `AdaptivePassScheduler::recommend()` 推荐 Pass 序列
+- [ ] 规则：小函数跳过内联 / 大量循环优先向量化 / CI 跳过 AI
+- [ ] `bt build --adaptive` 自适应模式
+- [ ] 规则引擎零延迟（<1ms）
+
+---
+
+### T-04-E06: CarbonTracker — 碳足迹追踪
+
+- **ID**: `T-04-E06`
+- **来源**: F08 绿色编译
+- **估计**: 3 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现编译碳足迹估算。
+
+**产出文件**：
+- `crates/bt-telemetry/src/carbon.rs`
+
+**前置依赖**（DEP）：
+- `T-04-05`：bt-telemetry 全链路追踪
+
+**验收标准**（TST）：
+- [ ] `CarbonTracker::estimate()` 估算 CO₂ 排放
+- [ ] 排放模型：CPU 时间 × 功耗 × 碳强度
+- [ ] 直观类比：开车公里数 / 充手机次数
+- [ ] `bt build --carbon` 显示碳足迹
+
+---
+
+### T-04-E07: GreenScheduler — 绿色调度
+
+- **ID**: `T-04-E07`
+- **来源**: F08 绿色编译
+- **估计**: 2 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现绿色调度（高碳强度时推迟非紧急编译）。
+
+**产出文件**：
+- `crates/bt-telemetry/src/green_scheduler.rs`
+
+**前置依赖**（DEP）：
+- `T-04-E06`
+
+**验收标准**（TST）：
+- [ ] `GreenScheduler::should_compile()` 碳强度判断
+- [ ] ElectricityMap API 集成
+- [ ] 增量编译节省的碳排放显示
+- [ ] 会话统计：本周/本月累计碳足迹

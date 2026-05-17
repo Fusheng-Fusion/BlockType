@@ -1,4 +1,4 @@
-# 09 — 功能架构优化建议（Review & Optimization）
+# A1 — 功能架构优化建议（附录）（Review & Optimization）
 
 > **版本**：v1.0 | **日期**：2026-05-02 | **基于**：00-08 设计文档 (v1.0) 全面审查
 > **状态**：已合并 — 所有优化建议已合并回 00-08 设计文档 (v2.0)
@@ -527,6 +527,11 @@ impl TypeScriptFrontendBridge {
 }
 ```
 
+> **v3.1 更新**：上述 Deno 进程池 + JSON-RPC 桥接方案已被 **ts2rs 转译方案**替代。
+> 详见 `04-Project-Structure.md §4.3` 和 `05-Unified-API.md §2.11`。
+> 新的 bt-ts2rs 方案不自建 TS 编译器，通过官方 TS 编译器 API 获取类型信息，
+> 转译为 Rust 源码后复用 bt-rustc-bridge 走完整 Rust 编译链路。
+
 ---
 
 ### A6. 补充 LSP (Language Server Protocol) 集成
@@ -616,7 +621,7 @@ pub trait Pass: Send + Sync {
 | **P1** | R3 | Query Bus 拆分 | bt-bus, bt-query | Phase 1 实施 |
 | **P1** | A1 | WASM 插件系统 | 新增 bt-plugin-wasm crate | Phase 2 实施 |
 | **P1** | A4 | AI 编排器增强 | bt-ai | Phase 2 实施 |
-| **P1** | A5 | TS 桥接增强 | bt-frontend-ts | Phase 3 实施 |
+| **P1** | A5 | TS 前端 ts2rs 转译方案 | bt-ts2rs（替代 bt-frontend-ts）| Phase 5 实施 |
 | **P2** | A2 | API 分层版本 | bt-api | Phase 1 实施 |
 | **P2** | A3 | 事件溯源 | bt-bus, bt-telemetry | Phase 2 实施 |
 | **P2** | A6 | LSP 集成 | bt-api 内新增 LSP 模块 | Phase 3 实施 |

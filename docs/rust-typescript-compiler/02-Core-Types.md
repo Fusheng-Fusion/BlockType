@@ -1,4 +1,4 @@
-# 07 — 核心类型定义
+# 02 — 核心类型定义
 
 ## 7.1 Named trait — 注册表基础约束
 
@@ -10,7 +10,7 @@
 /// Frontend/Backend/Dialect/Pass 均继承此 trait，
 /// 以满足 Registry<dyn X> 的 T: ?Sized + Named bound。
 ///
-/// 注意：Named: Send + Sync 已在 03-Communication-Bus 3.8 节定义。
+/// 注意：Named: Send + Sync 已在 03-Communication-Bus §3.9 节定义。
 /// 具体类型 impl Named 时只需实现 fn name(&self) -> &str。
 ```
 
@@ -194,7 +194,7 @@ pub struct OperationDef {
 /// Dialect 注册表（与 03-Communication-Bus 中的 Registry<dyn Dialect> 一致）
 pub type DialectRegistry = Registry<dyn Dialect>;
 
-/// 通用注册表定义（参见 03-Communication-Bus 3.8 节）
+/// 通用注册表定义（参见 03-Communication-Bus §3.9 节）
 /// Registry<dyn Dialect> 内部存储为 Arc<dyn Dialect>，无双重间接
 ///
 /// 额外的 Dialect 专用方法通过扩展 trait 实现：
@@ -218,10 +218,15 @@ pub trait DialectRegistryExt {
 | 232 | `pattern_destructure` | ExtractValue + Branch chain |
 | 233 | `generics_monomorphize` | 函数克隆 + 类型替换 |
 
-### bt_ts Dialect 操作码 (240-254)
+### bt_ts Dialect 操作码 (240-254) — 标注/分析层
 
-| Opcode | 名称 | 降级目标 |
-|--------|------|---------|
+> **定位变更 v3.1**：bt_ts Dialect 不再作为独立的编译执行路径（该角色由 **ts2rs 转译**替代）。
+> 它作为**标注/分析层**存在，在 ts2rs 转译过程中将 TypeScript 特有语义（可选链、空值合并等）
+> 标注在生成的 Rust 代码上（通过 `#[bt_ts_origin(...)]` 属性），供 AI 分析层和 IR 反射使用。
+> bt_ts → bt_core 降级仅用于 IR 分析验证，不产生执行代码。
+
+| Opcode | 名称 | 降级目标（分析用） |
+|--------|------|------------------|
 | 240 | `type_narrow` | ICmp + Branch |
 | 241 | `union_tag_check` | ICmp + Branch |
 | 242 | `nullish_coalesce` | ICmp + Select |
@@ -315,6 +320,10 @@ pub struct FrontendOutput {
 ```
 
 ## 7.7 Backend trait
+
+> **架构说明**：`Backend trait` 适用于消费 `IRModule` 的后端（inkwell、cranelift）。
+> **rustc 原生 LLVM 后端**不实现此 trait——它不消费 IRModule，而是让 rustc 自己的 codegen 继续执行。
+> 三后端策略和 `SmartBackendSelector` 详见 `03-Communication-Bus.md §3.4.4`。
 
 ```rust
 // crates/bt-backend-common/src/backend.rs

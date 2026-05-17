@@ -1,4 +1,4 @@
-# 10 — 最终审查报告（v2.1 定稿）
+# A2 — 最终审查报告（附录）（v2.1 定稿）
 
 > **审查者**：GLM-5.1 | **日期**：2026-05-02 | **基于**：00-09 设计文档 v2.1 全面审查
 
@@ -82,18 +82,18 @@
 
 ---
 
-### F12. TypeScript JSON-RPC 协议规范缺失
+### F12. TypeScript 前端 ts2rs 转译方案规范
 
-**位置**：`04-Project-Structure.md` 6.3 节
+**位置**：`04-Project-Structure.md` §4.3
 
-**问题**：TS 前端桥接只画了架构图，缺少 JSON-RPC method 列表、请求/响应格式、错误码。
+**问题**：原 TS 前端设计为自建 Lexer/Parser/TypeChecker + ts-runtime + Deno 进程池，无法支持生产级 TypeScript。
 
-**修复**：新增 6.3.1 JSON-RPC 协议规范，包含：
-- 通用请求/响应格式
-- 协议版本协商（`initialize` method）
-- 7 个 method 的完整请求/响应示例（`compile`、`lex`、`parse`、`typeCheck`、`ping`、`shutdown`）
-- JSON-RPC 错误码表（-32700 ~ -32003）
-- 进程池管理参数（`TsFrontendPoolConfig`）
+**修复**：替换为 ts2rs 转译方案：
+- bt-ts2rs 转译器复用官方 TypeScript 编译器 API（100% 兼容）
+- 生成的 Rust 代码走 bt-rustc-bridge 完整 Rust 编译链路
+- 自动获得 AI 分析 / Clippy / OpenTelemetry / 增量编译 / 三后端等全部能力
+- bt_ts Dialect 降级为标注/分析层
+- blocktype-ts-runtime 替代自建 ts-runtime（Rust 函数层而非 JS VM）
 
 ---
 
@@ -133,6 +133,8 @@
 
 ## 审查结论
 
+> **以下评分基于 v2.1 文档内容**（v3.0 新增的三后端、ts2rs 等变更尚未纳入评分）。
+
 ### 文档质量评分
 
 | 维度 | v2.0 | v2.1 | 说明 |
@@ -140,7 +142,7 @@
 | 跨文档一致性 | ★★★★★ | ★★★★★ | 所有类型定义、crate 归属、方法签名已统一 |
 | Rust 语义正确性 | ★★★★☆ | ★★★★★ | Salsa trait 风格合法、DST 构造有辅助方法、&self/&mut self 冲突已解、生命周期语义明确 |
 | 架构完整性 | ★★★★★ | ★★★★★ | 六大原则→四子系统→21 crate→六阶段路线图全链路闭环 |
-| API 一致性 | ★★★★★ | ★★★★★ | 分层版本、错误码、分页、SSE、JSON-RPC 全覆盖 |
+| API 一致性 | ★★★★★ | ★★★★★ | 分层版本、错误码、分页、SSE、ts2rs 转译协议全覆盖 |
 | 可实施性 | ★★★★☆ | ★★★★★ | Phase 2 周级 MVP + JSON-RPC 完整协议 + 依赖树完整 + 错误传播示例 |
 
 ### 仍需注意的设计风险
@@ -150,8 +152,9 @@
 | `SalsaQueryEngine` 具体实现 | 中 | 设计文档展示了 Salsa trait + query_group 完整风格，但 Salsa 框架的版本选择和宏兼容性需在 Phase 0 实施时验证 |
 | `Frontend`/`Backend` trait 的 `Named` impl | 低 | 已提供 `register_concrete` 和 `register_boxed` 两种构造路径，newtype wrapper 视实施时需要决定 |
 | `EventStore` 持久化后端 | 低 | 当前设计含 `Option<Box<dyn EventPersistence>>` 扩展点，生产环境需替换为 SQLite/LMDB |
-| `bt-frontend-ts` 进程池边界条件 | 低 | 已定义 JSON-RPC 协议 + 进程池配置参数，边界条件在实施时通过集成测试覆盖 |
+| `bt-ts2rs` Deno 进程边界条件 | 低 | 已定义 ts2rs 转译协议 + 单进程/按需创建配置，边界条件在实施时通过集成测试覆盖 |
 
 ### 定稿状态
 
-**00-09 全部 10 份文档已通过 v2.1 最终审查，所有评分维度均达到五星。** 可进入 Phase 0 实施。
+**历史记录（v2.1）：** 00-09 全部 10 份文档已通过最终审查，所有评分维度达到五星，随后进入 Phase 0 实施。
+**后续演进（v3.0+）：** 文档体系已扩展至三后端策略、ts2rs 转译方案、12 项前瞻扩展方案，文档数量增至 20+ 份。

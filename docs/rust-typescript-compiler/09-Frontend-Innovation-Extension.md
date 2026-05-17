@@ -25,6 +25,10 @@
        ❌ 无源码级 AI 建议                              ✅ IR 级 AI 建议
 ```
 
+> **注**：TypeScript 源码经过 **ts2rs 转译**（`bt-ts2rs`）后生成等价的 Rust 代码，
+> 同样走上述 rustc 前端管线，100% 继承 BlockType 的可观测性、AI 分析、事件记录等全部能力。
+> 详见 `04-Project-Structure.md §4.3`。`bt_ts` Dialect 作为标注/分析层保留。
+
 **具体限制**：
 
 | # | 限制 | 影响 | 严重度 |

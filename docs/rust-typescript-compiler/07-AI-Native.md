@@ -1,4 +1,4 @@
-# 05 — AI 原生架构
+# 07 — AI 原生架构
 
 ## 5.1 AI 是管线内一等公民
 
@@ -15,7 +15,7 @@ AI 增强：
 |------|------|---------|
 | AI_S1 | PostAnalysis | 类型推断辅助、代码模式识别、反模式检测 |
 | AI_S2 | PostLower + PostDialectLower | Pass 推荐策略、热点预测、内联决策 |
-| AI_S3 | PostCodegen | 生成代码质量评估、性能预测 |
+| AI_S3 | PostCodegen | 生成代码质量评估、性能预测（三后端均支持） |
 
 ## 5.2 AI 编排器 (AIOrchestrator)
 
@@ -307,3 +307,101 @@ AIAction: AutoApply { pass_name: "auto_vectorize", confidence: 0.92 }
 EventStore 记录:
   AIActionApplied { action: "auto_vectorize", confidence: 0.92 }
 ```
+
+## 5.8 AI 闭环：inkwell 的不可替代价值
+
+> **核心论点**：AI 原生编译器的本质区别不是"编译器有 AI 接口"，而是 **AI 的分析结果能直接影响代码生成**。
+> inkwell 是实现这一闭环的唯一路径。rustc 原生后端只能提供只读分析。
+
+### 5.8.1 开环 vs 闭环
+
+```
+开环（rustc 原生后端）：
+  MIR ──▶ BTIR ──▶ AI 分析 ──▶ 分析报告 ──▶ 开发者手动修改
+                     ↑ AI 的建议无法直接影响 codegen
+
+闭环（inkwell/cranelift 后端）：
+  MIR ──▶ BTIR ──▶ AI 分析 ──▶ BTIR 修改 ──▶ inkwell codegen
+                     ↑_____闭环_____↓
+              AI 修改的 IR 直接流式进入代码生成
+```
+
+### 5.8.2 闭环场景示例
+
+**场景 1：AI 驱动的 Pass 调度**
+```rust
+// inkwell 路径
+let mut ir_module = converter.convert(mir);
+
+// AI 分析 BTIR 结构 → 推荐 Pass 序列
+let schedule = ai.recommend_pass_sequence(&ir_module).await;
+// schedule = [DCE, LoopUnroll, Inline, AutoVectorize]
+
+// 执行 AI 推荐的 Pass → 修改后的 IR
+for pass_name in schedule {
+    pass_manager.run(&mut ir_module, pass_name)?;
+}
+
+// 修改后的 IR 直接 codegen
+inkwell.emit_object(&ir_module, &target)?;
+// ↑ 向量化 Pass 产生的 SIMD 指令在生成的代码中直接体现
+```
+
+**场景 2：Dialect 降级的 AI 优化**
+```rust
+// bt_rust Dialect 降级时，某些降级策略有多个选择
+// AI 根据目标平台选择最优方案
+let lowering_strategy = ai.choose_lowering_strategy(
+    &ir_module,          // 包含 bt_rust Dialect 指令
+    &target_triple,      // x86_64-v3 / aarch64
+).await;
+// 输出："target_triple: x86_64 → ownership_transfer 用 refcount 而非 memcpy"
+
+// 策略生效后 → inkwell codegen
+inkwell.emit_object(&ir_module, &target)?;
+```
+
+**场景 3：WASM 插件 Pass → 无缝 codegen**
+```rust
+// 社区插件修改 IR
+let plugin_pass = plugin_host.load("community-smart-optimizer")?;
+let modified_ir = plugin_pass.run(&ir_module)?;
+
+// inkwell 无缝衔接
+inkwell.emit_object(&modified_ir, &target)?;
+// ✅ 插件的优化直接流入代码生成
+// ❌ rustc 原生路径上做不到——MIR 已被 rustc 锁定
+```
+
+### 5.8.3 为什么 rustc 原生后端无法实现闭环
+
+rustc 的 `after_analysis` callback 是**不可变的**——编译器此时已经完成了类型检查和借用检查，
+MIR 的所有权已经属于 rustc 的内部管线。BlockType 可以：
+
+```
+✅ 读取 MIR → 转换为 BTIR → 运行 AI 分析
+✅ 记录分析结果到 EventStore
+✅ 输出 AI 建议给开发者
+❌ 无法将修改后的 BTIR "塞回" rustc 的 LLVM codegen
+❌ 无法在 rustc 阶段之后插入自定义 Pass
+```
+
+这是架构设计的必然——rustc 的管线是**封闭的**（函数调用链），而 inkwell 的管线是**开放的**（`tower::Service`）。
+
+### 5.8.4 `--backend` 指引
+
+| 用户意图 | 推荐 backend |
+|---------|-------------|
+| "我要 BlockType 的完整 AI 能力，自动优化代码" | `bt build --backend=llvm`（inkwell） |
+| "我只是快速原型，编译速度优先" | `bt build --backend=cranelift` |
+| "我的项目用了内联汇编 `asm!()`" | `bt build --backend=rustc` |
+| "我不知道哪个好，帮我自动选" | `bt build --backend=auto` |
+
+---
+
+### AI 相关前瞻扩展
+
+| 扩展 | 关联 | 方案 |
+|------|------|------|
+| **F06 AI 自适应策略** | 扩展 AIOrchestrator 为学习-推荐闭环 | [F06](./future-extensions/F06-AI-Adaptive-Strategy.md) |
+| **F11 编译器 LLM 协作** | 新增编译时 AI 查询 + 对话式错误解释 | [F11](./future-extensions/F11-Compiler-LLM-Collaboration.md) |

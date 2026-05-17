@@ -266,3 +266,160 @@
 **验收标准**（TST）：
 - [ ] `cargo build/test/fmt/clippy --workspace` 通过
 - [ ] `bt build` 编译 Cargo 项目全流程通过
+
+---
+
+## Phase 2 可选扩展 — 详细 Task 分解
+
+> 以下扩展在 Phase 2 主线完成后按需追加。完整方案见各 Fxx 文档。
+
+### T-02-E01: bt-build-cache — CacheBackend trait + LocalDisk 实现
+
+- **ID**: `T-02-E01`
+- **来源**: F01 分布式编译缓存
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选（Phase 2 完成后追加）
+
+**描述**：实现分布式编译缓存的 CacheBackend trait 和 LocalDisk 后端。
+
+**产出文件**：
+- `crates/bt-build-cache/src/{lib.rs, backend.rs, local_disk.rs, cache_key.rs}`
+
+**前置依赖**（DEP）：
+- `T-01-07`：bt-query Salsa 查询引擎
+
+**验收标准**（TST）：
+- [ ] `CacheBackend` trait: contains/get/put/invalidate/get_batch
+- [ ] `LocalDiskBackend` 实现（bincode 序列化，SSD 存储）
+- [ ] `CacheKey` 结构体（source_hash + config_hash + deps_hash）
+- [ ] 缓存层级 L1(内存) → L2(本地磁盘)
+- [ ] `bt build --cache=local` CLI 参数
+
+---
+
+### T-02-E02: bt-build-cache — Merkle 依赖树 + 自动失效
+
+- **ID**: `T-02-E02`
+- **来源**: F01 分布式编译缓存
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现基于 Merkle 树的依赖追踪和自动缓存失效。
+
+**产出文件**：
+- `crates/bt-build-cache/src/merkle.rs`
+- `crates/bt-build-cache/src/invalidator.rs`
+- `crates/bt-query/src/cache_integration.rs`
+
+**前置依赖**（DEP）：
+- `T-02-E01`
+
+**验收标准**（TST）：
+- [ ] Merkle 依赖树：依赖链变更自动级联失效
+- [ ] Crate A 修改 → 依赖 A 的 Crate B 缓存失效
+- [ ] Crate C 未修改且依赖未变 → 缓存命中
+- [ ] 缓存键冲突检测（config_hash 包含全量参数）
+
+---
+
+### T-02-E03: bt-policy — PolicyEngine + 策略配置解析
+
+- **ID**: `T-02-E03`
+- **来源**: F02 供应链安全
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现供应链安全策略引擎，支持 TOML 策略配置解析。
+
+**产出文件**：
+- `crates/bt-policy/src/{lib.rs, policy.rs, engine.rs}`
+
+**前置依赖**（DEP）：
+- `T-02-01`：bt-cargo 依赖解析
+
+**验收标准**（TST）：
+- [ ] `BuildPolicy` 数据结构（source/license/version/vuln 策略）
+- [ ] `blocktype-policy.toml` 配置解析
+- [ ] 来源策略：允许/禁止特定依赖来源
+- [ ] 版本策略：require_lockfile/block_wildcard
+- [ ] 策略违反处理：Audit/Warn/Block
+
+---
+
+### T-02-E04: bt-policy — 来源策略 + 版本策略 + bt-cargo 集成
+
+- **ID**: `T-02-E04`
+- **来源**: F02 供应链安全
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：将策略引擎集成到 bt-cargo 的 BuildPlan 中。
+
+**产出文件**：
+- `crates/bt-policy/src/cargo_integration.rs`
+- `crates/bt-cargo/src/planner.rs` — 更新
+
+**前置依赖**（DEP）：
+- `T-02-E03`
+
+**验收标准**（TST）：
+- [ ] `BuildPlanner.set_policy_engine()` 集成
+- [ ] 依赖解析阶段自动检查策略
+- [ ] PolicyAction::Block 阻止编译并报错
+- [ ] PolicyAction::Warn 发出警告
+- [ ] `bt build --policy=blocktype-policy.toml`
+
+---
+
+### T-02-E05: bt-toolchain — 交叉编译目标管理
+
+- **ID**: `T-02-E05`
+- **来源**: F09 交叉编译环境管理
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现交叉编译目标平台管理。
+
+**产出文件**：
+- `crates/bt-toolchain/src/{lib.rs, target_manager.rs}`
+
+**前置依赖**（DEP）：
+- `T-00-12`：bt-std-bridge
+
+**验收标准**（TST）：
+- [ ] `ToolchainManager::detect_all()` 检测已安装目标
+- [ ] `bt target list` 显示已安装目标
+- [ ] `bt target add aarch64-unknown-linux-gnu` 安装
+- [ ] `bt target remove` 卸载
+- [ ] 与 rustup 集成（复用已有安装）
+- [ ] `cargo test -p bt-toolchain` 通过
+
+---
+
+### T-02-E06: bt-toolchain — Sysroot 下载 + 链接器配置
+
+- **ID**: `T-02-E06`
+- **来源**: F09 交叉编译环境管理
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现交叉编译 Sysroot 自动下载和链接器配置。
+
+**产出文件**：
+- `crates/bt-toolchain/src/{sysroot.rs, linker.rs, config.rs}`
+
+**前置依赖**（DEP）：
+- `T-02-E05`
+
+**验收标准**（TST）：
+- [ ] `SysrootProvider::download_sysroot()` 自动下载
+- [ ] 支持 Debian/Alpine sysroot
+- [ ] `LinkerConfig::detect_system_linkers()` 检测
+- [ ] 自动生成 `.cargo/config.toml` 片段
+- [ ] `bt build --target aarch64-unknown-linux-gnu` 完整可用

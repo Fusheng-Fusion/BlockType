@@ -1,8 +1,8 @@
 # Phase 0 — 基础设施 + rustc 桥接 + 前端探针 MVP
 
-> **目标**：Cargo workspace + tower::Service + 可观测骨架 + rustc_driver 集成 + `println!("hello")` 编译运行
+> **目标**：Cargo workspace + tower::Service + 可观测骨架 + rustc_driver 集成 + `println!("hello")` 编译运行 + 前端探针 MVP
 > **估计**：~9 周（47 天）| 4 个 Sprint | 18 个 Task
-> **里程碑**：`bt build hello.rs` 可编译运行使用 `std::println` 的程序
+> **里程碑**：`bt build hello.rs` 可编译运行使用 `std::println` 的程序，事件可通过 WebSocket 推送，Dashboard 显示 parse/expand 前端阶段
 
 ---
 
@@ -33,7 +33,7 @@
 
 **验收标准**（TST）：
 - [ ] `rust-toolchain.toml` 锁定 nightly 版本，含 `[components] rustc-dev`
-- [ ] `Cargo.toml` 中 `[workspace]` 含所有 24 个 crate 的 `members`
+- [ ] `Cargo.toml` 中 `[workspace]` 含所有 26 个 crate 的 `members`
 - [ ] `cargo build` 可通过（所有 crate 为空 lib）
 - [ ] 目录结构与 §4.1 完全一致
 
@@ -66,7 +66,7 @@
 
 **设计规格**（REF）：
 - `02-Core-Types.md §7.1` — Named trait
-- `03-Communication-Bus.md §3.10` — 错误传播、CompilerError 枚举
+- `03-Communication-Bus.md §3.11` — 错误传播、CompilerError 枚举
 - `05-Unified-API.md §2.9` — 错误码体系 E0xxx-E4xxx
 - `05-Unified-API.md §2.10.8` — 认证错误码 E3003-E3006
 - `04-Project-Structure.md §4.4` — bt-core 职责
@@ -249,7 +249,7 @@
 - `05-Unified-API.md §2.2` — 编译 API 端点
 - `05-Unified-API.md §2.8` — 统一响应格式
 - `03-Communication-Bus.md §3.5` — axum handler
-- `03-Communication-Bus.md §3.10.2` — IntoResponse
+- `03-Communication-Bus.md §3.11.2` — IntoResponse
 
 **前置依赖**（DEP）：
 - `T-00-04`：bt-service
@@ -546,3 +546,13 @@
 **验收标准**（TST）：
 - [ ] `cargo build/test/fmt/clippy --workspace` 全部通过
 - [ ] README.md 更新
+
+---
+
+## Phase 0 可选扩展
+
+Phase 0 完成后，可按需追加以下前瞻功能：
+
+| 扩展 | 工期 | 前置 | 方案 |
+|------|------|------|------|
+| F08 绿色编译（基础能耗统计） | 1 周 | bt-telemetry | [F08](./../future-extensions/F08-Green-Compilation.md) |

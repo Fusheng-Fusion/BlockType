@@ -41,7 +41,7 @@
 | AI 集成 | 无 | 管线内一等公民，多 Provider + 流式 + 预算 |
 | 扩展 | 修改源码或 `-Z` flag | REST API + 运行时 Dialect + WASM 插件热加载 |
 | IDE | rust-analyzer（独立项目） | 内置 LSP + API 驱动 |
-| 多语言 | 仅 Rust | Rust（原生）+ TypeScript（Deno 桥接）+ WASM 插件 |
+| 多语言 | 仅 Rust | Rust（原生）+ TypeScript（ts2rs 转译）+ WASM 插件（任意语言） |
 | API | CLI only | RESTful API + CLI + LSP + WebSocket |
 
 ---
@@ -94,11 +94,12 @@
 │          │                                                             │
 │  ┌───────▼──────────────────────────────────────────────────────────┐  │
 │  │           Layer 5: 后端（可插拔）                                  │  │
-│  │  ┌──────────────┐  ┌──────────────┐                              │  │
-│  │  │ bt-backend-  │  │ bt-backend-  │                              │  │
-│  │  │ llvm         │  │ cranelift    │                              │  │
-│  │  │ (inkwell)    │  │ (WASM 目标)  │                              │  │
-│  │  └──────────────┘  └──────────────┘                              │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            │  │
+│  │  │ bt-backend-  │  │ bt-backend-  │  │ bt-backend-  │            │  │
+│  │  │ llvm         │  │ cranelift    │  │ rustc        │            │  │
+│  │  │ (inkwell)    │  │ (WASM 目标)  │  │(rustc 原生   │            │  │
+│  │  │              │  │              │  │ LLVM, 100%)  │            │  │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘            │  │
 │  └──────────────────────────────────────────────────────────────────┘  │
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
@@ -551,14 +552,15 @@ blocktype-next/
 │   ├── bt-proc-macro/                 # 过程宏加载/执行
 │   ├── bt-std-bridge/                 # 标准库链接
 │   │
-│   │  ─── Layer 2: TypeScript 前端（保留） ───
-│   ├── bt-frontend-common/            # Frontend trait + Registry
-│   ├── bt-frontend-ts/                # TS 前端桥接 (Deno)
+│   │  ─── Layer 2: TypeScript 前端（ts2rs 转译） ───
+│   ├── bt-ts2rs/                      # TS→Rust 转译器（核心：复用官方 TS 编译器 API）
+│   ├── blocktype-ts-runtime/          # TS 运行时兼容库（Rust 函数层，非 VM）
 │   │
 │   │  ─── Layer 2: 后端层 ───
 │   ├── bt-backend-common/             # Backend trait + Registry
 │   ├── bt-backend-llvm/               # LLVM 后端 (inkwell)
 │   ├── bt-backend-cranelift/          # Cranelift 后端
+│   ├── bt-backend-rustc/              # rustc 原生 LLVM (100% 兼容)
 │   │
 │   │  ─── Layer 2: AI 服务 ───
 │   ├── bt-ai/                         # AI 编排器
@@ -569,10 +571,9 @@ blocktype-next/
 │   │  ─── CLI 入口 ───
 │   └── bt-cli/                        # CLI (clap)
 │
-├── ts-frontend/                       # TypeScript 前端 (Deno)
+├── ts2rs-rules/                       # 转译规则集（TypeScript AST → Rust AST 映射规则）
 ├── plugin-sdk/                        # WASM 插件 SDK (WIT)
 ├── runtime/
-│   └── ts-runtime/                    # TypeScript 运行时
 ├── dashboard/                         # Web 监控仪表盘
 ├── tests/
 └── docs/
@@ -630,10 +631,12 @@ bt-cli
  │    ├── bt-telemetry
  │    │    └── bt-core
  │    └── axum + tower + tokio
- ├── bt-frontend-ts                   # TypeScript 前端
- │    ├── bt-frontend-common
- │    ├── bt-ir
- │    └── bt-dialect-ts
+├── bt-ts2rs                          # TS→Rust 转译器（复用官方 TS 编译器 API）
+│    ├── bt-ir                          # 引用 IRType（用于类型映射）
+│    ├── syn + quote                    # Rust AST 生成
+│    └── Deno 单进程（官方 TS 编译器 API 宿主）
+├── blocktype-ts-runtime               # TS 运行时兼容库（Rust 函数层，非 VM）
+│    └── bt-core
  ├── bt-backend-llvm
  │    ├── bt-backend-common
  │    ├── bt-ir
@@ -831,45 +834,54 @@ pub enum BtCommand {
 
 **里程碑 M2**：`bt build`（无参数）编译完整 Cargo 项目
 
-### Phase 3: Proc-Macro + 生态兼容（6 周）
+### Phase 3: Proc-Macro + 生态兼容 + Clippy 整合（8 周）
 
 | 周 | 任务 | MVP |
 |---|------|-----|
 | 1-2 | `bt-proc-macro`: .so 加载 + 执行 | 自定义 derive macro 编译运行 |
 | 3-4 | 常用 proc-macro 透传（serde 等） | `#[derive(Serialize)]` 编译通过 |
-| 5-6 | 沙箱化 + top-100 crate 测试 | serde/tokio/axum 项目编译通过 |
+| 5 | 沙箱化（子进程执行） | proc-macro panic 不崩溃编译器 |
+| 6 | top-100 crate 兼容性测试 | serde/tokio/axum 项目编译通过 |
+| 7 | `bt-clippy-integration` + Clippy lint 注册 | `bt clippy` 输出与 `cargo clippy` 一致 |
+| 8 | `BtClippyEnhancer` AI 增强层 | Clippy 结果 + AI 解释叠加输出 |
 
-**里程碑 M3**：主流 Rust 项目（使用 serde/tokio/axum/clap）编译通过
+**里程碑 M3**：主流 Rust 生态项目编译通过；`bt clippy` 可运行 Clippy 700+ 规则并叠加 AI 增强
 
-### Phase 4: AI 增强 + 可观测性 + LSP（8 周）
-
-| 周 | 任务 | MVP |
-|---|------|-----|
-| 1-3 | AI Pass 集成到 Rust 编译管线 | `bt build --ai=auto` 给出优化建议 |
-| 4-5 | OpenTelemetry 全链路追踪 | 每个编译阶段有 Span |
-| 6-7 | LSP 适配器 | VS Code 中基本代码补全/诊断 |
-| 8 | Dashboard + WebSocket 实时推送 | Web 仪表盘显示编译过程 |
-
-**里程碑 M4**：AI 辅助优化 + IDE 集成 + 实时监控全部可用
-
-### Phase 5: 高级特性（12 周）
+### Phase 4: AI 增强 + 可观测性 + LSP + 三后端（9 周）
 
 | 周 | 任务 | MVP |
 |---|------|-----|
-| 1-2 | bt-backend-cranelift 完善 | Cranelift 后端可用于编译 Rust |
-| 3-4 | WASM 目标输出 | Rust → WASM 编译 |
-| 5-6 | bt-plugin-host: WASM 插件 | 自定义 Pass 插件加载执行 |
-| 7-8 | Salsa 增量编译完善 | 文件修改后秒级重编译 |
-| 9-10 | TypeScript 前端（Deno 桥接） | TS 基本程序编译 |
-| 11-12 | `bt clippy` + AI lint | AI 增强的代码检查 |
+| 1-2 | AI Pass 集成到 Rust 编译管线 | `bt build --ai=auto` 给出优化建议 |
+| 3 | `bt-backend-llvm` AArch64 + 调试信息 | AArch64 目标编译通过 |
+| 4-5 | `bt-backend-cranelift` WASM 目标 | WASM 输出可用 |
+| 6 | **`bt-backend-rustc`** rustc 原生 LLVM（新增） | `bt build --backend=rustc` 100% 兼容 |
+| 7 | OpenTelemetry 全链路追踪 | 每个编译阶段有 Span |
+| 8 | LSP 适配器 | VS Code 基本代码补全/诊断 |
+| 9 | Dashboard + WebSocket | Web 监控仪表盘 |
+
+**里程碑 M4**：AI 辅助优化 + 三后端（LLVM/Cranelift/rustc）+ IDE 集成 + 实时监控全部可用
+
+### Phase 5: 高级特性（10 周）
+
+| 周 | 任务 | MVP |
+|---|------|-----|
+| 1 | `bt-passes` 优化 Pass | DCE/常量折叠/内联/CFG 简化 |
+| 1 | Dialect 降级完善 | bt_rust/bt_ts → bt_core 完整降级 |
+| 1-2 | `bt-plugin-host` WASM 插件 | 自定义 Pass 插件加载执行 |
+| 3 | Salsa 增量编译完善 | 文件修改后秒级重编译 |
+| 3 | AI 流式分析 + 自动变换 | SSE + AIAction::AutoApply |
+| 4-6 | TypeScript 前端（ts2rs 转译） | TS 代码 → bt-ts2rs → Rust → bt-rustc-bridge |
+| 6 | blocktype-ts-runtime | console/Math/JSON/Date/Array 兼容库 |
+| 7-9 | 端到端集成测试 | Rust + TS 双前端测试 |
+| 10 | 回归测试 + 交付 | 全功能可用 |
 
 **里程碑 M5**：BlockType Rust 全功能可用
 
 ### 总计
 
-**Phase 0-4 = 33 周（~8 个月）** → 编译主流 Rust 项目 + AI 增强 + IDE 集成
-**Phase 5 = 12 周** → Cranelift + 插件 + TS 前端
-**全流程 = 45 周（~11 个月）**
+**Phase 0-4 = 36 周（~9 个月）** → 编译主流 Rust 项目 + AI 增强 + 三后端 + IDE 集成
+**Phase 5 = 10 周** → 优化 Pass + 插件 + TS 前端（ts2rs 转译）
+**全流程 = 46 周（~11 个月）**
 
 ---
 
@@ -899,10 +911,11 @@ Phase 3 (TS前端, 8周)          →   Phase 5 后半段 (延后)
 Phase 4 (后端+AI, 7周)         →   Phase 4 (AI+可观测, 8周)
 Phase 5 (高级特性, 14周)       →   Phase 3+5 (Proc-Macro+高级, 18周)
 
-总工期: 48周 → 45周（更短，且能编译真实 Rust 项目）
+总工期: 48周 → 46周（更短，且能编译真实 Rust 项目）
 ```
 
 **核心变化**：删除自有 Rust 前端（省 10 周），新增 rustc 桥接（加 4 周），净省 6 周，且兼容性从 ~5% 跃升到 ~95%。
+**后续演进（v3.1）**：增加 bt-backend-rustc（+1 周）和 ts2rs 转译方案（-1 周节省），总工期保持 46 周。
 
 ---
 
@@ -1247,6 +1260,8 @@ bt-cli
 
 **结论**：整合是唯一正确的路径。BlockType 的差异化不在 Lint 规则数量，而在 AI 增强 + 编译器平台能力。
 
+---
+
 ### 8.12.8 Clippy 版本管理
 
 ```toml
@@ -1266,3 +1281,58 @@ clippy_lints = "0.1"   # 与 rust-toolchain.toml 锁定的 nightly 版本对齐
 2. CI 每日用 latest nightly 测试 clippy_lints 兼容性
 3. 发现 API 变更 → 更新桥接层 + 更新 clippy_lints 版本
 4. 每 6 周跟随 Rust 发布周期统一升级
+
+---
+
+## 8.13 三后端策略
+
+> BlockType 提供三个代码生成后端：inkwell（核心 AI 引擎）、cranelift（快速/WASM）、rustc 原生（100% 兼容）。
+> 详见 `03-Communication-Bus.md §3.4` 的完整能力矩阵和 `07-AI-Native.md §5.8` 的 AI 闭环说明。
+
+### 8.13.1 三后端的定位
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    BlockType 三后端策略                             │
+│                                                                   │
+│  inkwell（核心） ← 默认，承载 AI 闭环、Dialect 降级、插件集成      │
+│     ↑                                                             │
+│  cranelift（快速/WASM） ← 开发循环、WASM 输出                      │
+│     ↑                                                             │
+│  rustc 原生（逃逸舱口） ← 5% 极端场景的兼容性保障                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 8.13.2 使用场景速查
+
+| 场景 | inkwell | cranelift | rustc 原生 |
+|------|---------|-----------|-----------|
+| 日常开发、`bt build` | ✅ 默认 | △ 可选（更快编译） | △ 可选 |
+| `bt build --release`（最终优化） | ✅ 推荐 | ❌ 优化质量不够 | △ 可选 |
+| AI 自动优化 `--ai=auto` | ✅ **唯一可选** | ✅ 可用 | ❌ 只读 |
+| WASM 输出 `--target=wasm32` | ❌ | ✅ **推荐** | ✅ 可用 |
+| 内联汇编 `asm!()` | ❌ | ❌ | ✅ **必须** |
+| 过程宏 `#[derive(Serialize)]` | ✅ | ✅ | ✅ |
+| CI 构建（兼容性优先） | △ 可用 | △ 可用 | ✅ 推荐 |
+| WASM 插件 Pass 开发 | ✅ **唯一** | ❌ | ❌ |
+| TypeScript 编译 | ✅ **推荐** | ✅ 可用 | △ 可用 |
+| 调试（`-C debuginfo=2`） | △ 可用 | △ 可用 | ✅ 最佳 |
+
+### 8.13.3 与现有架构的关系
+
+- **inkwell 和 cranelift**：实现 `Backend` trait，消费 `IRModule`（bt_core IR），通过 `BackendRegistry` 注册
+- **rustc 原生**：不实现 `Backend` trait，不消费 `IRModule`。在 `after_analysis` callback 中不中断 rustc 编译流程，让其自己的 LLVM 后端生成代码
+- **所有三后端**都在代码生成前完成 AI 分析 + 可观测性 + EventStore 记录（分析独立于后端）
+- 仅 **inkwell 和 cranelift** 能实现 AI 闭环（修改 BTIR 后直接 codegen）
+
+---
+
+### Rust 生态集成相关前瞻扩展
+
+| 扩展 | 关联 | 方案 |
+|------|------|------|
+| **F01 分布式编译缓存** | 扩展 bt-cargo 构建计划为分布式缓存 | [F01](./future-extensions/F01-Distributed-Build-Cache.md) |
+| **F02 供应链安全** | 扩展 bt-cargo 依赖解析为策略引擎 | [F02](./future-extensions/F02-Supply-Chain-Security.md) |
+| **F09 交叉编译环境管理** | 扩展 bt-std-bridge 为工具链管理器 | [F09](./future-extensions/F09-Cross-Compilation-Management.md) |
+
+

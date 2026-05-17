@@ -136,10 +136,10 @@
 - **优先级**: P1
 - **Sprint**: S-01-1
 
-**描述**：实现 bt_ts Dialect。
+**描述**：实现 bt_ts Dialect（标注/分析层）。
 
 **产出文件**：
-- `crates/bt-dialect-ts/src/{lib.rs, ts_dialect.rs, lower.rs}`
+- `crates/bt-dialect-ts/src/{lib.rs, ts_dialect.rs, lower.rs, annotation.rs}`
 
 **设计规格**（REF）：
 - `02-Core-Types.md §7.4` — bt_ts 操作码表 (240-249)
@@ -149,9 +149,10 @@
 
 **验收标准**（TST）：
 - [ ] `TsDialect` impl `Dialect`，opcode_range (240, 249)
-- [ ] 10 个操作码的 lower_to_core 实现
-- [ ] `type_narrow(240)` → ICmp + Branch
-- [ ] `nullish_coalesce(242)` → ICmp + Select
+- [ ] 10 个操作码的 lower_to_core 实现（用于 IR 分析验证）
+- [ ] `type_narrow(240)` → ICmp + Branch（分析用）
+- [ ] `nullish_coalesce(242)` → ICmp + Select（分析用）
+- [ ] `generate_annotation()` 为 bt-ts2rs 生成的 Rust 代码添加 `#[bt_ts_origin(...)]` 标注
 
 ---
 
@@ -345,3 +346,11 @@
 - [ ] `cargo build/test/fmt/clippy --workspace` 通过
 - [ ] IR 模块可通过 API 构造→验证→序列化→反序列化→查询
 - [ ] Dialect 可运行时注册→降级→注销
+
+---
+
+## Phase 1 可选扩展
+
+| 扩展 | 工期 | 前置 | 方案 |
+|------|------|------|------|
+| F12 跨语言反射基础（反射元数据格式）| 2 周 | bt-ir, bt-dialect-core | [F12](./../future-extensions/F12-Cross-Language-Reflection.md) |

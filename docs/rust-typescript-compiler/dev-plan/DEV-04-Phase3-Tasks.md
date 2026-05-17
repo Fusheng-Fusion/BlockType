@@ -333,3 +333,105 @@
 **验收标准**（TST）：
 - [ ] `cargo build/test/fmt/clippy --workspace` 通过
 - [ ] 主流 Rust 生态项目编译通过
+
+---
+
+## Phase 3 可选扩展 — 详细 Task 分解
+
+### T-03-E01: bt-policy — 许可策略 + 漏洞扫描
+
+- **ID**: `T-03-E01`
+- **来源**: F02 供应链安全
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选（Phase 3 完成后追加）
+
+**描述**：实现许可协议策略和 RustSec 漏洞数据库集成。
+
+**产出文件**：
+- `crates/bt-policy/src/license.rs`
+- `crates/bt-policy/src/vuln.rs`
+
+**前置依赖**（DEP）：
+- `T-02-E04`：bt-policy 来源策略
+
+**验收标准**（TST）：
+- [ ] `LicensePolicy`：允许/禁止许可 + 未知许可处理
+- [ ] RustSec advisory-db 集成
+- [ ] 漏洞严重度阈值过滤（Info/Low/Medium/High/Critical）
+- [ ] `bt audit` 命令显示审计报告
+
+---
+
+### T-03-E02: bt-policy — SBOM 生成（CycloneDX + SPDX）
+
+- **ID**: `T-03-E02`
+- **来源**: F02 供应链安全
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现 SBOM 生成器，支持 CycloneDX 和 SPDX 双格式。
+
+**产出文件**：
+- `crates/bt-policy/src/sbom.rs`
+- `crates/bt-policy/src/formats/cyclonedx.rs`
+- `crates/bt-policy/src/formats/spdx.rs`
+
+**前置依赖**（DEP）：
+- `T-03-E01`
+
+**验收标准**（TST）：
+- [ ] CycloneDX v1.5 格式 SBOM 导出
+- [ ] SPDX v2.3 格式 SBOM 导出
+- [ ] 包含完整依赖树 + 版本 + 许可 + 哈希
+- [ ] `bt sbom --format=cyclonedx --output=bom.json`
+
+---
+
+### T-03-E03: bt-policy — SLSA 证明 + 完整性验证
+
+- **ID**: `T-03-E03`
+- **来源**: F02 供应链安全
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：实现 SLSA 构建来源证明和依赖完整性验证。
+
+**产出文件**：
+- `crates/bt-policy/src/slsa.rs`
+- `crates/bt-policy/src/integrity.rs`
+
+**前置依赖**（DEP）：
+- `T-03-E02`
+
+**验收标准**（TST）：
+- [ ] SLSA L1-L3 构建来源证明（in-toto attestation）
+- [ ] SHA-256 校验和验证
+- [ ] 完整性验证集成到 EventStore
+- [ ] `bt attest --output=provenance.intoto.jsonl`
+
+---
+
+### T-03-E04: bt-toolchain — 链接器配置 + cargo config 生成
+
+- **ID**: `T-03-E04`
+- **来源**: F09 交叉编译环境管理
+- **估计**: 5 天
+- **优先级**: P3
+- **Sprint**: 可选
+
+**描述**：完善交叉编译的链接器自动配置和 cargo 配置生成。
+
+**产出文件**：
+- `crates/bt-toolchain/src/linker.rs` — 完善
+
+**前置依赖**（DEP）：
+- `T-02-E06`：bt-toolchain sysroot 下载
+
+**验收标准**（TST）：
+- [ ] 链接器自动检测：gcc/lld/mold
+- [ ] 链接器包装脚本生成
+- [ ] `.cargo/config.toml` 自动生成
+- [ ] `bt build --target aarch64-unknown-linux-gnu` 完整工作流

@@ -1,4 +1,4 @@
-# 04 — 全链路可观测性
+# 06 — 全链路可观测性
 
 ## 4.1 编译节点全链路追踪
 
@@ -129,7 +129,7 @@ WS /ws/v1/pipeline → 实时 JSON 流：
 ┌─────────────────────────────────────────────────────┐
 │  BlockType Compiler Dashboard                       │
 ├─────────────────────────────────────────────────────┤
-│  Task: abc123  Frontend: rust  Backend: llvm        │
+│  Task: abc123  Frontend: rust  Backend: llvm/cran/rustc │
 │  [██████████████████████████████████░░░░░] 85%      │
 │                                                     │
 │  ┌─ frontend.lex ──────── ✅ 2ms (150 tokens)      │
@@ -209,3 +209,13 @@ pub struct CompilerMetrics {
     pub events_per_compilation: Histogram<u64>,
     pub event_replay_duration: Histogram<f64>,
 }
+```
+
+---
+
+### 可观测性相关前瞻扩展
+
+| 扩展 | 关联 | 方案 |
+|------|------|------|
+| **F05 持续编译** | 扩展 WebSocket 推送 + 编译时间线 | [F05](./future-extensions/F05-Continuous-Compilation.md) |
+| **F08 绿色编译** | 扩展 bt-telemetry 指标 + 碳足迹追踪 | [F08](./future-extensions/F08-Green-Compilation.md) |

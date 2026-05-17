@@ -1,11 +1,11 @@
 # 03 — 通信基础架构：tower::Service 统一抽象
 
 > **本文档包含 5 个子系统**。如果后续需要拆分，建议方案：
-> - §3.1-3.5（CompileService + tower::Service + 中间件 + axum 集成）保留在本文档
-> - §3.6 EventStore → 移入 `02-Core-Types.md` 或独立为 `03b-EventStore.md`
-> - §3.7 QueryEngine → 移入 `02-Core-Types.md` 或独立为 `03c-QueryEngine.md`
-> - §3.8 Registry → 已在 `02-Core-Types.md` §7.1 有定义，可合并
-> - §3.9-3.10（方案对比 + 错误传播）保留在本文档
+> - §3.1-3.6（CompileService + tower::Service + 三后端策略 + 中间件 + axum 集成）保留在本文档
+> - §3.7 EventStore → 移入 `02-Core-Types.md` 或独立为 `03b-EventStore.md`
+> - §3.8 QueryEngine → 移入 `02-Core-Types.md` 或独立为 `03c-QueryEngine.md`
+> - §3.9 Registry → 已在 `02-Core-Types.md` §7.1 有定义，可合并
+> - §3.10-3.11（方案对比 + 错误传播）保留在本文档
 
 ## 3.1 核心思想
 
@@ -65,6 +65,7 @@ pub struct CompileService {
     backend_registry: Arc<BackendRegistry>,
     dialect_registry: Arc<DialectRegistry>,
     pass_manager: Arc<PassManager>,
+    ai_orchestrator: Arc<AIOrchestrator>,
     event_store: Arc<EventStore>,
     /// 使用具体类型 SalsaQueryEngine，因为 QueryEngine trait 含泛型方法 query<Q>，
     /// 不满足 object-safe（dyn QueryEngine 编译不过）
@@ -99,6 +100,11 @@ impl CompileService {
     /// - 内部调用：service.compile(req).await
     /// - axum handler：service.compile(req).await（通过 Arc<Self> 拿到 &self）
     /// - tower::Service::call：委托到此处
+    ///
+    /// 代码生成路径分叉（三后端）：
+    /// - "llvm": inkwell（LLVM C API），默认
+    /// - "cranelift": cranelift（Rust 原生），适合 WASM/快速编译
+    /// - "rustc": rustc 原生 LLVM（100% 兼容，支持内联汇编/SIMD/sanitizers）
     pub async fn compile(&self, req: CompileRequest) -> Result<CompileResponse, CompilerError> {
         let task_id = Uuid::new_v4();
 
@@ -126,15 +132,30 @@ impl CompileService {
         self.pass_manager.optimize(&mut ir_module, req.opt_level)
             .map_err(CompilerError::Pass)?;
 
-        // 6. 选择后端并生成代码
-        let backend = self.backend_registry.get(&req.backend)
-            .ok_or(CompilerError::BackendNotFound(req.backend.clone()))?;
+        // 6. AI 分析（独立于后端，始终执行）
+        let _ai_suggestions = self.ai_orchestrator.analyze(AIAnalysisRequest {
+            context: CompilationContext::from(&ir_module),
+            analysis_type: AnalysisType::PostCodegen,
+            options: AIAnalysisOptions::default(),
+        }).await?;
 
-        let result = backend.emit_object(
-            &ir_module, &req.target, &BackendOptions::default(),
-        ).await.map_err(CompilerError::Backend)?;
+        // 7. 代码生成路径分叉
+        let result = match req.backend.as_str() {
+            // 路径 A: rustc 原生 LLVM（不中断 rustc，走原生 codegen）
+            "rustc" => {
+                self.rustc_bridge.finish_codegen(req).await?
+            }
+            // 路径 B: BTIR 后端（inkwell / cranelift）
+            backend_name => {
+                let backend = self.backend_registry.get(backend_name)
+                    .ok_or(CompilerError::BackendNotFound(backend_name.into()))?;
+                backend.emit_object(
+                    &ir_module, &req.target, &BackendOptions::default(),
+                ).await.map_err(CompilerError::Backend)?
+            }
+        };
 
-        // 7. 记录事件
+        // 8. 记录事件
         self.event_store.append(CompilerEvent::CompilationCompleted {
             task_id,
             duration_ms: 0, // 实际测量
@@ -149,7 +170,115 @@ impl CompileService {
 }
 ```
 
-## 3.4 中间件链组合
+## 3.4 三后端策略与场景选择
+
+> 关于三后端的技术定义（crate 名称、依赖关系）详见 `04-Project-Structure.md §4.1`。
+> 关于 `bt-backend-rustc` 的实现细节详见 `dev-plan/DEV-05-Phase4-Tasks.md T-04-09`。
+
+### 3.4.1 三后端能力矩阵
+
+```
+                    inkwell          cranelift        rustc 原生
+                    (bt-backend-     (bt-backend-     (bt-backend-
+                     llvm)            cranelift)       rustc)
+──────────────────────────────────────────────────────────────────
+消费什么           BTIR (bt_core)    BTIR (bt_core)   MIR（不做转换）
+实现 Backend trait  ✅ yes            ✅ yes           ❌ no
+兼容性              ~95%              ~95%             100% stable
+AI 闭环             ✅ yes            ✅ yes           ❌ 只读分析
+Dialect 降级后优化  ✅ yes            ✅ yes           ❌ 在 rustc 阶段已做
+WASM 插件 Pass 集成 ✅ yes            ✅ yes           ❌ 无法介入
+WASM 输出           ❌               ✅ yes           ✅ yes
+内联汇编/SIMD      ❌ 不支持         ❌ 不支持        ✅ 原生支持
+sanitizers         ❌               ❌               ✅
+编译速度           中等              快（Rust 原生）   与 rustc 一致
+调试信息           独立格式          独立格式           rustc 原生 DWARF
+rustc 版本依赖     无（LLVM 独立）   无               绑定 nightly
+```
+
+### 3.4.2 三后端的定位与价值分层
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    BlockType 三后端定位                             │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────────┐     │
+│  │  inkwell（核心引擎）                                        │     │
+│  │                                                           │     │
+│  │  "AI 原生编译器的价值承载者"                                 │     │
+│  │  ─ 承载 BlockType 核心创新：AI 闭环、Dialect 降级、         │     │
+│  │     WASM 插件 Pass 的无缝集成                               │     │
+│  │  ─ 默认后端：bt build（等价于 bt build --backend=llvm）     │     │
+│  │  ─ 覆盖 ~95% 的常规 Rust 代码                               │     │
+│  └──────────────────────────────────────────────────────────┘     │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────────┐     │
+│  │  cranelift（快速通道）                                       │     │
+│  │                                                           │     │
+│  │  "快速编译和 WASM 目标的专门后端"                             │     │
+│  │  ─ 比 LLVM 快 2-5 倍的编译速度                              │     │
+│  │  ─ 天然支持 WASM 输出（LLVM WASM 支持较弱）                  │     │
+│  │  ─ 适合开发循环、wasm-pack 场景                             │     │
+│  └──────────────────────────────────────────────────────────┘     │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────────┐     │
+│  │  rustc 原生（逃逸舱口）                                       │     │
+│  │                                                           │     │
+│  │  "5% 极边缘情况的兼容性保障"                                  │     │
+│  │  ─ 100% 兼容：内联汇编、SIMD、sanitizers、PGO、              │     │
+│  │     编译器内建函数、FFI ABI 等所有 rustc 支持的特性           │     │
+│  │  ─ 不自建新后端，直接委托 rustc 的 LLVM 后端                 │     │
+│  │  ─ 保留 BlockType 可观测性/AI 分析（只读模式）               │     │
+│  └──────────────────────────────────────────────────────────┘     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 3.4.3 inkwell 的不可替代价值：AI 闭环
+
+inkwell 路径最大的差异化能力是 **AI 闭环**——AI 的分析结果可以直接修改 BTIR，然后流入代码生成。
+
+**inkwell 路径（闭环）：**
+```
+MIR ──▶ BTIR ──▶ AI 分析 ──▶ 修改 BTIR ──▶ inkwell ──▶ 机器码
+                    ↑_____闭环_____↓
+              AI 的建议直接控制代码生成
+```
+
+**rustc 原生路径（开放）：**
+```
+MIR ──▶ BTIR ──▶ AI 分析（只读）──▶ MIR ──▶ rustc LLVM ──▶ 机器码
+                    ↑ AI 看到了，但没法直接影响 codegen
+```
+
+在 inkwell 路径上，以下场景得以实现：
+- AI 检测到循环可向量化 → 插入向量化 Pass → inkwell 直接生成 SIMD 指令
+- AI 分析 Dialect 降级后的 IR → 推荐更优的降级策略 → 重新降级 → inkwell codegen
+- WASM 插件 Pass 分析 IR → 输出修改后的 IR → inkwell 无缝衔接代码生成
+
+在 rustc 原生路径上，AI 的分析结果只能以报告形式输出给开发者，无法直接影响编译结果。
+
+### 3.4.4 自动选择策略（`--backend=auto`）
+
+SmartBackendSelector 在 CompileService 的 `after_analysis` callback 中分析 MIR body：
+
+```
+MIR body
+    │
+    ├── 包含 asm!() / core::arch / #[target_feature] / sanitizers？
+    │   └── 是 → bt-backend-rustc（100% 兼容）
+    │
+    ├── 需要 AI 优化闭环 / Dialect 降级后 Pass / WASM 插件介入？
+    │   └── 是 → bt-backend-llvm（inkwell，AI 闭环）
+    │
+    ├── 目标是 WASM？
+    │   └── 是 → bt-backend-cranelift
+    │
+    └── 默认 → bt-backend-llvm（inkwell）
+```
+
+开发者也可以通过 `bt build --backend=llvm --explain` 查看选择理由。
+
+## 3.5 中间件链组合
 
 ```rust
 use tower::ServiceBuilder;
@@ -177,7 +306,7 @@ fn build_ai_service(core: AIService) -> impl Service<AIRequest, Response = AIRes
 
 **关键设计**：不需要 `InProcessBus` / `HttpBus` 两个类型。axum handler 和内部代码调用的是同一个 `Service::call()`，区别仅在于 axum handler 会做 HTTP 反序列化/序列化。
 
-## 3.5 axum Handler 集成
+## 3.6 axum Handler 集成
 
 ```rust
 use axum::{routing::post, Json, Router, extract::State};
@@ -216,7 +345,7 @@ async fn handle_compile(
 }
 ```
 
-## 3.6 EventStore — Event Sourcing
+## 3.7 EventStore — Event Sourcing
 
 替代原来简单的 Event Bus pub/sub，所有编译事件持久化存储：
 
@@ -359,9 +488,9 @@ impl EventStore {
 }
 ```
 
-## 3.7 QueryEngine — Salsa 风格增量查询
+## 3.8 QueryEngine — Salsa 风格增量查询
 
-### 3.7.1 QueryEngine trait
+### 3.8.1 QueryEngine trait
 
 ```rust
 /// 增量查询引擎 trait
@@ -381,7 +510,7 @@ pub trait QueryEngine: Send + Sync {
 }
 ```
 
-### 3.7.2 Salsa 风格查询定义（trait + 宏）
+### 3.8.2 Salsa 风格查询定义（trait + 宏）
 
 Salsa 使用 trait + 过程宏定义查询组。每个查询是一个 trait 方法：
 
@@ -461,7 +590,7 @@ fn lower_to_ir(db: &dyn BlockTypeQueries, key: SourceId) -> Arc<IRModule> {
 }
 ```
 
-### 3.7.3 SalsaQueryEngine — CompileService 使用的具体类型
+### 3.8.3 SalsaQueryEngine — CompileService 使用的具体类型
 
 ```rust
 /// 具体查询引擎实现
@@ -505,9 +634,9 @@ impl QueryEngine for SalsaQueryEngine {
 }
 ```
 
-## 3.8 Registry — 运行时注册表
+## 3.9 Registry — 运行时注册表
 
-### 3.8.1 通用 Registry 定义
+### 3.9.1 通用 Registry 定义
 
 ```rust
 /// 通用注册表 — 前端/后端/Dialect/插件共用
@@ -552,7 +681,7 @@ impl<T: ?Sized + Named> Registry<T> {
 }
 ```
 
-### 3.8.2 DST 注册辅助方法
+### 3.9.2 DST 注册辅助方法
 
 `Registry<dyn Trait>` 的 `register()` 要求 `Arc<dyn Trait>` 参数。但调用者通常持有
 `Box<dyn Trait>` 或具体类型 `T: Frontend`。以下辅助方法通过 **unsized coercion** 处理：
@@ -609,7 +738,7 @@ impl DialectRegistry {
 }
 ```
 
-### 3.8.3 具体注册表类型别名
+### 3.9.3 具体注册表类型别名
 
 ```rust
 // 使用 Arc<dyn Trait> 避免双重间接（Arc<Box<dyn Trait>>）
@@ -619,7 +748,7 @@ pub type DialectRegistry = Registry<dyn Dialect>;
 pub type PassRegistry = Registry<dyn Pass>;
 ```
 
-### 3.8.4 使用示例
+### 3.9.4 使用示例
 
 ```rust
 // 注册具体类型的 Frontend
@@ -627,7 +756,9 @@ let rust_frontend = RustFrontend::new();
 frontend_registry.register_concrete(rust_frontend)?;
 
 // 注册 Box<dyn Frontend>
-let ts_frontend: Box<dyn Frontend> = Box::new(TypeScriptFrontend::new(deno_pool));
+// TS 前端通过 ts2rs 转译为 Rust 源码，走 bt-rustc-bridge 复用完整 Rust 管线
+// bt-ts2rs 实现 Frontend trait，内部调用官方 TS 编译器 API 获取类型信息
+let ts_frontend: Box<dyn Frontend> = Box::new(Ts2RsFrontend::new(ts_compiler_host));
 frontend_registry.register_boxed(ts_frontend)?;
 
 // 查找并使用
@@ -635,7 +766,7 @@ let frontend = frontend_registry.get("rust").unwrap();
 let output = frontend.compile(&source, &options).await?;
 ```
 
-## 3.9 为什么不用自定义 BusEndpoint？
+## 3.10 为什么不用自定义 BusEndpoint？
 
 | 方案 | 优点 | 缺点 | BlockType Next 的选择 |
 |------|------|------|---------------------|
@@ -644,11 +775,11 @@ let output = frontend.compile(&source, &options).await?;
 | 纯 gRPC | 高性能，跨语言 | 复杂，不适合浏览器，调试困难 | ❌ 不满足 P1 |
 | **tower::Service (v2)** | **统一抽象 + 中间件链 + 生态复用** | 需要理解 tower | ✅ **最终选择** |
 
-## 3.10 错误传播端到端示例
+## 3.11 错误传播端到端示例
 
 从 Dialect 降级失败到 API 层 JSON 响应的完整传播路径：
 
-### 3.10.1 错误类型定义（bt-core）
+### 3.11.1 错误类型定义（bt-core）
 
 ```rust
 /// 编译器统一错误类型 — 所有子系统错误汇聚于此
@@ -707,7 +838,7 @@ pub enum DialectError {
 }
 ```
 
-### 3.10.2 错误传播路径（DialectError → CompilerError → axum Response）
+### 3.11.2 错误传播路径（DialectError → CompilerError → axum Response）
 
 ```rust
 // ─── 第 1 层：Dialect 实现抛出 DialectError ───
